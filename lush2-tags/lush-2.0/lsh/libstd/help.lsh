@@ -1,0 +1,598 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;
+;;;;    "help.lsh"   
+;;;;    The help subsystem...
+;;;;	Yann LeCun 2002
+;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libstd/ldoc")
+(libload "libstd/ltree")
+(libload "libc/shell")
+
+;;; ========================================
+;;; Help on help
+;;; ========================================
+
+#? *** Help.
+;; The online help system of Lush is able to perform several tasks.
+;;.IP
+;; If you want to check the usage of a regular Lush function, you can
+;; use function <apropos> to retrieve its documentation and display it
+;; on your screen.
+;;.IP
+;; If you want to document your Lush functions, just add comments 
+;; in a particular format in your source file. The help system will 
+;; format your comments and insert them into the help database.
+;;.IP
+;; Finally, the documentation system can produce a complete documentation
+;; in HTML.
+
+
+;;; ========================================
+;;; A propos
+;;; ========================================
+
+#? ** Browsing the Manual
+;; The simplest way to view the manual and obtain on-line help
+;; is to start the graphical help tool by typing:
+;;.PRE
+;; (helptool)
+;;.P
+;; at the lush prompt. 
+;;.P
+;; Display the documentation on a particular topic at
+;; the terminal can be done by typing: <(apropos "topic")>
+;; or <^Atopic> (caret A and the topic) at the Lush prompt.
+;; For example:
+;;.PRE
+;;   ? ^Acar
+;;.P
+;; displays a choice of help entries that contain
+;; the string ``car''.
+
+
+;;; ----------------------------------------
+#? ^A <topic>
+;; This macro character calls command <apropos>.
+;; (dmc |^A| (list 'apropos (read-string)))
+
+;;; ----------------------------------------
+#? (apropos <topic> [<force>])
+;; This command displays some help text for a given subject <topic>.
+;;
+;; If several help entries match string <topic>, the list of the
+;; titles of the matching entries is displayed. The user can then
+;; select one entry using its number and proceed.
+;; 
+;; hitting the enter key or entering "q" or "quit"
+;; returns to the regular Lush prompt
+;;
+;; If the optional boolean parameter <force> is
+;; non-nil, the Lush manual is re-read from
+;; the help files.
+(de apropos(topic &optional force) 
+  (let ((hp (read-lush-manual force)))
+    (if (= "" topic) 
+      (printf "Empty search topic. Type (helptool) to browse the documentation.\n")
+    (let* ((filter-func
+	    (eval 
+	     `(lambda (c)
+		(let ((s (==> c getkey)) (r ())) 
+		  (while (and s (not r)) 
+		    (when (regex-seek ,topic (cleanup-regex (car s))) (setq r t))
+		    (setq s (cdr s))) r))))
+	   (rez (new ltree-node 
+		     (sprintf "Search Results for: %s" topic) ()()))
+	   )
+      (filter-flat-ltree-from-tree :hp:root rez filter-func)
+      (==> rez open)
+      (let* ((chs (==> rez getchildren))
+	     (nch (length chs)))
+	(cond 
+	 ((= 0 nch) (printf "no match found\n"))
+	 ((= 1 nch) 
+	  (==> (==> (==> (car chs) getdata) getdata) render-text)
+	  )
+	 (t
+	  (when
+	      (if (<= nch 50) t
+		(printf "%d matches, show anyway (y/n) [n]" nch)
+		(flush)
+		(let ((choice (read-string)))
+		  (when (member choice '("y" "Y")) t)))
+	    (ltree-pretty rez)
+	    (let ((done   ()) 
+                  (choice ()) )
+	      (while (not done)
+		(printf "choice")
+		(flush)
+		(setq choice (read-string))
+		(cond
+		 ((member choice '(() "" "q" "Q" "n" "N" "quit")) (setq done t))
+		 ((and (setq choice (val choice))
+		       (>= choice 1)
+		       (<= choice (length chs)))
+		  (setq done t)
+		  (==> (setq :zzz (==> (==> (nth (- choice 1) chs) getdata) getdata)) render-text))
+		 (t (printf "invalid choice, try again\n")))))))
+	 ))
+      ;(delete rez)
+      ))))
+
+
+;;; ========================================
+;;; Adding help documentation
+;;; ========================================
+
+;;; ----------------------------------------
+
+(defvar *help-tmp* (tmpname))
+
+;;; ========================================
+;;; Globals
+;;; ========================================
+
+#? ** Help internals
+;; Here are the functions used by the help system.
+
+
+;;; ========================================
+;;; Parsing help files
+;;; ========================================
+
+;; ----------------------------------------
+
+#? (help-search-file <file> [<hd>])
+;; Tries to locate a given help file <file>.
+;; Files are searched along the help path.
+;; If everything fails, the specified 
+;; directory <hd> is assumed.
+(de help-search-file (file &optional (hd "."))
+  ;; Search along help path
+  (let ((dirs (or help-dir-list (path)))
+	(fullname ()) )
+    (when (regex-match ".*\\.(lsh|sn|tl)" file)
+      ;; Search SN files along SN path
+      (setq dirs (path)) )
+    (while (and dirs 
+		(setq fullname (concat-fname (car dirs) file))
+		(not (filep fullname)) )
+      (setq dirs (cdr dirs)) )
+    (if (not dirs)
+	(setq fullname (concat-fname hd file)) )
+    fullname ) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; parse a brace-enclosed series of lisp expressions
+(de parse-help-brace () (read))
+
+;; parse a single help entry line
+(de parse-help-entry ()
+    (let* ((line (read-string "~{\n\r\f\e"))
+	   (pattern "^[ \t]*((\\**)[ \t]+((<<)?)[ \t]*(.*))$")
+	   (lvl (len (regex-subst pattern "%1" line)))
+	   (txt (regex-subst "[ \t]+$" "" 
+			     (regex-subst pattern "%4" line)))
+	   (includep (= (regex-subst pattern "%2" line) "<<")))
+      (if includep 
+	  (progn 
+	    (skip-char "\n\r\f")
+	    (read-help-headers txt lvl))
+	(let ((ans ())
+	      (ok t)
+	      (next ()))
+	  (if (= "" txt)
+	      (progn
+		(setq ans (list 'helpt-noentry 'state lvl))
+		(while (not (str-find (setq next (skip-char " \t")) "\n\r\f\e"))
+		  (when (= "{" next) 
+		    (setq ans (append ans (parse-help-brace))))))
+	    (setq ans (list 'helpt-entry 'state lvl txt))
+	    (while (not (str-find (setq next (skip-char " \t")) "\n\r\f\e"))
+	      (when (= "{" next) 
+		(nconc1 ans (cons 'helpt-noentry 
+				  (cons 'state (cons lvl (parse-help-brace))))))))
+	    (skip-char "\n\r\f")
+	  ans))))
+
+
+;; parse help entries in a help file 
+;; returns a lisp expression that will build the
+;; ldoc tree when evaluated in the right context.
+;; The returned expression is a nested list of entries.
+;; Sub-entries are nested into their parent entry.
+;; (file <level> <filename>
+;;   (entry <level> <name> 
+;;     (noentry <level> <expr1> .... <exprn>)
+;;     (entry <level> <name>)
+;;     (file <level> <filename>
+;;       (entry <level> <name>)
+;;       .....
+;;       (entry <level> <name>))
+;;     (entry <level> <name>))
+;;   (entry <level> <name>))
+(de read-help-headers(file lvl)
+  ;; (printf " [%s] (parsing help)\n" file)
+  (let* ((fname (help-search-file file))
+	 (ans (list 'helpt-file 'state lvl fname))
+	 (zz ())
+	 (level -1)
+	 (last-level -1)
+	 (tailend (last ans)))
+    (if (not (filep fname))
+        ;; (error 'help-parse "Help file not found" file) 
+	(progn (printf "[Help file %s not found]\n" file) ())
+      (reading (concat "| grep '#?' " fname)
+	(while (<> (skip-char "") "\e")
+	  ;; does the line begin with #?
+	  (if (and (= (read-string 1) "#")
+		   (= (read-string 1) "?"))
+	      ;; yes, parse the rest of the line
+	      (let ((r (parse-help-entry)))
+		(when r 
+		  (let* ((rlevel (caddr r))
+			 (z (if (<= rlevel last-level) tailend ans)))
+		    (while (and (consp (lasta z)) 
+				(< rlevel (caddr (lasta z))))
+		      (setq z (lasta z)))
+		    (nconc1 z r)
+		    (setq last-level rlevel)
+		    (setq tailend (last z)))))
+	    ;; no, just gobble up the line
+	    (read-string) (skip-char "\n\r\f"))))
+      ans)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a help-node is a tree-node whose data is
+;; a dynamically loaded ldoc.
+
+(defclass help-node ltree-node file)
+
+(defmethod help-node help-node (lname lfile lkey ldata &optional lchildren)
+  (setq data ldata)
+  (setq keywords lkey)
+  (setq file (or (relative-fname lushdir lfile) lfile))
+  (setq name lname)
+  (each ((c lchildren))
+    (==> this insert c)))
+
+(defmethod help-node -destructor () 
+  (each ((c (==> this getchildren))) (delete c)))
+
+(defmethod help-node getdata () 
+  (when (not data) (setq data (new ldoc)))
+  (let ((z (==> data read-when))
+        (fname (concat-fname lushdir file)) )
+    (when (or (not z) (> (alist-get 'mtime (fileinfo fname)) z))
+      (read-help-entry file data name)))
+  data)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CAUTION: the next three function rely on dynamic binding
+
+(df helpt-file (state lvl f . c)
+    (let ((current-file (eval f)))
+      (each ((c c)) (eval c))))
+      
+(df helpt-entry (state lvl name . c) 
+    (let* ((n (new help-node (eval name) current-file () ())))
+      ;; add node to the help-node tree
+      (when current-node (==> current-node insert n))
+      ;; add node to the file alist
+      (==> current-book put-entry current-file n)
+      ;; evaluate content
+      (let ((current-node n))
+	(each ((c c)) (eval c)))))
+
+(df helpt-noentry (state lvl . c) 
+      (each ((c c)) (eval c)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; the help-book contains the tree of help-nodes as
+;; well as an alist of filenames and associated help-nodes.
+;; It manages the dynamic updating of help topics when
+;; program files are re-loaded.
+(defclass help-book object
+  root
+  files)
+
+(defmethod help-book help-book (f title &optional (start-page ""))
+  (setq root (new help-node title start-page () ()))
+  (setq files (list (list (or (relative-fname lushdir f) f) root)))
+  (let* ((help-code  (read-help-headers f 0))
+	 (current-file f)
+	 (current-node root)
+	 (current-book this))
+    (eval help-code)))
+
+;; supposed to build the alist mapping files to nodes
+(defmethod help-book put-entry (f n) 
+  (setq f (or (relative-fname lushdir f) f))
+  (let ((pair (assoc f files)))
+    (if pair (nconc1 pair n)
+      (setq files (cons (list f n) files)))))
+
+(defmethod help-book make-ltree () (make-ltree-from-tree root))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; some utilities for HTML/LaTeX rendering
+
+(de help-node-all-the-same-filep (c)
+  (let ((x :(car c):file) (r t))
+    (each ((z c)) (when (<> :z:file x) (setq r ()))) r))
+
+(de help-node-all-childless (c)
+  (let ((r t))
+    (each ((z c)) (when (==> z getchildren) (setq r ())))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; HTML rendering of a help-book
+
+(de help-htmlfile-from-path (s) 
+  (concat (hashcode s) ".html"))
+
+;; render the body of a help node <r> to HTML
+;; and render the children nodes recursively.
+(de help-tree-render-html-body (r d num)
+  (let* ((f (open-append (concat-fname d (help-htmlfile-from-path :r:file)))))
+    (writing f 
+      (==> (==> r getdata) render-html f 
+	   (merge-words (mapcar pname num) ".")))
+    (let ((children (==> r getchildren))
+	  (n 0))
+      (each ((hn children))
+	(help-tree-render-html-body hn d (append num (list n)))
+	(incr n)))))
+
+;; target is an optional target frame name for the 
+;; hyperlinked index entries.
+(de help-tree-render-html-index (r d num &optional target)
+  (let* ((fname (help-htmlfile-from-path :r:file))
+	 (n (merge-words (mapcar pname num) "."))
+	 (children (==> r getchildren))
+	 (nchildren (length children))
+	 (keepers 
+	  (cond 
+	   ((<= (length num) 2) children)
+	   (t (filter (lambda (x) (==> x getchildren)) children))))
+	 (l (length keepers))
+	 (i 0))
+    (selectq (length num)
+      (0 (error "shouldn't have zero length section number"))
+      (1 (printf "<p><h1>%s: <a href=\"%s#%s\" %s>%s</a></h1>\n" 
+		 n fname n 
+		 (if target (sprintf "target=\"%s\"" target) "")
+		 (cleanup-brackets-for-html :r:name)))
+      (t (printf "<li><b>%s</b>: <a href=\"%s#%s\" %s>%s</a>"
+		 n fname n 
+		 (if target (sprintf "target=\"%s\"" target) "")
+		 (cleanup-brackets-for-html :r:name))
+	 (when (<> nchildren 0) (printf " (%d)" nchildren))
+	 (printf "\n")))
+    (when 
+	(cond
+	 ((not keepers) ())
+	 ((> l 50) ())
+	 (t  t))
+      (printf "<ul>\n")
+      (each ((hn keepers))
+	(help-tree-render-html-index hn d (append num (list i)) target)
+	(incr i))
+      (printf "</ul>\n"))))
+
+(defmethod help-book render-html (d title)
+  (printf "printing index\n")
+  ;; print regular no-frame index
+  (let ((index-file (concat-fname d "index.html")))
+    (writing index-file
+      (printf "<html><head></head><body>\n")
+      (printf "<h1>%s</h1>\n" title)
+      (let* ((children (==> root getchildren))
+	     (n 0))
+	(each ((hn children))
+	  (help-tree-render-html-index hn d (list n))
+	  (incr n)))
+      (printf "</body></html>\n")))
+  ;; print frameset
+  (writing (concat-fname d "frameset.html")
+    (printf 
+      "<html><head><TITLE>Lush 2 Reference Manual</TITLE>\n\
+       <meta name=\"keywords\" content=\"Lush, Lisp, machine learning,\n\
+        neural nets, computer vision, image processing, statistics,\n\
+        LeCun, Bottou, Manual, Documentation, Matlab, S+, DjVu\">\n\
+        <meta name=\"description\" content=\"Lush: the programming language\n\
+        for researchers. Documentation\"></head>\n\
+        <frameset rows = \"35%%, 65%%\">\n\
+        <frame src =\"index-frame.html\"></frame>\n\
+        <frame name=\"docpane\" src =\"f0288067.html\"></frame>\n\
+        </frameset></html>\n"))
+  ;; print index with target frame 
+  (let ((index-file (concat-fname d "index-frame.html")))
+    (writing index-file
+      (printf "<html><head></head><body>\n")
+      (printf "<h1>%s</h1>\n" title)
+      (let* ((children (==> root getchildren))
+	     (n 0))
+	(each ((hn children))
+	  (help-tree-render-html-index hn d (list n) "docpane")
+	  (incr n)))
+      (printf "</body></html>\n")))
+  (printf "printing bodies\n")
+  (help-tree-render-html-body root d ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; LateX rendering of a help-book
+
+(de help-latexfile-from-path (s) (concat (hashcode s) ".tex"))
+
+;; render the body of a help node <r> to LATEX
+;; and render the children nodes recursively.
+(de help-tree-render-latex-body (r num)
+  (when num 
+    (==> (==> r getdata) render-latex num))
+  (let ((children (==> r getchildren))
+	(n 0))
+    (each ((hn children))
+      (help-tree-render-latex-body hn (append num (list n)))
+      (incr n))))
+
+(defmethod help-book render-latex (latex-file title authors)
+  (writing latex-file
+    (printf "\\documentclass{book}\n")
+    (printf "\\begin{document}\n")
+    (printf "\\title{%s}\n" title)
+    (printf "\\author{%s}\n" authors)
+    (printf "\\maketitle\n")
+    (printf "\\tableofcontents\n\n")
+    (help-tree-render-latex-body root ())
+    (printf "\\end{document}\n")))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; parse a single help entry line and return the entry name
+(de read-help-entry-name ()
+    (let* ((line (read-string "~{\n\r\f\e"))
+	   (pattern "^[ \t]*((\\**)[ \t]+((<<)?)[ \t]*(.*))$")
+	   (txt (regex-subst "[ \t]+$" "" 
+			     (regex-subst pattern "%4" line)))
+	   (includep (= (regex-subst pattern "%2" line) "<<")))
+      (if includep "" txt)))
+
+;; look for help entry <lname> in file <lfile> 
+;; and read it into the ldoc object.
+(de read-help-entry (fname theldoc lname)
+  (setq fname (concat-fname lushdir fname))
+  (if (not (filep fname))
+      (==> theldoc set-file-not-found fname lname)
+    (let ((found ())
+	  ;; figure out the type of file (.lsh program or .hlp file)
+	  (file-type 
+	   (selectq (regex-subst ".*(\\.[a-z]+)$" "%0" fname)
+	     ((".lsh" ".tl" ".sn")  ".lsh")
+	     (t ".hlp"))))
+      (reading fname
+	(while (and (not found) (<> (skip-char "~#\e") "\e"))
+	  ;; does the line begin with #?
+	  (if (and (= (read-string 1) "#")
+		   (= (read-string 1) "?"))
+	      ;; yes, parse the rest of the line
+	      (let ((r (read-help-entry-name)))
+		(when (= r lname)
+		  (setq found t)
+		  (skip-char "\n")
+		  (==> theldoc read-help-body fname lname file-type))))))
+      (when (not found)
+	(==> theldoc set-entry-not-found fname lname)))))
+
+
+;;; ========================================
+;;; Help macro
+;;; ========================================
+
+;;; ----------------------------------------
+;; #? #? <entry>
+;;.TYPE DMC
+;; This macro marks the node root as outdated.
+;; 
+;; (dmc |#?|
+;;   (when (and file-being-loaded (<> file-being-loaded "$stdin"))
+;;     (let ((e (parse-help-entry)))
+;;       (==> (find-help-section file-being-loaded (caddr e)) insert e))))
+;; 
+;; (dmc |#?|
+;;   (when (and file-being-loaded (<> file-being-loaded "$stdin"))
+;;     (let ((e (parse-help-entry))) ())))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar *lush-manual* ())
+
+;; return the current help book, reading it from the documentation
+;; files if necessary. Passing a non-nil <force>, forces
+;; re-reading of the help book.
+(de read-lush-manual (&optional force)
+  (when (or force (not *lush-manual*))
+    (setq *lush-manual* 
+	  (new help-book "lush-manual.hlp" "Lush Manual" 
+	       (concat-fname lushdir "lsh/manual/helptool-shortcuts.hlp"))))
+  *lush-manual*)
+
+;; with no argument: make the html manual in the doc/html directory
+(de make-html-manual (&optional b dr)
+  (let ((book (if b b (read-lush-manual)))
+	(d (if dr 
+	       dr 
+	     (if (not b)
+		 (concat-fname lushdir "doc/html")
+	       (error "can't write document other than lush manual in default dir")))))
+    (printf "making HTML manual in %s (be patient...)\n" d)
+    (when (not (dirp d)) (mkdir d))
+    (sys (sprintf "rm %s/*.html" d))
+    (==> book render-html d "Lush Manual - Table of Contents")
+    (printf "done\n")))
+
+;; with no argument: make the latex manual in the doc/latex directory
+(de make-latex-manual (&optional b dr)
+  (let ((book (if b b (new help-book "lush-manual-latex.hlp" "Lush Manual")))
+	(latex-dir
+	 (if dr 
+	     dr 
+	   (if (not b)
+	       (concat-fname lushdir "doc/latex")
+	     (error "can't write document other than lush manual in default dir")))))
+    (printf "making LaTeX manual in %s (be patient...)\n" latex-dir)
+    (when (not (dirp latex-dir)) (mkdir latex-dir))
+    (sys (sprintf "rm %s/*.tex" latex-dir))
+    (==> book render-latex 
+	 (concat-fname latex-dir "lush-manual.tex") 
+	 "Lush 2: Reference Manual"
+	 "L\\'eon Bottou, Yann LeCun")
+    (printf "done\n")))
+
+
+(de make-pdf-manual (&optional b dr)
+  (make-latex-manual b dr)
+  (let ((oldwd (pwd)))
+    (cd lushdir)
+    (cd "doc/latex")
+    (sys "latex lush-manual.tex")
+    (sys "bibtex lush-manual")
+    (sys "latex lush-manual.tex")
+    (sys "dvipdf lush-manual.dvi")
+    (sys "mv lush-manual.pdf ..")
+    ;(sys "rm -f *")
+    (cd oldwd)
+    (printf "done\n") ) )

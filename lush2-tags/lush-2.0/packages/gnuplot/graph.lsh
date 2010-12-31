@@ -1,0 +1,166 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gnuplot")
+
+(defclass GnuplotGraph object
+  command    ; plot command
+  preamble   ; list of preamble instructions
+  lines      ; list of plot instructions and data
+  objects    ; list of other plot elements (with data)
+  linestyles ; optional linestyles
+  i-ls       ; next unused linestyle index
+  i-obj      ; next unused object index
+  )
+
+#? (new GnuplotGraph <cmd> [<linestyles>])
+;; Create an new graph based on gnuplot command <cmd> ("plot" or "splot").
+;; If a <linestyles> argument is given, use the user-defined line styles
+;; rather than gnuplot's builtin line styles.
+;;
+;; Example:
+;; {<code> (new GnuplotGraph "plot" (new GnuplotLinestyles))}
+(defmethod GnuplotGraph GnuplotGraph (cmd &optional lss)
+  (when (not (member cmd (list "plot" "splot")))
+    (error "not a valid gnuplot plot command" cmd) )
+  (setq command cmd)
+  (setq preamble ())
+  (setq lines ())
+  (setq objects ())
+  (setq linestyles lss)
+  (setq i-ls 1)
+  (setq i-obj 1)
+  (when linestyles
+    (==> this add-preamble "set style increment user")
+    (==> this add-preamble "set datafile missing 'nan'") )
+  ;(==> this add-preamble "set style arrow 1 front head filled size screen 0.02,15,45")
+  (==> this add-preamble "set style arrow 1 front head filled")
+  () )
+
+;; add a new line with plotting style <ps>, title <tl>, and <extra>
+;; instructions for data <data>. Return the linestyle index of the line.
+(defmethod GnuplotGraph add-line (ps extra data)
+  (declare (-str-) ps extra)
+  (assert (or  (listp data) (numericp data)))
+  (let ((text (if (str-find "title" extra)
+                  (sprintf "'-' with %s %s" ps extra)
+                (sprintf "'-' notitle with %s %s" ps extra) )))
+    (setq lines (nconc1 lines (cons text data))) )
+  (when linestyles
+    (==> this add-preamble (sprintf "set style line %d %s" i-ls (next linestyles))) )
+  (prog1 i-ls
+    (incr i-ls) ))
+
+;; add a new line for plotting style <ps> and arrange for it to be
+(defmethod GnuplotGraph add-line-binary (ps extra data)
+  (declare (-str-) ps extra)
+  (assert (or  (listp data) (numericp data)))
+  (let* ((bd (if (= (rank data) 3)
+                 (-binary-descriptor (idx-select data 2 0))
+               (-binary-descriptor data)) )
+               
+         (text (if (str-find "title" extra)
+                   (sprintf "'-' %s %s with %s" bd extra ps)
+                 (sprintf "'-' %s %s notitle with %s" bd extra ps) )))
+    (setq lines (nconc1 lines (cons text (new GnuplotBinary data)))) )
+  (when linestyles
+    (==> this add-preamble (sprintf "set style line %d %s" i-ls (next linestyles))) )
+  (prog1 i-ls
+    (incr i-ls) ))
+
+;; add pair of command-text and data to objects. Return the object index.
+(defmethod GnuplotGraph add-object (textf data)
+  (assert (stringp textf))
+  (assert (vectorp data))
+  ;; check that textf and data are compatible
+  (apply sprintf textf (data ()))
+  (setq textf (selectq (str-left textf 5)
+                ("arrow" (concat (sprintf "set arrow %d arrowstyle 1 " i-obj)
+                                 (str-right textf -5)) )
+                ("label" (concat (sprintf "set label %d " i-obj) (str-right textf -5)))
+                (t       (concat (sprintf "set object %d " i-obj) textf)) ))
+  (setq objects (nconc1 objects (cons textf data)))
+  (prog1 i-obj
+    (incr i-obj) ))
+
+
+;; add a command string to preamble
+(defmethod GnuplotGraph add-preamble (text)
+  (setq preamble (nconc1 preamble text))
+  ())
+
+
+;; create sequence of commands for gnuplot
+;; The last element in the list the actual plotting command
+(defmethod GnuplotGraph serialize ()
+  (append preamble
+          (when objects
+            (domapcar (((textf . data) objects))
+              (apply sprintf textf (data ())) ))
+          (when lines
+            (cons (sprintf "%s %s" command (str-join "," (mapcar car lines)))
+                  (mapcar cdr lines) ))
+          ))
+
+;; print the gnuplot script to the console, or, when a filename
+;; is given, write it into a file
+(defmethod GnuplotGraph dump (&optional filename)
+  (if filename
+      (writing (open-write filename) (==> this dump))
+    (dolist (s (==> this serialize))
+      (cond
+       ((stringp s)           (printf "%s\n" s))
+       ((indexp s)            (print-array s) (printf "e\n"))
+       ((isa s GnuplotBinary) (printf "# %l\n" s))
+       ((listp s)             (dolist (a s) (print-array a) (printf "e\n")) )
+       (t (error "don't know how to dump" s)) )
+      ))
+  ())
+
+(defmacro chk-graph ()
+  `(when (not (isa graph GnuplotGraph))
+     (error "not in plotting scope (graph undefined)") )
+  )
+
+
+;; --------------------------------------------
+
+(defmethod Gnuplot do-graph (g)
+  (if interactive
+      (dolist (s (==> g serialize)) (this s))
+    (let ((ans ""))
+      (when (> *gnuplot-version* 4.2)
+        (this "reset errors") )
+      (dolist (s (==> g serialize))
+        (if (atom s)
+            (setq ans (this s))
+          (setq ans (apply this s)) )
+        (when (> (length ans) 1)
+          (if (stringp s)
+              (==> this check-for-error s ans) 
+            (==> this check-for-error (sprintf "%l" s) ans) )))))
+  ())

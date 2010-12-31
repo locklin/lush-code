@@ -1,0 +1,166 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; access to C structs
+
+(libload "libc/cparse")
+
+(defvar *cstruct-registry* (htable))
+(defvar --cstruct-offsets-func ())
+
+(defclass cstruct object
+  ((-str-)  tag)          ; tag for runtime checks
+  ((-int-)  size)         ; size for allocation
+  ((-mptr-) ptr) )        ; reference to struct
+
+(defmethod cstruct cstruct (tg s p)
+  (declare (-str-) tg)
+  (declare (-int-) s)
+  (declare (-mptr-) p)
+  (when (<= s 0)
+    (error "invalid size") )
+  (setq tag tg)
+  (setq size s)
+  (if (= p NULL)
+      (progn 
+        (setq ptr (to-mptr #{ mm_blob($size) #}))
+        #{ memset($ptr, 0, $s); #} )
+    (setq ptr p) )
+  ())
+
+(dhc-make-class () cstruct)
+
+(defclass CStruct cstruct
+  fields
+  access)
+
+(defmethod CStruct CStruct (tg s p fs offs)
+  (==> this cstruct (nameof tg) s p)
+  (setq fields fs)
+  (setq access (htable))
+  (do (((f . type) fs) (i (ints)))
+    (access f (new-cref type (gptr+ ptr (offs i)))) )
+  ())
+
+(defmethod CStruct pretty ()
+  (let ((tb (tab)))
+    (printf "::cstruct<%s>:%p\n" tag ptr)
+    (dolist ((f . _) fields)
+      (tab tb)
+      (printf ";;\t%l = %l\n" f (eval (access f))) ))
+  (named tag))
+
+(dfmethod CStruct -listeval args
+  (let ((field (and args (car args))))
+    (when (and field (null (access field)))
+      (error (sprintf "not a field of struct '%l'" tag) field) )
+    (selectq (length args)
+      (0 ptr)
+      (1 (eval (access field)) )
+      (2 (assign (access field) (eval (cadr args))))
+      (t 
+       (error "invalid number of arguments") ))))
+
+
+#? * Access to C structs
+
+;; generate code that computes the offsets of all fields
+;; in struct <tag>.
+(defun make-offsetof-func (include tag fields)
+  (let ((n (+ (length fields) 1)))
+    `(lambda ()
+       (cheader ,(sprintf "#include \"%s\"" include))
+       (let ((offs (int-array ,n)))
+         (offs 0 (to-int (cinline ,(sprintf "sizeof(struct %l)" tag))))
+         ,@(domapcar (((field . _) fields) (i (range (+ (length fields) 1))))
+             (let ((code (sprintf "offsetof(struct %l,%l)" tag field)))
+               `(offs ,i (to-int (cinline ,code))) ))
+         offs))
+    ))
+
+#? (register-cstruct <filename> <tag>)
+;; Register the declaration of C struct <tag> in the 
+;; header file <filename> with the cstruct-access facility.
+;;
+;; After registering, new <tag>-structs may be created at
+;; runtime via <make-struct>, or existing (managed) 
+;; structs may be accessed via <access-struct>.
+(defun register-cstruct (include tag &optional pp)
+  (let ((fields (cparse-extract-struct-decl include tag pp))
+        (unload-last (lambda ()
+                       (mod-unload
+                        (module-filename (lasta (module-list))) ))) )
+    (setq include (filepath include))
+    ;; create offsetof func, load it, and store it in registry
+    (let ((offs (eval
+                 `(progn
+                    (setq --cstruct-offsets-func ,(make-offsetof-func include tag fields))
+                    (dhc-make ,(sprintf "%l_offsets" tag) --cstruct-offsets-func)
+                    (--cstruct-offsets-func) )
+                 )))
+      (*cstruct-registry* tag (list include (offs 0) fields (idx-trim offs 0 1))) )
+    
+    ;; clean up
+    (unload-last)
+    (delete --cstruct-offsets-func)
+    tag))
+
+
+#? (cstruct-info <tag>)
+;; Print information about C struct <tag>.
+(defun cstruct-info (tag)
+  (print)
+  (if (null (*cstruct-registry* tag))
+      (printf "  Struct unknown.\n")
+    (let (((file size fields offs) (*cstruct-registry* tag)))
+      (printf "  declared in '%s'\n" file)
+      (printf "  sizeof(struct %l) = %d\n" tag size)
+      (printf "  %d fields (%l ... %l)\n"
+              (length fields) 
+              (caar fields)
+              (caar (last fields)))
+      (print)
+      tag)))
+
+
+#? (make-cstruct <tag>)
+;; Make a new, cleared <tag>-struct.
+(defun make-cstruct (tag &optional p)
+  (when (not (symbolp tag))
+    (error "invalid tag (not a symbol)" tag) )
+  (when (null (*cstruct-registry* tag))
+    (error "unknown struct" tag) )
+  (let (((_ s fs offs) (*cstruct-registry* tag)))
+    (new CStruct tag s (or p NULL) fs offs) ))
+
+
+#? (access-cstruct <ptr> <tag>)
+;; Wrap the existing <tag>-struct at managed address <ptr>.
+(defun access-cstruct (p tag)
+  (make-cstruct tag p) )
+
+

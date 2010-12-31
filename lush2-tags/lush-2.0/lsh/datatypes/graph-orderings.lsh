@@ -1,0 +1,189 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "datatypes/int-graph")
+
+(import (do-vertices) from IntGraph)
+
+(defmacro -mmo-key (g v)
+  `(+ (* 100 (length (==> ,g deficiency ,v)))
+      (==> ,g degree ,v)) )
+
+;; minimum-deficiency/minimum-degree heuristic
+(defun minmin-ordering (g)
+  (declare (-obj- (IntGraph)) g)
+  (let* ((n  (==> g number-of-vertices))
+         (gg (deepcopy g))
+         (hp (new SmallIntHeap n))
+         (od (int-array n))
+         ;(vd (int-array n))
+         (ws (make-stack 32 int))
+         (i  0) )
+    (declare (-int-) n i)
+    ;; initialize heap
+    (do ((v :g:vertices))
+      (declare (-int-) v)
+      (==> hp insert (-mmo-key g v) v) )
+
+    ;; iterate and update heap
+    (do ((v hp))
+      (declare (-int-) v)
+      (od i v)
+      ;(vd i (==> gg vertex-degree v))
+
+      (with-object gg
+        (do-vertices (w adjacent-to v)  ; memorize neighboorhod of v
+          (declare (-int-) w)           ;
+          (push ws w) ))
+      
+      (==> gg eliminate-vertex v)
+      (==> hp remove v)
+
+      (for* (j 0 (length ws))           ; update deficiencies of neighbors
+        (declare (-int-) j)
+        (==> hp insert (-mmo-key g (ws j)) (ws j)) )
+    
+      (clear-stack ws)
+      (incr i) )
+    ;(array-sortdown! vd)
+    ;(list od vd)))
+    od))
+
+
+(libload "libidx/idx-sort")
+(libload "datatypes/dll")
+
+(defun print-q (q)
+  (printf "printing q...\n")
+  (while q
+    (if (consp (dll-item q))
+        (prin-dll (dll-item q))
+      (prin (dll-item q)) )
+    (print)
+    (setq q (dll-next q)) )
+  (print) )
+  
+
+;; Lexicographical breadth-first-search. See:
+;; Rose, Tarjan, Lueker: "Algorithmic Aspects of Vertex 
+;; Elimination on Graphs", SIAM J. Comput. 5(2), 1976.
+
+#? (lexbfs <graph>)
+;; Return lexbfs odering of vertices.
+(defun lexbfs (g)
+  (let* ((n (==> g number-of-vertices))
+         (sig (int-array n))             ; sigma
+         (set (atom-array n))            ; label set of v
+         (ds  (double-array n))          ; vertex degrees 
+         (vs  (int-array n))
+         (_   (progn
+                (do ((v :g:vertices))
+                  (decr n)
+                  (vs n v)
+                  (ds n (==> g degree v)) )
+                (array-sortdown! ds vs)
+                (setq n (length sig)) ))
+         (vs  (apply make-dll (vs ())))  ; make vs a dll
+         (q   (make-dll vs 'tail))       ; label queue
+         (qtl (dll-next q))              ; tail of q
+         (ql  ())                        ; node pointing to sl
+         (sl  ())                        ; largest label set
+         (fl  ())                        ; fix list
+         (v   ()) )                      ; next vertex
+     
+    (set () (.cl q))                     ; initialize set
+
+    (while (setq ql (dll-prev qtl))
+      (setq sl (dll-item ql))
+
+      ;; get next node and update linked list
+      (setq v (dll-item sl))
+      (setq sl (dll-remove sl sl))
+      (if sl
+          (dll-update ql sl)
+        (setq q (dll-remove q ql)) )
+      (assert (set v)) ; v is unnumbered
+      (set v ())
+      (decr n)
+      (sig n v)
+
+      (with-object g
+        (do-vertices (w adjacent-to v)
+          (when (set w)
+            ;; create new set
+            (when (not (getp (set w) 'flag))
+              (dll-insert-after (set w) ()) ; new empty set
+              (putp (set w) 'flag t)
+              (setq fl (cons (set w) fl)) )
+            ;; update sets
+            (let* ((qw (set w))
+                   (sw (dll-item qw))
+                   (qn (dll-next qw))
+                   (sn (dll-item qn)) )
+              (assert (dll-find sw w))
+              (setq sw (dll-remove sw (dll-find sw w)))
+              (dll-update qw sw)
+              (dll-update qn (dll-insert-before sn w))
+              (set w qn) ))))
+
+      ;; process fix list
+      (while fl
+        (putp (car fl) 'flag ())
+        (when (null (dll-item (car fl)))
+          (setq q (dll-remove q (car fl))) )
+        (setq fl (cdr fl)) ))
+
+    (when (<> q qtl)
+      (printf "vertices still in q:\n")
+      (print-q q) )
+    sig))
+              
+(defun test-lexbfs (n m)
+  (let ((g (random-graph n m)))
+    (pretty g)
+    (let ((od (lexbfs g)))
+      (pretty od)
+      (pretty (==> g vector-dimension od)) )
+    g))
+
+;; fill-in of ordered graph (<g> <ord>)
+(defun fill-in (g ord eg)
+  (declare (-obj- (IntGraph)) g eg)
+  (declare (-idx1- (-int-)) ord)
+
+  (when (<> (length ord) (==> g number-of-vertices))
+    (error "not a valid ordering (length mismatch)") )
+  (let ((gg (deepcopy g)))
+    (for* (i 0 (length ord))
+      (declare (-int-) i)
+      (when (not (==> :gg:vertices member (ord i)))
+        (errorf "invalid or duplicate vertex %d" (ord i)) )
+      (==> eg insert-arcs (==> gg deficiency (ord i)))
+      (==> gg eliminate-vertex (ord i)) )
+    eg))
+
+(dhc-make () minmin-ordering fill-in)

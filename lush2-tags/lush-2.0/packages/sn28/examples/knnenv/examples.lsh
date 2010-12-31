@@ -1,0 +1,147 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: examples.lsh,v 1.2 2003/03/18 18:17:12 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "sn28/sn28")
+
+(de go ()
+
+    (printf "*********LOADING  IRIS DATA SETS*********\n")
+    ;;load learning set and test set
+    (load-iris)
+  
+    (printf "\n\n*********TESTING 1NN METHOD*********\n")
+    ;;nearest-neighbor performance
+    (printf "performance=%f\n" (perf-knn iris-t iris-a 1))
+    (printf "Printing confusion matrix\n")
+    (pretty (confusion-knn iris-t iris-a 1))
+
+    (printf "\n\n*********TESTING SOME PREPROCESSING*********\n")
+    (printf "Multi-editing learning set\n")
+    (setq multi-edited (multiedit iris-a 3))
+    (printf "1NN performance on multi-edited set =%f\n" (perf-knn iris-t multi-edited 1))
+    (printf "Condensing the multi-edited set\n")
+    (setq condensed (condense multi-edited))
+    (printf "1NN performance on condensed  set = %f\n" 
+    	    (perf-knn iris-t condensed 1))
+    (printf "Condensing without multi-edit:\n")
+    (setq condensed (condense iris-a))
+    (printf "1NN performance after condensing learning set = %f"
+    	    (perf-knn iris-t condensed 1))
+
+
+
+    (printf " \n\n********* UNSUPERVISED KMEANS*********\n")
+    (printf "learning process with 9 references\n")
+    (setq kiris-a (k-means iris-a 9))
+    (printf "assign class to references\n")
+    (codebook-assign-labels     iris-a kiris-a)
+    (printf "1NN performance = %f\n" 
+    	    (perf-knn iris-t kiris-a  1))
+
+    (printf "Performances of a few  test examples\n")
+    (for (i 0 9)
+	 (let*((random (int (rand 0 (bound (codebook-word iris-t) 1))))
+	       (answer (test-knn iris-t random kiris-a 1)))
+	   (printf "testing  example %3d of test set = " random)
+	   (if (= answer t)							
+	       (printf "well-classified\n")
+	       (printf "misclassified\n"))))
+    (printf "have a  look to the labels of the 9 references\n")
+    (pretty (codebook-label  kiris-a))	
+    (printf "\n note that there are:\n")	
+    (printf "     2 references dedicated to class 0\n")
+    (printf "     3 references dedicated to class 1\n")
+    (printf "     4 references dedicated to class 2\n")
+
+
+    (printf " \n\n********* SUPERVISED KMEANS*********\n")
+    (printf "learning process with 3 references per class\n")	
+    (setq kiris-a (k-means-class  iris-a 3))
+    (printf "1NN performance = %f"
+	    (perf-knn iris-t kiris-a  1))
+
+
+    (printf "\n\n********* LVQ1*********\n")
+    (printf "learning with 3 references per class\n")
+    (printf "on 20 iteratiobns\n")
+    (setq kiris-a (init-lvq-class  iris-a 3))
+    (learn-lvq 1 iris-a kiris-a 20)
+    (printf "LVQ1 performance = %f"
+    	    (perf-knn iris-t kiris-a  1))
+
+    (printf "\n\n********* LVQ2*********\n")
+    (printf "learning with 3 references per class\n")
+    (setq kiris-a (init-lvq-class  iris-a 3))
+    (learn-lvq 2 iris-a kiris-a 20)
+    (printf "LVQ2 performance = %f"
+	    (perf-knn iris-t kiris-a  1))
+
+    (printf "\n\n********* LVQ3*********\n")
+    (printf "learning with 3 references per class\n")
+    (setq kiris-a (init-lvq-class  iris-a 3))
+    (learn-lvq 3 iris-a kiris-a 20)
+    (printf "LVQ3 performance = %f"
+    	    (perf-knn iris-t kiris-a  1))
+
+    ;saving any of the above algorithms computed codebooks
+    ;for example kiris-a is saved in the file results.cb
+    (save-codebook kiris-a "results")
+
+    (printf "\n\n*********RADIAL BASIS FUNCTIONS*********\n")
+    (printf "Initializing RBF with 5 nodes per class\n")
+    (init-rbf iris-a 5)
+    (printf "Performing 100 RBF learning steps (decreasing epsilons)\n")
+    (learn-rbf iris-a 100)
+    (printf "Performances of RBF algorithm\n")
+    (perf-rbf iris-t)
+
+    ;saving the RBF weights
+    ;saving the codebook containing the nodes
+    (save-codebook rbf-codebook "nodes")
+    ;saving the nodes widths and linear weights
+    (save-net "sigmaw")	
+
+    ;for loading previously saved rbf weights
+    (init-rbf iris-a 5)
+    (setq rbf-codebook (load-codebook "nodes"))
+    (load-net "sigmaw")
+
+    (printf "\n Remove  all files build by this program\n")
+    (unlink "sigmaw.wei")
+    (unlink "nodes.cb")
+    (unlink "results.cb")
+
+    )

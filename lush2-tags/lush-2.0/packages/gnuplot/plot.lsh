@@ -1,0 +1,440 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gnuplot/gnuplot")
+(libload "gnuplot/styles")
+(libload "gnuplot/graph")
+(libload "gnuplot/objects")
+(libload "gnuplot/other")
+
+(defun validate-plot-args (args valid-ncols)
+  (let (((data &rest extra) args))
+    (if (consp data)
+        (dolist (a data)
+          (when (not (and (indexp a) (numericp a)))
+            (error "not valid plot data (not a numeric array)" a) ))
+      (when (not (and (indexp data) (numericp data)))
+        (error "not valid plot data (not a numeric array)" data) )
+      (when (= (rank data) 1)
+        (setq data ($> data)) )
+      (when (<> (rank data) 2)
+        (error "not valid plot data (not a matrix)" data) )
+      (when (not (member (shape data 1) valid-ncols))
+        (error "invalid number of data columns" (shape data 1)) ))
+    (cons data extra) ))
+
+;; The info below is gleaned from enum PLOT_STYLE in gp_types.h.
+;; Find the latest version at
+;; http://gnuplot.cvs.sourceforge.net/viewvc/gnuplot/gnuplot/src/gp_types.h?view=markup
+;;
+;; gnuplot-plot-styles encodes what styles and options apply for
+;; what 2d-plotting styles.
+;; Entries: <name> <has-line> <has-point> <has-errorbar> <has-fill> <basic-ncols>]
+(defparameter *gnuplot-plot-styles* 
+  [a[a lines           t () () () (1 2)]
+    [a points         ()  t () () (1 2)]
+    [a impulses        t () () () (1 2)]
+    [a linespoints     t  t () () (1 2)]
+    [a dots           () () () () (1 2)]
+    [a xerrorbars     ()  t  t () (3 4)]
+    [a yerrorbars     ()  t  t () (3 4)]
+    [a xyerrorbars    ()  t  t () (4 6)]
+    [a boxxyerrorbars  t () ()  t (4 6)]
+    [a boxes           t () ()  t (2 3)]
+    [a boxerrorbars    t () ()  t (3 4 5)]
+    [a steps           t () () () (1 2)]
+    [a fsteps          t () () () (1 2)]
+    [a histeps         t () () () (1 2)]
+    [a vectors         t () () () (4)]
+    [a candlesticks   () ()  t  t (5)]
+    [a financebars     t () () () (5)]
+    [a xerrorlines     t  t  t () (3 4)]
+    [a yerrorlines     t  t  t () (3 4)]
+    [a xyerrorlines    t  t  t () (4 6)]
+    [a filledcurves    t () ()  t (1 2 3)]
+    ;[a pm3d           () () () ()]     ; splot only
+    ;[a labelpoints    () () () () (3)] ; do by hand
+    [a histograms     () () ()  t (1)] ; do by hand
+    [a image          () () () () (3)] ; do by hand
+    ;[a rgbimage       () () () () (5)] ; do by hand
+    ;[a rgbalpha       () () () () (6)] ; do by hand
+    [a circles         t () ()  t (3)]] )
+
+(defun process-line-args (style extra data)
+  (let ((fs-d "") (fs-bc "") (args ()))
+    (domapc ((x extra))
+      (if (stringp x)
+          (setq args (cons x args))
+        (let (((f arg) x))
+          (when (member f '(ps-variable ps pt))
+            (when (not (has-point style))
+              (error "plotting style has no points" style) ))
+          (when (member f '(lw lt))
+            (when (not (has-line style))
+              (error "plotting style has no lines" style) ))
+          (when (member f '(lc-variable lc-rgb))
+            (when (not (or (has-point style) (has-line style)))
+              (error "plotting style has not lines or points") ))
+          (when (member f '(fill bc))
+            (when (not (has-fill style))
+              (error "plotting style has no fill" style) ))
+          (when (member f '(origin dx dy))
+            (when (<> style 'image)
+              (error "modifier only valid with plot-style image" f) ))
+          
+          (selectq f
+            (fill (setq fs-d (sprintf "transparent solid %f" arg)))
+
+            (noborder (setq fs-bc "noborder"))
+
+            (bc-rgb
+             (when (not (*gnuplot-colors* arg))
+               (error 'bc "unkown color" arg) )
+             (setq fs-bc (sprintf "border rgb \"%l\"" arg)) )
+
+            (ps-variable 
+             (when (<> (length data) (length arg))
+               (error 'ps "length of pointsize vector does not match length of data" ps) )
+             (setq data (mat-catrows data ($> arg)))
+             (setq args (cons "ps variable" args)) )
+             
+            (ps (setq args (cons (sprintf "ps %l" arg) args)))
+            
+            (pt (setq args (cons (sprintf "pt %l" arg) args))) 
+                      
+            (lc-variable
+             (when (<> (length data) (length arg))
+               (error 'lc "length of linecolor matrix does not match length of data" arg) )
+             (let ((lcc ##(idx-select data 1 0)))
+               ;; translate into gnuplot's data format
+               (idx-bloop ((rgb arg) (lc lcc))
+                 (lc (+ (* 65536 (rgb 2)) (* 256 (rgb 1)) (rgb 0))) )
+               (setq data (mat-catrows data ($> lcc))) )
+             (setq args (cons "lc rgb variable" args)) )
+                      
+            (lc-rgb
+             (when (not (*gnuplot-colors* arg))
+               (error 'lc "unkown color" arg) )
+             (setq args (cons (sprintf "lc rgb \"%l\"" arg) args)) )
+            
+            (lw (setq args (cons (sprintf "lw %l" arg) args)))
+            
+            (lt (setq args (cons (sprintf "lt %l" arg) args)))
+
+            ;; for plot-style image only
+            (origin  (setq args (cons (sprintf "origin=(%f,%f)" (arg 0) (arg 1)) args)) )
+            
+            ((dx dy) (setq args (cons (sprintf "%l=%f" f arg) args)) )
+            
+            (t (error style "invalid plot-line modifier" (list f arg))) ))))
+    (setq args (str-join " " args))
+    (when (or (<> fs-d "") (<> fs-bc ""))
+      (setq args (concat args (sprintf " fs %s %s" fs-d fs-bc))) )
+    (list args (deepcopy data)) ))
+
+(defmacro def-plot (style valid-ncols)
+  (assert (symbolp style))
+  (assert (listp valid-ncols))
+  `(defun ,style args
+     (chk-graph)
+     (let (((data . extra) (validate-plot-args args ',valid-ncols)))
+       (let (((extra data) (process-line-args #:(quote ,style) extra data)))
+         (==> graph add-line ,(nameof style) extra data) ))
+     ())
+  )
+
+#? (plot* <l1> .. <ln>)
+;; {<see> Plot-line generating functions}
+;; Compose a new graph from plot instructions <l1> .. <ln> and return it.
+;;
+;; When <plot*> appears within the scope of another <plot*> or
+;; <plot> then the plot instructions are added to the graph of the 
+;; enclosing <plot*>-form. 
+(df plot* forms
+  (with-namespace gnuplot-plot-
+    (let ((graph (or graph (new GnuplotGraph "plot" (new GnuplotLinestyles)))))
+      (dolist (f forms)
+        (setq f (eval f))
+        (when (hasmethod f '-plot)
+          (==> f -plot) ))
+      graph)))
+
+
+#? (plot <l1> .. <ln>) 
+;; {<see> Plot-line generating functions}
+;; Compose a new graph from plot instructions <l1> .. <ln>, send it
+;; to a <Gnuplot> instance, and return the <Gnuplot> instance.
+;;
+;; If symbol <plotter> is bound to a <Gnuplot> instance then <plot>
+;; sends the graph to <plotter>, otherwise it creates a new <Gnuplot>
+;; object. Note that, when providing <plotter>, <plot> does not send
+;; any extra commands to <plotter> to prepare gnuplot for a new plot
+;; (cf. help for gnuplot commands "reset" and "clear").
+(df plot forms
+  (let ((gp (or plotter (new Gnuplot 'interactive ())))
+        (g (eval `(plot* ,@forms))) )
+    (==> gp do-graph g)
+    gp))
+
+
+#? * Plot-line Generators
+;; The following functions each visualize a single data set
+;; in on of the plotting styles understood by gnuplot's plot command.
+;; The functions are to be used in a <plot*>- or <plot>-form.
+;;
+;; Each line-generating function takes the data set (a vector or
+;; matrix), an optional legend key (a string), and other optional 
+;; line-modifying arguments (see below).
+
+(in-namespace gnuplot-plot-
+
+(defparameter has-point (htable 20 t t))
+(defparameter has-line  (htable 20 t t))
+(defparameter has-error (htable 20 t t))
+(defparameter has-fill  (htable 20 t t))
+
+(do ((ps *gnuplot-plot-styles*))
+  (eval `(progn
+           (has-line  ',(ps 0) ,(ps 1))
+           (has-point ',(ps 0) ,(ps 2)) 
+           (has-error ',(ps 0) ,(ps 3))
+           (has-fill  ',(ps 0) ,(ps 4))
+           (def-plot  ,(ps 0) ,(ps 5)) )
+        ))
+
+#? (boxes <data> [...])
+;; Plot data with boxes.
+
+#? (circles <data> [...])
+;; Plot data with circles.
+
+#? (dots <data> [...])
+;; Plot data with dots.
+
+#? (image <data> [...])
+;; Plot <data> as image. When <data> is a plain matrix, plot as grayscale
+;; image. When <data> is <m>x<n>x<3>-dimensional, plot as RGB image,
+;; when <m>x<n>x<4>-dimensional, as RGBA image.
+;;
+;; Note that every data point is visualized as a colored rectangle. The
+;; coordinates of the rectangle's center points may be controlled by the
+;; <origin>, <dx>, and <dy> modifiers, respectively. 
+(defun image (data . args)
+  (chk-graph)
+  (let ((ps "") ((extra data) (process-line-args #:'image args data)))
+    (selectq (rank data)
+      (2 (==> graph add-line-binary "image" extra data))
+      (3 (selectq (shape data 2)
+           (1 (==> graph add-line-binary "image" extra data))
+           (3 (==> graph add-line-binary "rgbimage" extra data))
+           (4 (==> graph add-line-binary "rgbaimage" extra data))
+           (t (error "number of data planes not supported" data)) ))
+      (t (error "not valid plot data (not a matrix)" data)) )))
+
+#? (lines <data> [...])
+;; Plot data with lines.
+
+#? (linespoints <data> [...])
+;; Plot data with lines and points.
+
+#? (xerrorbars <data> [...])
+;; Plot data with dots and x-error bars.
+
+#? (yerrorbars <data> [...])
+;; Plot data with dots and y-error bars.
+
+#? (xyerrorbars <data> [...])
+;; Plot data with dots and x/y-error bars.
+
+#? (points <data> [...])
+;; Plot data with points.
+
+
+#? * Plot-line Modifiers
+;; The functions in this category modify appearance of an individual
+;; line and may appear as optional argument in a plot-line generating
+;; function.
+;;
+;; Example:
+;; {<code> (linespoints xy (key "temperature") (axes 'x1y2) (ps p))) </code>}
+;;
+;; Note: Not all plot-line modifiers are applicable with all plot styles.
+;; While all styles except the image styles accept <lc>, the <points> type,
+;; for instance, has no interior and no lines. Therefore <lw>, <lt>, <fill>
+;; and <bc> are not applicable with <points>.
+
+#? (key <s>)
+;; Add key <s> to legend for this plot-line.
+(defun key (arg)
+  (if (stringp arg)
+      (sprintf "title %l" arg)
+    (error "not a string" arg) ))
+
+
+#? (axes <a>)
+;; Select axes for this plot-line.
+;; Possible values are <'x1y1>, <'x1y2>, <'x2y1>, and <'x2y2>.
+(defun axes (arg)
+  (if (member arg '(x1y1 x1y2 x2y1 x2y2))
+      (sprintf "axes %l" arg)
+    (error "invalid axes argument" arg) ))
+
+
+#? (lc <arg>)
+;; Choose line color for this plot-line.
+;
+;; <Arg> may be either be string (a named color) or an <n>x<3> matrix
+;; of gray-level values in the range [0..255] with same length as 
+;; <data> (variable rgb color).
+(defun lc (arg)
+  (cond
+   ((symbolp arg) `(lc-rgb ,arg))
+   ((stringp arg) `(lc-rgb ,(named arg)))
+   ((and (indexp arg) (= (rank arg) 2) (= (shape arg 1) 3)) `(lc-variable ,arg))
+   (t (error "invalid argument" arg)) ))
+
+
+#? (lt <n>)
+;; Choose line type for this plot-line.
+;;
+;; Line type is a terminal-specific property. Send "test" to gnuplot
+;; to see available line types.
+(defun lt (arg)
+  (if (integerp arg)
+      #:`(lt ,arg)
+    (error "not an integer" arg) ))
+
+
+#? (lw <w>)
+;; Choose line width for this plot-line.
+(defun lw (arg)
+  (if (numberp arg)
+      (if (> 0 arg)
+          (error "invalid line width" arg)
+        #:`(lw ,arg) )
+    (error "not a number" arg) ))
+
+
+#? (ps <arg>)
+;; Choose point size for this plot-line.
+;;
+;; <Arg> may either be a number (multiple of the global point size) or
+;; a vector with same length as <data> (variable point size).
+(defun ps (arg)
+  (cond
+   ((vectorp arg) `(ps-variable ,arg))
+   ((numberp arg) #:`(ps ,arg))
+   (t (error "invalid argument" arg)) ))
+
+
+#? (pt <n>)
+;; Choose point type for this plot-line.
+;;
+;; Point type is a terminal-specific property. Send "test" to gnuplot
+;; to see available point types.
+(defun pt (arg)
+  (if (integerp arg)
+      #:`(pt ,arg)
+    (error "not an integer" arg) ))
+
+
+#? (fill <density>)
+;; Set fill density (number between 0 and 1) for this plot-line.
+(defun fill (arg)
+  (when (not (numberp arg))
+    (error "not a number" arg) )
+  (when (or (> arg 1) (< arg 0))
+    (error "not a valid density value" arg) )
+  #:`(fill ,arg)
+  )
+
+
+#? (bc [<arg>])
+;; Choose border color for this plot-line. With no argument,
+;; don't draw a border.
+;;
+;; Example:
+;; {<code> (bc 'black) </code>}
+(defun bc (&optional arg)
+  (cond
+   ((null arg)    `(noborder ()))
+   ((symbolp arg) `(bc-rgb ,arg))
+   ((stringp arg) `(bc-rgb ,(named arg)))
+   (t (error "invalid argument" arg)) ))
+
+#? * Modifiers for Images
+;; The following modifiers apply to the <image> plot style only.
+
+#? (origin <[x0 y0]>)
+;; Set coordinates for the lower left data point or pixel (default is [0 0]).
+(defun origin (arg)
+  (when (not (and (vectorp arg) (= (length arg) 2)))
+    (error "invalid origin" arg) )
+  #:`(origin ,arg)
+  )
+
+#? (dx <d>)
+;; Set sampling interval for grid-data.
+(defun dx (arg)
+  (when (not (numberp arg))
+    (error "not a number" arg) )
+  (when (not (> arg 0))
+    (error "sampling interval must be positive" arg))
+  #:`(dx ,arg)
+  )
+
+#? (dy <d>)
+;; {<see> dx}
+;; Set different sampling interval for Y-direction.
+(defun dy (arg)
+  (when (not (numberp arg))
+    (error "not a number" arg) )
+  (when (not (> arg 0))
+    (error "sampling interval must be positive" arg))
+  #:`(dy ,arg)
+  )
+
+(import all from gnuplot-other-)
+
+) ; namespace gnuplot-plot-
+
+
+;; -plot method for some builtin types
+
+(defmethod String -plot ()
+  (==> graph add-preamble this) )
+
+(defmethod Index -plot ()
+  (selectq (rank this)
+    (1 (lines this))
+    (2 (if (= (shape this 1) 2)
+           (lines this)
+         (error "don't know how to plot" this) ))
+    (t (error "don't know how to plot" this)) ))
+
+     
+

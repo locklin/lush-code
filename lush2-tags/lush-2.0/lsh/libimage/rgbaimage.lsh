@@ -1,0 +1,1376 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** RGBA Images of ubytes
+;; basic image processing on RGBA images
+;; where each pixel component is an unsigned byte.
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; linear coordinate transform using bilinear interpolation.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libidx/idx-macros")
+(libload "libidx/idx-sort")
+(libload "libidx/idx-int")
+(libload "libimage/image-transform")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? rgbaimage
+;; a rgbaimage is an idx3 of ubytes intended to store images.
+;; The last dimension is 4, and contains the R,G,B, and Alpha
+;; channels respectively.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; subsampling
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+
+#? ** Geometric Transforms
+;; A few functions to enlarge, reduce, resize, and rotate images.
+
+#? (rgbaim-resize <im> <width> <height> <mode>)
+;; resize an rgba image to any size using bilinear interpolation
+;; Appropriate local averaging (smoothing) is performed for scaling 
+;; factors smaller than 0.5. If one of the desired dimensions is
+;; 0, an aspect-ratio-preserving scaling is performed on
+;; the basis of the other dimension. When both <width> and <height>
+;; are non zero, the last parameter, <mode> determines how they are
+;; interpreted.
+;;
+;;.LI 
+;; if either <width> or <height> is zero, <mode> is ignored.
+;;.LI 
+;; mode=0: fit the image into a <width> by <height> frame while preserving the aspect ratio
+;;.LI 
+;; mode=1: scale the image to <width> by <height> possibly changing the aspect ratio
+;;.LI 
+;; mode=2: <width> and <height> are interpreted as scaling ratios
+;;.P
+;; The sizes of the output image are rounded to nearest integers
+;; smaller than the computed sizes, or to 1, whichever is largest.
+(de rgbaim-resize (im w h mode)
+    ((-idx3- (-ubyte-)) im)
+    ((-double-) w h mode)
+    (let* ((imw (idx-dim im 1))
+	   (imh (idx-dim im 0))
+	   (rw 0)
+	   (rh 0))
+      ;; determine actual size of output image
+      (cond 
+       ((or (= 0 w) (= 0 h))
+	(if (= 0 w) 
+	    (if (= 0 h) 
+		(error "desired width and height cannot be both zero")
+	      (setq w (max 1 (int (* imw (/ h imh))))))
+	  (setq h (max 1 (int (* imh (/ w imw)))))))
+       ((= mode 0)
+	(let* ((r (min (/ w imw) (/ h imh))))
+	  (setq w (max 1 (int (* r imw))))
+	  (setq h (max 1 (int (* r imh))))))
+       ((= mode 1) (setq w (max 1 (int w))) (setq h (max 1 (int h))))
+       ((= mode 2) 
+	(setq w (max 1 (int (* w imw))))
+	(setq h (max 1 (int (* h imh)))))
+       (t (error "illegal mode or desired dimensions")))
+      ;; compute closest integer subsampling ratio
+      (setq rw (div imw w))
+      (setq rh (div imh h))
+      ;; subsample by integer ratio if necessary
+      (when (or (<> 0 rh) (<> 0 rw))
+	(setq im (rgbaim-subsample im rh rw))
+	(setq imw (idx-dim im 1))
+	(setq imh (idx-dim im 0)))
+      ;; resample from subsampled image with bilinear interpolation
+      (let ((rez (ubyte-array h w 4))
+	    (bg (ubyte-array 4))
+	    ;; the 0.5 thingies are necessary because warp-bilin interprets 
+	    ;; integer coordinates as beiing at the center of each pixel.
+	    (x1 -0.5) (y1 -0.5) (x3 (- imw 0.5)) (y3 (- imh 0.5))
+	    (p1 -0.5) (q1 -0.5) (p3 (- w 0.5)) (q3 (- h 0.5)))
+	(rgbaim-warp-quad im rez bg 1 x1 y1 x3 y1 x3 y3 x1 y3 p1 q1 p3 q3)
+	rez)))
+
+
+#? (rgbaim-enlarge <in> <nlin> <ncol>)
+;; enlarges image <in> with integer ratios <nlin> (vertical) <ncol>
+;; (horizontal). the enlarged image is returned.
+;; The horizontal (resp. vertical) size of the returned image is 
+;; equal to the integer part of the horizontal (resp vertical)
+;; size of <in> divided by <ncol> (resp <nlin>).
+;; returns (copy-array <in>) when enlarge rate is 1
+(de rgbaim-enlarge (in nlin ncol)
+    ((-idx3- (-ubyte-)) in)
+    ((-int-) nlin ncol)
+    (cheader "\
+#define BLK_COPY(nlin, ncol) {\\\n\
+  int k,l;\\\n\
+  int acc0=pin[0], acc1=pin[1], acc2=pin[2], acc3=pin[3];\\\n\
+  for (k=0; k<nlin; k++) {\\\n\
+    unsigned char *poutptr = pout+k*out_mod0;\\\n\
+    for (l=0; l<ncol; l++) {\\\n\
+    poutptr[0]=acc0 ; poutptr[1]=acc1 ; poutptr[2]=acc2 ; poutptr[3]=acc3 ;\\\n\
+    poutptr += out_mod1;  }}}\n")
+    (let* ((h (idx-dim in 0))
+           (w (idx-dim in 1))
+           (nh (int (* h nlin)))
+           (nw (int (* w ncol)))
+           (out (ubyte-array nh nw 4)))
+      ((-int-) h w nh nw)
+      #{{
+      unsigned char *in_line, *pin;
+      unsigned char *out_line, *pout;
+      int i, _imax = ($in)->dim[0];
+      int j, _jmax = ($in)->dim[1];
+      int in_mod0 = ($in)->mod[0];
+      int in_mod1 = ($in)->mod[1];
+      int out_mod0 = ($out)->mod[0];
+      int out_mod1 = ($out)->mod[1];
+      int pout_incr = $ncol * out_mod1;
+
+      in_line = IDX_PTR (($in), unsigned char);
+      out_line = IDX_PTR (($out), unsigned char);
+      for (i = 0; i < _imax; i++) {
+        pin = in_line;
+        pout = out_line;
+        for (j = 0; j < _jmax; j++) {
+          BLK_COPY($nlin, $ncol);
+          pin += in_mod1;
+          pout += pout_incr;
+	  }
+	  in_line += in_mod0;
+	  out_line += out_mod0 * $nlin;
+	}
+        } #}
+  out)))
+
+
+#? (rgbaim-enlarge-into <in> <out> <nlin> <ncol>)
+;; enlarges image <in> with integer ratios <nlin> (vertical) <ncol>
+;; (horizontal) and write result in <out>.
+;; The horizontal (resp. vertical) size of the output image is 
+;; equal to the integer part of the horizontal (resp vertical)
+;; size of <in> divided by <ncol> (resp <nlin>).
+(de rgbaim-enlarge-into (in out nlin ncol)
+    ((-idx3- (-ubyte-)) in out)
+    ((-int-) nlin ncol)
+
+    (let* ((h (to-int (idx-dim in 0)))
+           (w (to-int (idx-dim in 1)))
+           (nh (to-int (* h nlin)))
+           (nw (to-int (* w ncol)))
+           )
+      ((-int-) h w nh nw)
+      (when (or (> nh (idx-dim out 0)) (> nw (idx-dim out 1)))
+        (idx-u3resize out nh nw 4)
+        )
+      (if (and (= nlin 1) (= ncol 1))
+          (progn (array-copy in out) ())
+      #{{
+      unsigned char *in_line, *pin;
+      unsigned char *out_line, *pout;
+      int i, _imax = ($in)->dim[0];
+      int j, _jmax = ($in)->dim[1];
+      int in_mod0 = ($in)->mod[0];
+      int in_mod1 = ($in)->mod[1];
+      int out_mod0 = ($out)->mod[0];
+      int out_mod1 = ($out)->mod[1];
+      int pout_incr = $ncol * out_mod1;
+
+      in_line = IDX_PTR (($in), unsigned char);
+      out_line = IDX_PTR (($out), unsigned char);
+      for (i = 0; i < _imax; i++) {
+        pin = in_line;
+        pout = out_line;
+        for (j = 0; j < _jmax; j++) {
+          BLK_COPY($nlin, $ncol);
+          pin += in_mod1;
+          pout += pout_incr;
+	  }
+	  in_line += in_mod0;
+	  out_line += out_mod0 * $nlin;
+	}
+        } #}
+  ())))
+
+
+#? (rgbaim-subsample <in> <nlin> <ncol>)
+;; subsamples image <in> with integer ratios <nlin> (vertical) <ncol>
+;; (horizontal). the subsampled image is returned.
+;; The horizontal (resp. vertical) size of the returned image is 
+;; equal to the integer part of the horizontal (resp vertical)
+;; size of <in> divided by <ncol> (resp <nlin>).
+;; returns (copy-array <in>) when subsample rate is 1
+(de rgbaim-subsample (in nlin ncol)
+    ((-idx3- (-ubyte-)) in)
+    ((-int-) nlin ncol)
+    (cheader "\
+#define BLK_AVRG(nlin, ncol) {\\\n\
+  int k,l; int norm = ncol * nlin;\\\n\
+  int acc0=0, acc1=0, acc2=0, acc3=0;\\\n\
+  for (k=0; k<nlin; k++) {\\\n\
+  register unsigned char *pinptr = pin+k*in_mod0;\\\n\
+  for (l=0; l<ncol; l++) {\\\n\
+  acc0 += pinptr[0];acc1 += pinptr[1];acc2 += pinptr[2];acc3 += pinptr[3];\\\n\
+  pinptr += in_mod1; }}\\\n\
+  pout[0] = acc0 / norm;pout[1] = acc1 / norm;pout[2] = acc2 / norm; pout[3]= acc3 / norm;}\n")
+    
+    (let* ((h (idx-dim in 0))
+           (w (idx-dim in 1))
+           (nh (int (/ h nlin)))
+           (nw (int (/ w ncol)))
+           (inp (narrow (narrow in 0 (* nlin nh) 0) 1 (* ncol nw) 0))
+           (out (ubyte-array nh nw 4)))
+      ((-int-) h w nh nw)
+      
+      (if (and (= nlin 1) (= ncol 1))
+          (copy-array in)
+      #{{
+      unsigned char *in_line, *pin;
+      unsigned char *out_line, *pout;
+      int i, _imax = ($out)->dim[0];
+      int j, _jmax = ($out)->dim[1];
+      int in_mod0 = ($inp)->mod[0];
+      int in_mod1 = ($inp)->mod[1];
+      int out_mod0 = ($out)->mod[0];
+      int out_mod1 = ($out)->mod[1];
+      int pin_incr = $ncol * in_mod1;
+
+      in_line = IDX_PTR (($inp), unsigned char);
+      out_line = IDX_PTR (($out), unsigned char);
+      for (i = 0; i < _imax; i++) {
+        pin = in_line;
+        pout = out_line;
+        for (j = 0; j < _jmax; j++) {
+          BLK_AVRG($nlin, $ncol);
+          pin += pin_incr;
+          pout += out_mod1;
+	  }
+	  in_line += in_mod0 * $nlin;
+	  out_line += out_mod0;
+	}
+        } #}
+  out)))
+
+      
+      
+#? (rgbaim-subsample-into <in> <out> <nlin> <ncol>)
+;; subsamples image <in> with integer ratios <nlin> (vertical) <ncol>
+;; (horizontal) and write result into <out>. 
+;; The horizontal (resp. vertical) size of the output image is 
+;; equal to the integer part of the horizontal (resp vertical)
+;; size of <in> divided by <ncol> (resp <nlin>).
+(de rgbaim-subsample-into (in out nlin ncol)
+  ((-idx3- (-ubyte-)) in out)
+  ((-int-) nlin ncol)
+    
+  (let* ((h (idx-dim in 0))
+	 (w (idx-dim in 1))
+	 (nh (int (/ h nlin)))
+	 (nw (int (/ w ncol)))
+	 (inp (narrow (narrow in 0 (* nlin nh) 0) 1 (* ncol nw) 0))
+	 )
+    ((-int-) h w nh nw)
+    (idx-u3resize out nh nw 4)
+    (if (and (= nlin 1) (= ncol 1))
+	(progn (array-copy in out) ())
+					#{{
+      unsigned char *in_line, *pin	;
+      unsigned char *out_line, *pout	;
+      int i, _imax = ($out)->dim[0]	;
+      int j, _jmax = ($out)->dim[1]	;
+      int in_mod0 = ($inp)->mod[0]	;
+      int in_mod1 = ($inp)->mod[1]	;
+      int out_mod0 = ($out)->mod[0]	;
+      int out_mod1 = ($out)->mod[1]	;
+      int pin_incr = $ncol * in_mod1	;
+
+      in_line = IDX_PTR (($inp), unsigned char)	;
+      out_line = IDX_PTR (($out), unsigned char) ;
+      for (i = 0			; i < _imax; i++) {
+      pin = in_line			;
+      pout = out_line			;
+      for (j = 0			; j < _jmax; j++) {
+      BLK_AVRG($nlin, $ncol)		;
+      pin += pin_incr			;
+      pout += out_mod1			;
+      }
+      in_line += in_mod0 * $nlin	;
+      out_line += out_mod0		;
+      }
+      } #}
+  ())))
+
+
+
+#? (rgbaim-rot90-left <inp>)
+;; rotate image <inp> by 90 to the left
+;; (counter-clockwise) and return the result.
+(de rgbaim-rot90-left (inp)
+    ((-idx3- (-ubyte-)) inp)
+    (let* ((out (ubyte-array (idx-dim inp 1) (idx-dim inp 0) (idx-dim inp 2)))
+	   (inpdim (idx-dim inp 1)) (inpmod (idx-modulo inp 1))
+	   (outdim (idx-dim out 0)) (outmod (idx-modulo out 0))
+	   (inpdim2 (idx-dim inp 2)) (inpmod2 (idx-modulo inp 2))
+	   (outdim2 (idx-dim out 2)) (outmod2 (idx-modulo out 2)))
+      ((-int-) inpdim inpmod outdim outmod)
+      ((-int-) inpdim2 inpmod2 outdim2 outmod2)
+      (idx-bloop ((inp inp) (out (idx-transclone out '(1 0 2))))
+	#{{
+ 	 unsigned char *pin, *pout;
+	 int i, k;
+	 pin = IDX_PTR (($inp), unsigned char);
+	 pout = IDX_PTR (($out), unsigned char) + $outdim * $outmod;
+	 for (i = 0; i < $inpdim; i++) {
+	   pout -= $outmod;
+	   for (k = 0; k < $inpdim2; k++) { pout[k] = pin[k]; }
+	   pin += $inpmod;
+	 }
+	 }#}
+	 )
+      out))
+
+#? (rgbaim-rot90-right <inp>)
+;; rotate image <inp> by 90 to the right 
+;; (clockwise) and return the result.
+(de rgbaim-rot90-right (inp)
+    ((-idx3- (-ubyte-)) inp)
+    (let* ((out (ubyte-array (idx-dim inp 1) (idx-dim inp 0) (idx-dim inp 2)))
+	   (inpdim (idx-dim inp 0)) (inpmod (idx-modulo inp 0))
+	   (outdim (idx-dim out 1)) (outmod (idx-modulo out 1))
+	   (inpdim2 (idx-dim inp 2)) (inpmod2 (idx-modulo inp 2))
+	   (outdim2 (idx-dim out 2)) (outmod2 (idx-modulo out 2)))
+      ((-int-) inpdim inpmod outdim outmod)
+      ((-int-) inpdim2 inpmod2 outdim2 outmod2)
+      (idx-bloop ((inp (idx-transclone inp '(1 0 2))) (out out))
+	#{{
+ 	 unsigned char *pin, *pout;
+	 int i, k;
+	 pin = IDX_PTR (($inp), unsigned char);
+	 pout = IDX_PTR (($out), unsigned char) + $outdim * $outmod;
+	 for (i = 0; i < $inpdim; i++) {
+	   pout -= $outmod;
+	   for (k = 0; k < $inpdim2; k++) { pout[k] = pin[k]; }
+	   pin += $inpmod;
+	 }
+	 }#}
+	 )
+      out))
+
+#? (rgbaim-rot180 <inp>)
+;; rotate image <inp> by 180 degrees
+;; and return the result.
+(de rgbaim-rot180 (inp)
+    ((-idx3- (-ubyte-)) inp)
+    (let* ((ncol (idx-dim inp 1))
+	   (nlin (idx-dim inp 0))
+	   (depth (idx-dim inp 2))
+	   (out (ubyte-array nlin ncol depth)))
+      ((-int-) nlin ncol depth)
+      #{{
+      int i, j, k;
+      unsigned char *upline, *downline, *upl, *dnl;
+      int inpmod0 = $inp->mod[0];
+      int inpmod1 = $inp->mod[1];
+      int outmod0 = $out->mod[0];
+      int outmod1 = $out->mod[1];
+      upline = IDX_PTR($out, unsigned char);
+      downline = IDX_PTR($inp, unsigned char) + ($nlin-1) * inpmod0;
+      for (i=0; i< $nlin; i++) {
+        upl = upline;
+        dnl = downline + ($ncol-1) * inpmod1;
+        for (j=0; j< $ncol; j++) {
+          for (k=0; k< $depth; k++) { upl[k] = dnl[k]; }
+          upl += outmod1;
+          dnl -= inpmod1;
+        }
+        upline += outmod0; downline -= inpmod0; 
+      }
+      }#}
+      out))
+
+#? (rgbaim-rot180-inplace <in>)
+;; in-place 180 degree rotation of an image
+;; (caution: input image is destroyed).
+(de rgbaim-rot180-inplace (image)
+    ((-idx3- (-ubyte-)) image)
+    (let ((ncol (idx-dim image 1))
+          (nlin (idx-dim image 0)))
+      ((-int-) nlin ncol)
+      #{{
+      int i, j, mod0, mod1;
+      unsigned char tmp0, tmp1, tmp2, tmp3, *upline, *downline, *upl, *dnl;
+      mod0 = $image->mod[0];
+      mod1 = $image->mod[1];
+      upline = IDX_PTR($image, unsigned char);
+      downline = upline + ($nlin-1)*mod0;
+      for (i=0; i< ($nlin+1)/2 ; i++) {
+           upl = upline;
+           dnl = downline + $ncol*mod1;
+           for (j=0; j< $ncol; j++) {
+                tmp0 = upl[0]; 
+                tmp1 = upl[1]; 
+                tmp2 = upl[2]; 
+                tmp3 = upl[3];
+                upl[0] = dnl[0]; dnl[0]=tmp0;
+                upl[1] = dnl[1]; dnl[1]=tmp1;
+                upl[2] = dnl[2]; dnl[2]=tmp2;
+                upl[3] = dnl[3]; dnl[3]=tmp3;
+                upl += mod1;
+                dnl -= mod1;
+                }
+           upline += mod0; downline -= mod0; }}
+      #}) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dmd mrgbaim-crop (in x y w h) `(narrow (narrow ,in 0 ,h ,y) 1 ,w ,x))
+
+#? (rgbaim-crop <in> <x> <y> <w> <h>)
+;; crop rectangle (<x>,<y>,<w>,<h>) from image <in> 
+;; and return the result (a copy).
+(de rgbaim-crop (in x y w h)
+    ((-idx3- (-ubyte-)) in)
+    ((-int-) x y w h)
+    (copy-array (mrgbaim-crop in x y w h)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; non-linear warping functions with and without bilinear interpolation.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (rgbaim-warp-quad <in> <out> <background> <mode> <x1> <y1> <x2> <y2> <x3> <y3> <x4> <y4> <p1> <q1> <p3> <q3>)
+;;.VP
+;; ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3):
+;; ((-int-) background mode):
+;; ((-idx2- (-ubyte-)) in out):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; warp rgbaimage <in> through a geometric transformation that maps
+;; a quadrilateral into a rectangle (bilinear transform).
+;; The quadrilateral is specified by <x1> <y1> <x2> <y2> <x3> <y3> <x4> <y4>
+;; (points are numbered clockwise starting from upper left).
+;; The rectangle is specified by the upper left and lower right points
+;; which are respectively <p1><q1> and <p3><q3>.
+;; The result is put in <out>.  Clipping is automatically performed.
+;; pixels outside of the bounds of <in> are assumed to have the value
+;; <background> (which must be an idx1 of ubyte of size 4).  
+;; <mode>=0: no antialiasing, <mode>=1: antialiasing with
+;; bilinear interpolation (2 times slower).  
+(de rgbaim-warp-quad (in out background mode x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    ((-flt-) x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+    ((-idx1- (-ubyte-)) background)
+    ((-int-) mode)
+    ((-idx3- (-ubyte-)) in out)
+
+    (let* ((outi (idx-dim out 0))
+	   (outj (idx-dim out 1))
+	   (dispi (int-array outi outj))
+	   (dispj (int-array outi outj)))
+      (compute-bilin-transform dispi dispj x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)
+      (if (= 0 mode)
+	  (rgbaim-warp-fast in out background dispi dispj)
+	(rgbaim-warp in out background dispi dispj)))
+    ())
+
+;; old backward compatibility
+(defvar rgbaim-warp-bilin rgbaim-warp-quad)
+
+
+#? (rgbaim-warp <in> <out> <background> <pi> <pj>)
+;;.VP
+;; ((-idx1- (-ubyte)) background):
+;; ((-idx3- (-ubyte-)) in out):
+;; ((-idx2- (-int-)) pi pj):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out> 
+;; AUTHOR: Y. LeCun
+;; COMPILABLE: Yes
+;; DESCRIPTION:
+;; Warps an image using <pi> and <pj> as tabulated coordinate transforms.
+;; <in> and <out> are idx2 of ubytes. <background> is the value assumed outside
+;; of the input image. <pi> and <pj> are integers idx whose dimensions must
+;; be identical to the first two dimensions of <out>.
+;; An output pixel at coordinate (x,y) takes the value of the input pixel at
+;; coordinate <pj[x,y]>,<pi[x,y]>. If the values in <pi> and <pj> are non
+;; integers the pixels are computed by bilinearly interpolating the input
+;; image. The <pi> and <pj> matrices contain 32-bit integers which are
+;; interpreted as 16 bit of integer part and 16 bits of fractinal part.
+;; Integers values are assumed to fall in the center of each pixel,
+;; so the upper left-hand corner of an image is at coordinate (-0.5, -0.5).
+(de rgbaim-warp (in out background pi pj)
+    ((-idx1- (-ubyte-)) background)
+    ((-idx3- (-ubyte-)) in out)
+    ((-idx2- (-int-)) pi pj)
+    (when (or (<> 4 (idx-dim in 2)) 
+              (<> 4 (idx-dim out 2)) 
+              (<> 4 (idx-dim background 0)))
+      (error "last dimension of in, out and background must be 4"))
+    (let ((ni (idx-dim in 0))
+          (nj (idx-dim in 1))
+          (pin (gptr (cinline "IDX_PTR(%s, unsigned char)" in)))
+          (pback (gptr (cinline "IDX_PTR(%s, unsigned char)" background)))
+          (indimi (idx-dim in 0))
+          (indimj (idx-dim in 1))
+          (inmodi (idx-modulo in 0))
+          (inmodj (idx-modulo in 1)))
+      ((-gptr- "unsigned char *") pin pback)
+      ((-int-)  indimi indimj inmodi inmodj)
+      (idx-bloop ((lout out) (lpi pi) (lpj pj))
+        (idx-bloop ((llout lout) (llpi lpi) (llpj lpj))
+          (let ((ppi (llpi)) (ppj (llpj))
+                (pout (gptr (cinline "IDX_PTR(%s, unsigned char)" llout))))
+            ((-int-) ppi ppj) ((-gptr- "unsigned char *") pout)
+            (rgbaim-interpolate-bilin 
+             pback pin indimi indimj inmodi inmodj ppi ppj pout)))))
+    ())
+
+
+#? (rgbaim-warp-fast <in> <out> <background> <pi> <pj>)
+;;.VP
+;; ((-int-) background):
+;; ((-idx2- (-ubyte-)) in out):
+;; ((-idx2- (-int-)) pi pj):
+;;
+;; RETURNS: Null
+;; SIDE EFFECTS: <out>
+;; AUTHOR: Y. LeCun
+;; Warps an image using <pi> and <pj> as tabulated coordinate transforms.
+;; <in> and <out> are idx2 of ubytes. <background> is the value assumed outside
+;; of the input image. <pi> and <pj> are tabulated coordinates 
+;; This is essentially identical to rgbaim-warp, escept no bilinear
+;; interpolation is performed (only a nearest neighbor rule is used).
+(de rgbaim-warp-fast (in out background pi pj)
+    ((-idx1- (-ubyte-)) background)
+    ((-idx3- (-ubyte-)) in out)
+    ((-idx2- (-int-)) pi pj)
+    (unprotect
+      (let ((ni (idx-dim in 0))
+            (nj (idx-dim in 1))
+            (pin (gptr (cinline "IDX_PTR(%s, unsigned char)" in)))
+            (back (gptr (cinline "IDX_PTR(%s, unsigned char)" background)))
+            (indimi (idx-dim in 0))
+            (indimj (idx-dim in 1))
+            (inmodi (idx-modulo in 0))
+            (inmodj (idx-modulo in 1)))
+        ((-gptr- "unsigned char *") pin back)
+        ((-int-)  indimi indimj inmodi inmodj)
+        (idx-bloop ((lout out) (lpi pi) (lpj pj))
+          (idx-bloop ((llout lout) (llpi lpi) (llpj lpj))
+            (let ((ppi (llpi)) (ppj (llpj)))
+              ((-int-) ppi ppj) 
+              #{{
+  		     register int li, lj;
+                     register unsigned char *out, *in;
+                     out = IDX_PTR($llout, unsigned char);
+  		     li = ($ppi+0x7f) >> 16;
+  		     lj = ($ppj+0x7f) >> 16;
+  		     if ((li>=0)&&(li<$indimi)&&(lj>=0)&&(lj<$indimj)) {
+                       in = (unsigned char*)($pin)+$inmodi*li+$inmodj*lj;
+                       out[0] = in[0]; out[1] = in[1]; 
+                       out[2] = in[2]; out[3] = in[3]; 
+		     } else {
+                       out[0] = *((unsigned char *)($back));
+                       out[1] = *((unsigned char *)($back)+1);
+                       out[2] = *((unsigned char *)($back)+2);
+                       out[3] = *((unsigned char *)($back)+3);
+		     }
+  		   }
+                 #} 
+  	         )))))
+      ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (rgbaim-rotscale <src> <sx> <sy> <dst> <dx> <dy> <angle> <coeff> <bg>)
+;; rotate, scale, and translate image <src> and put result in <dst>.
+;; point <sx>,<sy> in <src> will be mapped to point <dx>,<dy> in <dst>.
+;; Image will be rotated clockwise by <angle> degrees
+;; and scaled by <coeff>. Pixels that fall off the boundary
+;; are clipped and pixels in the destination that are not 
+;; determined by a source pixel are set to color <bg>
+;; (which must be an idx1 of ubytes of size 4).
+;; It is generally preferable to call rgbaim-rotscale-rect
+;; before hand to get appropriate values for <dx>,<dy> and
+;; for the size of <dst> so that no pixel is clipped.
+;; Here is an example:
+;;.CODE
+;; (let* ((w (idx-dim m 1))
+;;        (h (idx-dim m 0))
+;;        (wh (int-array 2))
+;;        (cxcy (float-array 2))
+;;        (bg (ubyte-array 4)))
+;;    (rgbaim-rotscale-rect w h hotx-src hoty-src angle coeff wh cxcy)
+;;    (let ((z (ubyte-array (wh 1) (wh 0) 4)))
+;;      (rgbaim-rotscale m hotx-src hoty-src z (cxcy 0) (cxcy 1) angle coeff bg)))
+;;.P
+(de rgbaim-rotscale (src sx sy dst dx dy angle coeff bg)
+    ((-idx3- (-ubyte-)) src dst)
+    ((-flt-) sx sy dx dy angle coeff)
+    ((-idx1- (-ubyte-)) bg)
+    (let* ((q 1000)
+           (coeff-inv (/ 1 coeff))
+           (sa (* q (sin (* 0.017453292 angle))))
+           (ca (* q (cos (* 0.017453292 angle))))
+           (ca+sa (* coeff-inv (+ ca sa)))
+           (ca-sa (* coeff-inv (- ca sa)))
+           (x1 (- sx ca+sa))
+           (y1 (- sy ca-sa))
+           (x2 (+ sx ca-sa))
+           (y2 (- sy ca+sa))
+           (x3 (+ sx ca+sa))
+           (y3 (+ sy ca-sa))
+           (x4 (- sx ca-sa))
+           (y4 (+ sy ca+sa))
+           (p1 (- dx q))
+           (q1 (- dy q))
+           (p3 (+ dx q))
+           (q3 (+ dy q)))
+      (rgbaim-warp-quad src dst bg 1 x1 y1 x2 y2 x3 y3 x4 y4 p1 q1 p3 q3)))
+
+#? (rgbaim-rotscale-rect <w> <h> <cx> <cy> <angle> <coeff> <wh> <cxcy>)
+;; Given an input image of width <w>, height <h>, with a "hot" point
+;; at coordinate <cx> and <cy>, this function computes the width,
+;; height, and hot point coordinates of the same image rotated
+;; by <angle> and scaled by <coeff> so as to ensure that no pixel
+;; in the rotated/scaled image will have negative coordinates
+;; (so the image will not be clipped).
+;; <wh> and <cxcy> which must be idx1 of floats with two elements.
+;; This function should be called before rgbaim-rotscale.
+(de rgbaim-rotscale-rect (w h cx cy angle coeff wh cxcy)
+    ((-int-) w h)
+    ((-flt-) cx cy angle coeff)
+    ((-idx1- (-int-)) wh)
+    ((-idx1- (-flt-)) cxcy)
+    (let* ((sa (sin (* 0.017453292 angle)))
+           (ca (cos (* 0.017453292 angle)))
+           (x1 0)
+           (y1 0)
+           (cw (* coeff w))
+           (ch (* coeff h))
+           (x2 (* cw ca))
+           (y2 (* cw sa))
+           (x4 (- (* ch sa)))
+           (y4 (* ch ca))
+           (x3 (+ x2 x4))
+           (y3 (+ y2 y4))
+           (dcx (* coeff (- (* cx ca) (* cy sa))))
+           (dcy (* coeff (+ (* cx sa) (* cy ca))))
+           (lx (min (min x1 x2) (min x3 x4)))
+           (ly (min (min y1 y2) (min y3 y4)))
+           (rx (max (max x1 x2) (max x3 x4)))
+           (ry (max (max y1 y2) (max y3 y4))))
+      (wh 0 (int (1+ (- rx lx))))
+      (wh 1 (int (1+ (- ry ly))))
+      (cxcy 0 (- dcx lx))
+      (cxcy 1 (- dcy ly))
+      ()))
+
+#? * Low-Level Geometric Transform Functions
+;; These are unlikely to be used directly by most users.
+
+#? (rgbaim-interpolate-bilin <background> <pin> <indimi> <indimj> <inmodi> <inmodj> <ppi> <ppj> <rez>)
+;;.AUTHOR Y. LeCun
+;;.VP
+;; (-gptr- pin rez background):
+;; (-int-  indimi indimj inmodi inmodj ppi ppj):
+;;
+;; SIDE EFFECTS: <rez>
+;; DESCRIPTION:
+;; returns a bilinearly interpolated RGBA pixel value for coordinate
+;; <ppi> <ppj>. The image data is pointed to by <pin>, with 
+;; <indimi> <indimj> <inmodi> <inmodj> being the dimensions and modulos.
+;; This function clips automatically if <ppi> <ppj> are outside of the
+;; bounds by assuming the outside values are equal to <background>.
+;; pixel values are ubytes, while coordinates are 32 bit fixed point
+;; with 16 bit integer part and 16 bit fractional part.
+;; The function does not use floating point arithmetics.
+(de rgbaim-interpolate-bilin 
+    (background pin indimi indimj inmodi inmodj ppi ppj rez)
+    ((-gptr- "unsigned char *") pin background rez)
+    ((-int-)  indimi indimj inmodi inmodj ppi ppj)
+    #{{
+         int li0, lj0;
+	 register int li1, lj1;
+	 int deltai, ndeltai;
+	 int deltaj, ndeltaj;
+	 register unsigned char *pin00, *back;
+	 register unsigned char *v00, *v01, *v10, *v11;
+         back = (unsigned char *)$background;
+	 li0 = $ppi >> 16;
+	 li1 = li0+1;
+	 deltai = $ppi & 0x0000ffff;
+	 ndeltai = 0x00010000 - deltai;
+	 lj0 = $ppj  >> 16;
+	 lj1 = lj0+1;
+	 deltaj = $ppj & 0x0000ffff;
+	 ndeltaj = 0x00010000 - deltaj;
+	 pin00 = (unsigned char*)($pin)+$inmodi*li0+$inmodj*lj0;
+         if ((li1>0)&&(li1<$indimi)) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = (pin00); 
+		 v01 = (pin00+$inmodj); 
+		 v11 = (pin00+$inmodi+$inmodj); 
+		 v10 = (pin00+$inmodi);
+		 v00 = (pin00); 
+	     } else if (lj1==0) { 
+		 v00 = back;
+		 v01 = (pin00+$inmodj); 
+		 v11 = (pin00+$inmodi+$inmodj);
+		 v10 = back;
+	     } else if (lj1==$indimj) {
+		 v00 = (pin00); 
+		 v01 = back;
+		 v11 = back;
+		 v10 = (pin00+$inmodi); 
+	     } else {
+		 v00 = back;
+		 v01 = back;
+		 v11 = back;
+		 v10 = back;
+	     }
+	 } else if (li1==0) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = back;
+		 v01 = back;
+		 v11 = (pin00+$inmodi+$inmodj); 
+		 v10 = (pin00+$inmodi);
+	     } else if (lj1==0) { 
+		 v00 = back;
+		 v01 = back;
+		 v11 = (pin00+$inmodi+$inmodj);
+		 v10 = back;
+	     } else if (lj1==$indimj) {
+		 v00 = back;
+		 v01 = back;
+		 v11 = back;
+		 v10 = (pin00+$inmodi); 
+	     } else {
+		 v00 = back;
+		 v01 = back;
+		 v11 = back;
+		 v10 = back;
+	     }
+	 } else if (li1==$indimi) {
+	     if ((lj1>0)&&(lj1<$indimj)) { 
+		 v00 = (pin00); 
+		 v01 = (pin00+$inmodj); 
+		 v11 = back;
+		 v10 = back;
+	     } else if (lj1==0) { 
+		 v00 = back;
+		 v01 = (pin00+$inmodj); 
+		 v11 = back;
+		 v10 = back;
+	     } else if (lj1==$indimj) {
+		 v00 = (pin00); 
+		 v01 = back;
+		 v11 = back;
+		 v10 = back;
+	     } else {
+		 v00 = back;
+		 v01 = back;
+		 v11 = back;
+		 v10 = back;
+	     }
+         } else {
+	     v00 = back;
+	     v01 = back;
+	     v11 = back;
+	     v10 = back;
+	 }
+         /* printf("deltai=%d, deltaj=%d, r00=%d, r10=%d, r01=%d, r11=%d\n",
+                deltai, deltaj, v00[0], v10[0], v01[0], v11[0]); */
+         { register unsigned char *ubout;
+           ubout = (unsigned char *)($rez);
+	   ubout[0] = (ndeltaj * (( v10[0]*deltai + v00[0]*ndeltai )>>16) +
+                       deltaj  * (( v11[0]*deltai + v01[0]*ndeltai )>>16))>>16;
+	   ubout[1] = (ndeltaj * (( v10[1]*deltai + v00[1]*ndeltai )>>16) +
+                       deltaj  * (( v11[1]*deltai + v01[1]*ndeltai )>>16))>>16;
+	   ubout[2] = (ndeltaj * (( v10[2]*deltai + v00[2]*ndeltai )>>16) +
+                       deltaj  * (( v11[2]*deltai + v01[2]*ndeltai )>>16))>>16;
+	   ubout[3] = (ndeltaj * (( v10[3]*deltai + v00[3]*ndeltai )>>16) +
+                       deltaj  * (( v11[3]*deltai + v01[3]*ndeltai )>>16))>>16;
+         }
+     }
+
+  #} ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; color processing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; look in Digital Image Processing by W. Pratt, page 66.
+
+#? ** Color Processing
+
+#? (rgbaim-contbright <in> <out> <c> <b>)
+;; correct contrast and brightness of image <in>
+;; and put result in <out> (<in> and <out>
+;; must be the same size). <c> and <b> are floats
+;; that will affect the brightness and contrast
+;; respectively. <c>=1 and <b>=0 leave the image
+;; unchanged. Each output pixel is computed as follows:
+;; output = (input-128)*c + b + 128
+;; (clipped between 0 and 255).
+;; An image can be conveniently inverted by setting
+;; <c> to -1 and <b> to 0.
+(de rgbaim-contbright (in out c b)
+    ((-float-) c b)
+    ((-idx3- (-ubyte-)) in)
+    ((-idx3- (-ubyte-)) out)
+    (cidx-bloop ("i" "j" "k" ("pin" in) ("pout" out))
+      #{{ register float z; 
+         z = (((float)*pin)-128)*$c+$b+128;
+         *pout = (unsigned char)( (z<0)?0:( (z>255)?255:z ));
+      }#})
+      ())
+    
+#? (rgbaim-luminance <in> <out>)
+;; compute luminance of each pixel and put result in image <out>
+;; the formula used is lum = 0.299 * R + 0.587 * G + 0.114 * B
+(de rgbaim-luminance (in out)
+    ((-idx3- (-ubyte-)) in)
+    ((-idx2- (-ubyte-)) out)
+    (cinline-idx2loop2 in "unsigned char" 
+                       out "unsigned char" "pin" "pout" "i" "j"
+      #{ *pout = (unsigned char)(0.299 * (flt)(pin[0]) + 
+                 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2])); #})
+      ()))
+
+#? (rgbaim-lum2rgba <in> <out>)
+;; transform a grey-level image <in> (idx2 of flts) into
+;; an RGBA image. <in> and <out> must have identical sizes,
+;; though no check of that is done
+(de rgbaim-lum2rgba (in out)
+    ((-idx2- (-ubyte-)) in)
+    ((-idx3- (-ubyte-)) out)
+    (cinline-idx2loop2 in "unsigned char" 
+                       out "unsigned char" "pin" "pout" "i" "j"
+      #{ pout[0] = pout[1] = pout[2] = *pin; pout[3] = 0; #})
+      ()))
+
+#? (rgbaim-uvw <in> <out>)
+;; transform an RGBA image into an UVWA image, where the V component
+;; contains the luminance information, and the U and W components 
+;; collectively contain the chrominance information.
+;; In the UVW color coding scheme the euclidean distance is meant
+;; to reflect the subjective "perceptual" distance.
+;; See Digital Image Processing by W. Pratt, page 66.
+(de rgbaim-uvw (in out)
+    ((-idx3- (-ubyte-)) in)
+    ((-idx3- (-ubyte-)) out)
+    (cinline-idx2loop2 in "unsigned char" 
+                       out "unsigned char" "pin" "pout" "i" "j"
+      #{{ flt r,g,b; 
+         r = (flt)(pin[0]); g = (flt)(pin[1]); b = (flt)(pin[2]); 
+         pout[0] = (unsigned char)(0.405 * r + 0.116 * g + 0.133 * b);
+         pout[1] = (unsigned char)(0.299 * r + 0.587 * g + 0.114 * b);
+         pout[2] = (unsigned char)(0.145 * r + 0.827 * g + 0.627 * b); 
+         pout[3] = pin[3]; }#})
+      ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; pixel processing (saturation, transformation...)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (rgbaim-saturate <in> <min> <max> <out>)
+;; Saturate pixel component values in image <in> to the range
+;; [<min>,<max>]. Result is put in <out>.
+(de rgbaim-saturate (in min max out)
+    ((-idx3- (-ubyte-)) in out)
+    ((-ubyte-) min max)
+    (cinline-idx2loop2 in "unsigned char" 
+                       out "unsigned char" "pin" "pout" "i" "j"
+      #{{ register unsigned char r;
+         r = pin[0]; pout[0] = (r>$max)? $max : (r<$min) ? $min : r;
+         r = pin[1]; pout[1] = (r>$max)? $max : (r<$min) ? $min : r;
+         r = pin[2]; pout[2] = (r>$max)? $max : (r<$min) ? $min : r;
+         r = pin[3]; pout[3] = (r>$max)? $max : (r<$min) ? $min : r;
+         } #})
+      ()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; blitting
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Blitting
+
+#? (rgbaim-blit <x> <y> <in> <out>)
+;; blit <in> into <out> at position <x>,<y>
+;; with alpha blending.
+;; an alpha value of 0 in <in> means opaque, 
+;; 255 means totally transparent.
+(de rgbaim-blit (x y in out)
+    ((-idx3- (-ubyte-)) in out)
+    ((-int-) x y)
+    (let* ((hin (idx-dim in 0))
+           (win (idx-dim in 1))
+           (hout (idx-dim out 0))
+           (wout (idx-dim out 1))
+           (lx (if (< y 0) 0 y))
+           (ly (if (< x 0) 0 x))
+           (ux (if (> (+ x win) wout) wout (+ x win)))
+           (uy (if (> (+ y hin) hout) hout (+ y hin)))
+           (dest (narrow (narrow out 0 (- uy ly) ly) 1 (- ux lx) lx))
+           (src  (narrow (narrow in  0 (- uy ly) (- ly y)) 
+                         1 (- ux lx) (- lx x))))
+      ((-int-) hin hout win wout lx ly ux uy)
+      (cinline-idx2loop2 src "unsigned char" 
+                         dest "unsigned char" "pin" "pout" "i" "j"
+        #{{ register int r, r1;
+            r = pin[3]; r1 = 255-r;
+            pout[0] = (unsigned char)((r * pout[0] + r1 * pin[0])>>8);
+            pout[1] = (unsigned char)((r * pout[1] + r1 * pin[1])>>8);
+            pout[2] = (unsigned char)((r * pout[2] + r1 * pin[2])>>8);
+            } #})
+      ()))
+
+#? (rgbaim-blitcolor <x> <y> <in> <r> <g> <b> <out>)
+;; blit color defined by <r>,<g>,<b> using idx2 <in> as a stencil
+;; into RGBA image <out> at position <x> <y>
+;; The values in <in> must be between 0 and 255. 
+;; if the value is 255, no paint is put in; if the value is 0,
+;; the pixel takes the value specified by <r>,<g>,<b>.
+(de rgbaim-blitcolor (x y in r g b out)
+    ((-idx2- (-ubyte-)) in)
+    ((-idx3- (-ubyte-)) out)
+    ((-int-) x y)
+    ((-ubyte-) r g b)
+    (let* ((hin (idx-dim in 0))
+           (win (idx-dim in 1))
+           (hout (idx-dim out 0))
+           (wout (idx-dim out 1))
+           (lx (if (< y 0) 0 y))
+           (ly (if (< x 0) 0 x))
+           (ux (if (> (+ x win) wout) wout (+ x win)))
+           (uy (if (> (+ y hin) hout) hout (+ y hin)))
+           (dest (narrow (narrow out 0 (- uy ly) ly) 1 (- ux lx) lx))
+           (src  (narrow (narrow in  0 (- uy ly) (- ly y)) 
+                         1 (- ux lx) (- lx x))))
+      ((-int-) hin hout win wout lx ly ux uy)
+      (cinline-idx2loop2 src "unsigned char" 
+                         dest "unsigned char" "pin" "pout" "i" "j"
+        #{{ register int v, v1;
+            v = (*pin); v1 = 255-v;
+            pout[0] = (unsigned char)((v*pout[0] + v1*$r)>>8);
+            pout[1] = (unsigned char)((v*pout[1] + v1*$g)>>8);
+            pout[2] = (unsigned char)((v*pout[2] + v1*$b)>>8);
+            } #})
+      ()))
+
+
+         
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; color histogram in 32x32x32
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Histograms
+
+#? (rgbaim-histo32 <rgbaim> <ppal> <count>)
+;; compute histogram of image <rgbaim>.
+;; <ppal> must be a 32768 by 3 matrix of floats which will contain the list 
+;; of pixel values found. <count> must be a 32768 matrix which will contain
+;; the corresponding pixel counts.
+;; pixel colors are sorted by luminance.
+;; This function really computes a 32768 color palette by assigning each pixel
+;; to the cube it belongs to in the 32x32x32 RBG color cube.
+;; The color prototype assigned to each cube is the mean of the pixels 
+;; belonging to the cube.
+(de rgbaim-histo32 (rgbaim ppal count)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx2- (-flt-)) ppal)
+    ((-idx1- (-flt-)) count)
+    (let* ((ncolcell (* 32 32 32))
+	   (histo (float-array ncolcell 3))
+	   (hcount (float-array ncolcell))
+	   (phisto (to-gptr #{ IDX_PTR($histo,flt) #}))
+	   (phcount (to-gptr #{ IDX_PTR($hcount,flt) #})))
+      ;; loop over image pixels and compute histogram
+      ;; for each histogram cell in the 32x32x32 table we compute the
+      ;; average color value for the pixels (it's like a 32k color palette).
+      (cinline-idx2loop rgbaim "unsigned char" "p" "i" "j"
+			#{{ register flt *ph, *pc ;
+			int offset ;
+			offset = ((p[0]&0xf8)<<7) | ((p[1]&0xf8)<<2) | (p[2]>>3) ;
+			ph = ((flt*)$phisto) + offset*3 ;
+			pc = ((flt*)$phcount) + offset ;
+			/* printf("i=%d, j=%d, offset=%d, *pc=%g, ph[]=%g, %g, %g\n",
+				  i,j,offset,*pc,ph[0],ph[1],ph[2]); */
+			ph[0] += (flt)p[0];
+			ph[1] += (flt)p[1];
+			ph[2] += (flt)p[2];
+			*pc += 1 ; 
+			} #} )
+      ;; now compact the list of color cells and sort them by luminosity
+      ;; (using a precomputed table of cell index -> luminosity)
+      (when (= 0 (int #{ lum2rgbinit #})) (rgbaim-init-lum2rgb))
+      (let ((ccount 0))
+	((-int-) ccount)
+	(for (i 0 (1- ncolcell))
+	  ((-int-) i)
+	  (let* ((c (rgbaim-lum2rgb i)))
+	    ((-int-) c)
+	    (let ((cnt (hcount c)))
+	    ((-float-) cnt)
+	    (when (> cnt 0)
+	      ;; (printf "i=%d, c=%d, ccount=%d\n" i c ccount)
+	      (ppal ccount 0 (/ (histo c 0) cnt))
+	      (ppal ccount 1 (/ (histo c 1) cnt))
+	      (ppal ccount 2 (/ (histo c 2) cnt))
+	      (count ccount cnt)
+	      (incr ccount)))))
+	(idx-f2resize ppal ccount 3)
+	(idx-f1resize count ccount)) ()))
+
+#? * Low-Level Histogram Functions
+
+#? (rgbaim-init-lum2rgb )
+;; build a table of 32x32x32 elements containing RGB cell indices
+;; in ascending luminosity.
+(de rgbaim-init-lum2rgb ()
+    (cheader "#define NCOLCELL 32768")
+    (cheader "static int lum2rgb[NCOLCELL], lum2rgbinit = 0;")
+    (let ((lum (float-array (* 32 32 32)))
+	  (ind (int-array (* 32 32 32)))
+	  (n 0))
+      ((-int-) n)
+      (for (r 0 31) (for (g 0 31) (for (b 0 31)
+	   (ind n n)
+	   (lum n (+ (* .299 r) (* .587 g) (* .114 b)))
+	   (incr n))))
+      (idx-f1i1sortup lum ind)
+      #{{
+        int *pind, i;
+	pind = IDX_PTR($ind, int);
+	for (i=0; i<NCOLCELL; i++){ lum2rgb[i] = pind[i]; }
+	lum2rgbinit = 1;
+      }#}
+      ()))
+
+#? (rgbaim-lum2rgb <n>)
+;; converts a luminosity index to a 5-bit RGB cell number.
+(de rgbaim-lum2rgb (n) ((-int-) n) (int #{ lum2rgb[(int)$n] #} ))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** Various Unusual Subsampling Functions
+
+#? (rgbaim-subsample+ <in> <nlin> <ncol>)
+;; same as <rgbaim-subsample>, but adds one row and one column for lazy pixels
+(de rgbaim-subsample+ (in nlin ncol)
+    ((-idx3- (-ubyte-)) in)
+    ((-int-) nlin ncol)
+    (if (and (= nlin 1) (= ncol 1))
+        (copy-array in)
+    (let* ((h (idx-dim in 0))
+           (w (idx-dim in 1))
+           (nh (div h nlin))
+           (nw (div w ncol))
+           (inp (narrow (narrow in 0 (* nlin nh) 0) 1 (* ncol nw) 0))
+           (out (ubyte-array (1+ nh) (1+ nw) 4)))
+      ((-int-) h w nh nw)
+      #{{
+      unsigned char *in_line, *pin;
+      unsigned char *out_line, *pout;
+      int i, _imax = $nh;
+      int j, _jmax = $nw;
+      int in_mod0 = ($inp)->mod[0];
+      int in_mod1 = ($inp)->mod[1];
+      int out_mod0 = ($out)->mod[0];
+      int out_mod1 = ($out)->mod[1];
+      int pin_incr = $ncol * in_mod1;
+      int last_col =$w- $ncol*$nw;
+      int last_lin =$h- $nlin*$nh;
+      in_line = IDX_PTR (($inp), unsigned char);
+      out_line = IDX_PTR (($out), unsigned char);
+      for (i = 0; i < _imax; i++) {
+        pin = in_line;
+        pout = out_line;
+        for (j = 0; j < _jmax; j++) {
+               BLK_AVRG($nlin, $ncol);
+               pin += pin_incr;
+               pout += out_mod1;
+	  }
+        if (last_col != 0) BLK_AVRG($nlin, last_col);
+	in_line += in_mod0 * $nlin;
+	out_line += out_mod0;
+       } 
+       if (last_lin != 0) {
+         pin = in_line;
+         pout = out_line;
+         for (j = 0; j < _jmax; j++) {
+               BLK_AVRG(last_lin, $ncol);
+               pin += pin_incr;
+               pout += out_mod1;
+         }
+         if (last_col != 0) BLK_AVRG(last_lin, last_col);
+         }
+        } #}
+  out)))
+
+
+#? (rgbaim-subsample-med3 <rgbaim>)
+;; subsample images by 3x3 using a median filter.
+(de rgbaim-subsample-med3 (rgbaim)
+    ((-idx3- (-ubyte-)) rgbaim)
+
+    (let* (
+          (h (div (idx-dim rgbaim 0) 3))
+          (w (div (idx-dim rgbaim 1) 3))
+          (subim (ubyte-array h w 4))
+          )
+      
+      (cidx-bloop ("i" "j" ("pout" subim))
+                  #{{
+                  int mod0= $rgbaim->mod[0];                  
+                  int mod1= $rgbaim->mod[1];
+                  unsigned char *block0= IDX_PTR($rgbaim, unsigned char) + 3*i*mod0 + 3*j*mod1;
+                  unsigned char *block=block0;
+                  flt line_med[3];
+                  int med_j, line_med_j[3];
+                  int max_j, line_max_j[3];
+                  int min_j, line_min_j[3];
+                  int med_i, max_i, min_i, k;
+                  flt med;
+
+                  for (k=0; k<3; k++) {
+                       unsigned char *pin= block;
+                       flt p0 = (0.299 * (flt)(pin[0]) + 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2])); 
+                       flt p1 = (0.299 * (flt)((pin+=mod1)[0]) + 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2])); 
+                       flt p2 = (0.299 * (flt)((pin+=mod1)[0]) + 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2])); 
+                       if (p0>p1) {
+                       if (p1>p2) {med=p1; med_j=1;max_j=0;min_j=2;} else if (p2>p0) {med=p0; med_j=0;max_j=2;min_j=1;} else {med=p2; med_j=2;max_j=0;min_j=1;}
+                       } else {
+                       if (p2>p1) {med=p1; med_j=1;max_j=2;min_j=0;} else if (p2<p0) {med=p0; med_j=0;max_j=1;min_j=2;} else {med=p2; med_j=2;max_j=1;min_j=0;}
+                       }
+                       block+=mod0;
+                       line_med[k]=med;
+                       line_med_j[k]=med_j; 
+                       line_max_j[k]=max_j; 
+                       line_min_j[k]=min_j; 
+                       if (med > 990.0) printf ("%f %f %f\n", p0, p1, p2);
+                      }
+                  {
+                  flt p0 = line_med[0];
+                  flt p1 = line_med[1];
+                  flt p2 = line_med[2];
+                  if (p0>p1) {
+                  if (p1>p2) {med=p1; med_i=1;max_i=0;min_i=2;} else if (p2>p0) {med=p0; med_i=0;max_i=2;min_i=1;} else {med=p2; med_i=2;max_i=0;min_i=1;}
+                  } else {
+                  if (p2>p1) {med=p1; med_i=1;max_i=2;min_i=0;} else if (p2<p0) {med=p0; med_i=0;max_i=1;min_i=2;} else {med=p2; med_i=2;max_i=1;min_i=0;}
+                  }
+                  }
+                  {
+                  unsigned char *pin0= block0 +  med_i*mod0 + line_med_j[med_i]*mod1;
+                  unsigned char *pin1= block0 +  max_i*mod0 + line_min_j[max_i]*mod1;
+                  unsigned char *pin1b = block0 +  med_i*mod0 + line_min_j[med_i]*mod1;
+
+                  unsigned char *pin2= block0 +  min_i*mod0 + line_max_j[min_i]*mod1;
+                  unsigned char *pin2b= block0 +  med_i*mod0 + line_max_j[med_i]*mod1;
+                  unsigned char *pin;
+                  flt p0= med;
+                  flt p1= (0.299 * (flt)(pin1[0]) + 0.587 * (flt)(pin1[1]) + 0.114 * (flt)(pin1[2]));
+                  flt p1b= (0.299 * (flt)(pin1b[0]) + 0.587 * (flt)(pin1b[1]) + 0.114 * (flt)(pin1b[2]));
+                  flt p2= (0.299 * (flt)(pin2[0]) + 0.587 * (flt)(pin2[1]) + 0.114 * (flt)(pin2[2]));
+                  flt p2b = (0.299 * (flt)(pin2b[0]) + 0.587 * (flt)(pin2b[1]) + 0.114 * (flt)(pin2b[2]));
+
+                  
+                  if (p1 < p1b) {p1 = p1b; pin1=pin1b;}
+                  if (p2 > p2b) {p2 = p2b; pin2=pin2b;}
+
+                  if (p0>p1) {
+                  if (p1>p2) {med=p1; pin=pin1;} else if (p2>p0) {med=p0; pin=pin0;} else {med=p2; pin=pin2;}
+                  } else {
+                  if (p2>p1) {med=p1; pin=pin1;} else if (p2<p0) {med=p0; pin=pin0;} else {med=p2; pin=pin2;}
+                  }
+
+                  pout[0] =pin[0];
+                  pout[1] =pin[1];
+                  pout[2] =pin[2];
+                  }
+                 }#}
+                 )
+      subim
+      ))
+
+
+#? (rgbaim-med3-subopt <rgbaim>)
+;; 3x3 subsampling using the median
+;; smart median optimised in C for 3x3 squares: 1.3 sec
+(de rgbaim-med3-subopt (rgbaim)
+    ((-idx3- (-ubyte-)) rgbaim)
+
+    (let* (
+          (h (div (idx-dim rgbaim 0) 3))
+          (w (div (idx-dim rgbaim 1) 3))
+          (subim (ubyte-array h w 4))
+          )
+      
+      
+      (cidx-bloop ("i" "j" ("pout" subim))
+                  #{{
+                  int mod0= $rgbaim->mod[0];                  
+                  int mod1= $rgbaim->mod[1];
+                  unsigned char *block0= IDX_PTR($rgbaim, unsigned char) + 3*i*mod0 + 3*j*mod1;
+                  unsigned char *block=block0;
+                  flt line_med[3];
+                  int line_med_j[3];
+                  int med_i, k, med_j;
+                  flt p0, p1, p2, med;
+                  unsigned char *pin;
+
+                  for (k=0; k<3; k++) {
+                       pin= block;
+                       p0 = (0.299 * (flt)(pin[0]) + 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2])); pin+=mod1;
+                       p1 = (0.299 * (flt)(pin[0]) + 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2])); pin+=mod1;
+                       p2 = (0.299 * (flt)(pin[0]) + 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2])); 
+                       if (p0>p1) {
+                          if (p1>p2) {med=p1; med_j=1;} else if (p2>p0) {med=p0; med_j=0;} else {med=p2; med_j=2;}
+                       } else {
+                          if (p2>p1) {med=p1; med_j=1;} else if (p2<p0) {med=p0; med_j=0;} else {med=p2; med_j=2;}
+                       }
+                       block+=mod0;
+                       line_med[k]=med;
+                       line_med_j[k]=med_j; 
+                       }
+
+                  p0 = line_med[0];
+                  p1 = line_med[1];
+                  p2 = line_med[2];
+                  if (p0>p1) {
+                  if (p1>p2) {med=p1; med_i=1;} else if (p2>p0) {med=p0; med_i=0;} else {med=p2; med_i=2;}
+                  } else {
+                  if (p2>p1) {med=p1; med_i=1;} else if (p2<p0) {med=p0; med_i=0;} else {med=p2; med_i=2;}
+                  }
+                  med_j=line_med_j[med_i];
+                  pin= block0 +  med_i*mod0 + med_j*mod1;
+                  med= (0.299 * (flt)(pin[0]) + 0.587 * (flt)(pin[1]) + 0.114 * (flt)(pin[2]));
+
+                  pout[0] =pin[0];
+                  pout[1] =pin[1];
+                  pout[2] =pin[2];
+                 }#}
+                 )
+      subim
+      ))
+
+
+#? (rgbaim-med3-slow rgbaim)
+;;3x3 subsampling using the median
+;;brute force median, with a 9 element quicksort
+(de rgbaim-med3-slow (rgbaim)
+    ((-idx3- (-ubyte-)) rgbaim)
+
+    (let* (
+          (h (div (idx-dim rgbaim 0) 3))
+          (w (div (idx-dim rgbaim 1) 3))
+          (subim (ubyte-array h w 4))
+          (lum-block (ubyte-array 3 3))
+          (f-block (float-array 9 ))
+          (index (int-array 9))
+          )
+      
+      
+                  
+      (idx-gloop ((i) (line subim))
+      (idx-gloop ((j) (pix line))
+        (let* (
+               (k 0)
+               (block (narrow  (narrow rgbaim 0 3 (* 3 i)) 1 3 (* 3 j)))
+               (med 0)
+               )
+          ((-int-) k med)
+          (rgbaim-luminance block lum-block)
+          (idx-bloop ((block lum-block))
+            (idx-bloop ((block block))
+              (f-block k (block))
+              (incr k)))
+          (idx-i1fill-with-index index)
+          (idx-f1i1sortup f-block index)
+          (setq med (index 4))
+          (array-copy
+           (select 
+            (select block 0 (div med 3)) ;; select line
+            0 (mod med 3)) ;; select column
+           pix)))
+      )
+      subim
+      ))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make-sf "rgbaimage" 
+
+          rgbaim-enlarge
+          rgbaim-enlarge-into
+          rgbaim-subsample 
+          rgbaim-subsample-into
+
+          rgbaim-rot90-right
+          rgbaim-rot90-left
+          rgbaim-rot180
+          rgbaim-rot180-inplace
+
+	  rgbaim-crop
+
+          rgbaim-interpolate-bilin
+          rgbaim-warp 
+          rgbaim-warp-fast
+          rgbaim-warp-quad
+
+	  rgbaim-resize
+          rgbaim-rotscale
+          rgbaim-rotscale-rect
+
+	  rgbaim-contbright
+	  rgbaim-luminance
+          rgbaim-lum2rgba
+          rgbaim-uvw
+          rgbaim-saturate
+          rgbaim-blit
+          rgbaim-blitcolor
+          rgbaim-init-lum2rgb 
+	  rgbaim-lum2rgb 
+	  rgbaim-histo32
+
+          rgbaim-subsample+
+          rgbaim-med3-slow
+          rgbaim-subsample-med3 
+          rgbaim-med3-subopt
+)

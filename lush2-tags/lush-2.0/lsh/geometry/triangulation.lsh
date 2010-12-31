@@ -1,0 +1,460 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "geometry/mesh")
+
+#? *** Planar Triangulations
+;; A <SimpleTriangulation> represents a triangulation in the plane. In terms
+;; of class dependency, a <SimpleTriangulation> is a <Mesh> plus explicit
+;; triangles information. It is a light-weight class meant to be used for 
+;; data exchange and visualization purposes.
+
+(defclass SimpleTriangulation Mesh
+  ((-idx2- (-int-)) triangles)        ; points of a triangle in counterlockwise order
+  ((-idx2- (-int-)) triangle-edges)   ; edges of a triangle in counterclockwise order
+  ((-idx2- (-int-)) edge-triangles)   ; the triangles sharing this edge, left to right
+  ((-idx1- (-int-)) p-edge)           ; an edge incident to point
+  ((-idx1- (-double-)) t-area2) )     ; two times the area of triangle 
+
+(in-namespace (class SimpleTriangulation)
+(import (do-edges-around) from (class IGraph) as (do-edges-around/graph))
+(libload "triangulation-utils" t)
+)
+
+;; Compute adjacency, triangle-edges, edge-triangles
+(defmethod SimpleTriangulation -init ()
+  (array-clear edge-triangles -1) 
+  (do-triangles* tr
+      (let ((e0 -1) (e1 -1) (e2 -1))
+      (declare (-int-) e0 e1 e2)
+      (do-edges-around/graph e (point tr.p1)
+        (when (= (other-vertex e tr.p1) tr.p2) (setq e0 e))
+        (when (= (other-vertex e tr.p1) tr.p0) (setq e2 e)) )
+      (do-edges-around/graph e (point tr.p0)
+        (when (= (other-vertex e tr.p0) tr.p2) 
+          (setq e1 e)
+          (setq continue ()) ))
+      (triangle-edges tr 0 e0)
+      (triangle-edges tr 1 e1)
+      (triangle-edges tr 2 e2)
+
+      (when (or (= e0 -1) (= e1 -1) (= e2 -1))
+        (printf "\n")
+        (printf "bogus triangulation data for triangle %d (%d %d %d)\n" 
+                tr tr.p0 tr.p1 tr.p2)
+        (printf "edges around point %d:\n" tr.p0)
+        (do-edges-around/graph e (point tr.p0)
+          (printf "%d(%d) " e (other-vertex e tr.p0)) )
+        (printf "\n")
+        (printf "edges around point %d:\n" tr.p1)
+        (do-edges-around/graph e (point tr.p1)
+          (printf "%d(%d) " e (other-vertex e tr.p1)) )
+        (printf "\n")
+        (printf "edges around point %d:\n" tr.p2)
+        (do-edges-around/graph e (point tr.p2)
+          (printf "%d(%d) " e (other-vertex e tr.p2)) )
+        (printf "\n")
+        (assert (and (<> e0 -1) (<> e1 -1) (<> e2 -1)))
+        )
+      
+      (with-edges (e0 e1 e2)
+	(if (= e0.p0 tr.p1) 
+	    (edge-triangles e0 0 tr)
+	  (edge-triangles e0 1 tr) )
+        (if (= e1.p0 tr.p2) 
+	    (edge-triangles e1 0 tr)
+	  (edge-triangles e1 1 tr) )
+	(if (= e2.p0 tr.p0) 
+	    (edge-triangles e2 0 tr)
+	  (edge-triangles e2 1 tr) )) ))
+  (do-edges e
+    (p-edge (edges e 0) e)
+    (p-edge (edges e 1) e) ))
+
+
+;; Check that all triangles are given in counterclockwise order
+(defmethod SimpleTriangulation -check-triangle-orientations ()
+  (do-triangles* tr
+    (with-points (tr.p0 tr.p1 tr.p2)
+      (let ((ta2 (orient2d tr.p0 tr.p1 tr.p2)))
+	(when (< ta2 0)
+	  (printf "(triangle %d) = [%d %d %d]\n" tr tr.p0 tr.p1 tr.p2)
+	  (error "triangle points must be oriented counterclockwise"))
+	(t-area2 tr ta2))))
+  ())
+
+
+#? (new SimpleTriangulation <points> <edges> <triangles>)
+;; Create a <SimpleTriangulation> object, do not copy the argument arrays.
+;; If there are P points, E edges, and T triangles, then <points> is a Px2
+;; double array containing the point's coordinates, <edges> is an <Ex2> 
+;; integer array containing pairs of indices into the point array, and 
+;; <triangles> is a <Tx3> integer array containing indices into the point
+;; array.
+(defmethod SimpleTriangulation SimpleTriangulation (ps es ts)
+  (declare (-idx2- (-double-)) ps)
+  (declare (-idx2- (-int-)) es ts)
+
+  (unprotect) ; don't warn about uninitialized slots
+  (==> this Mesh ps es)
+  (check-itable)
+  (setq triangles ts)
+  (setq t-area2 (double-array (length triangles)))
+  (setq triangle-edges (clone-array triangles))
+  (setq edge-triangles (clone-array edges))
+  (setq p-edge (int-array (length points)))
+  (==> this -init)
+  (==> this -check-triangle-orientations))
+
+
+#? (==> <SimpleTriangulation> triangle-angles <tr>)
+;; Give vector of triangle angles (in the order of corresponding 
+;; triangle points).
+(defmethod SimpleTriangulation triangle-angles (tr)
+  (declare (-int-) tr)
+  (assert (and (> tr -1) (< tr (length triangles))) "not a valid triangle number")
+
+  (let ((angles (double-array 3)))
+    (with-triangles (tr)
+      (with-points (tr.p0 tr.p1 tr.p2)
+        (let* ((a2 (t-area2 tr))
+	       (vd102 (vecdot (-> tr.p0 tr.p1) (-> tr.p0 tr.p2)))
+	       (vd210 (vecdot (-> tr.p1 tr.p2) (-> tr.p1 tr.p0)))
+	       (a102 (cond
+		      ((< 0 vd102) (atan (/ a2 vd102)))
+		      ((> 0 vd102) (+ +pi+ (atan (/ a2 vd102))))
+		      (t (/ +pi+ 2)) ))
+	       (a210 (cond
+		      ((< 0 vd210) (atan (/ a2 vd210)))
+		      ((> 0 vd210) (+ +pi+ (atan (/ a2 vd210))))
+		      (t (/ +pi+ 2)) )) )
+	  (angles 0 a102)
+	  (angles 1 a210)
+	  (angles 2 (- +pi+ a102 a210)) )))))
+
+
+#? (==> <SimpleTriangulation> co-circularity <e>)
+;; For an interior edge <e> consider the enclosing quadrilateral and sum
+;; the interior angles at the two edge-opposite points. Return this sum
+;; or raise an error if <e> is not an interior edge. 
+;; If the result equals Pi, then the four points of the quadrilateral lie
+;; on a circle. If the result is greater than Pi, then flipping the edge
+;; increases the minimum angle of the two triangles (i.e., flipping the
+;; edge would bring the triangulation closer to a Delaunay triangulation).
+(defmethod SimpleTriangulation co-circularity (e)
+  (declare (-int-) e)
+
+  (when (not (edge-interior-p e))
+    (error "not an interior edge") )
+
+  (with-edge-quad e
+    (with-points (e.p0 e.p1 e.pl e.pr)
+      (let* ((a2l (t-area2 e.trl))
+	     (a2r (t-area2 e.trr))
+	     (rsl (vecdot (-> e.pl e.p0) (-> e.pl e.p1)))
+	     (rsr (vecdot (-> e.pr e.p1) (-> e.pr e.p0)))
+	     (l (cond
+		 ((< 0 rsl) (atan (/ a2l rsl)))
+		 ((> 0 rsl) (+ +pi+ (atan (/ a2l rsl))))
+		 (t (/ +pi+ 2)) ))
+	     (r (cond
+		 ((< 0 rsr) (atan (/ a2r rsr)))
+		 ((> 0 rsr) (+ +pi+ (atan (/ a2r rsr))))
+		 (t (/ +pi+ 2)) )) )
+	(+ l r) ))))
+
+
+;; #? (==> <SimpleTriangulation> farside-edge <tr> <x> <y>)
+;; Find the edge of triangle <tr> for which point <(x y)> is on the
+;; far side of <tr>. Return -1 when <tr> includes point <(x y)>. 
+;; Return -2 when point <(x y)> lies on an edge.
+(defmethod SimpleTriangulation farside-edge (tr Ox Oy)
+  (declare (-int-) tr)
+  (declare (-double-) Ox Oy)
+
+  (with-triangles (tr)
+    (let ((P tr.p0) (Q tr.p1) (R tr.p2) (e -1))
+      (declare (-int-) P Q R e)
+      (with-points (P Q R)
+        (let ((edge -1) (on_edge -2) (area1 0) (area2 0))
+          (declare (-int-) edge on_edge)
+  
+          ;; check edge PQ
+	  (setq e tr.e2)
+          (let ((PQx (- Qx Px)) (PQy (- Qy Py))
+                (PRx (- Rx Px)) (PRy (- Ry Py))
+                (POx (- Ox Px)) (POy (- Oy Py)) )
+            (setq area1 (- (* PQx PRy) (* PQy PRx))
+                  area2 (- (* PQx POy) (* PQy POx)))
+            #{ 
+              if ($area2==0.0)
+                $on_edge = $e;
+              if (signbit($area1) != signbit($area2))
+                $edge = $e;
+            #})
+        
+          (when (= edge -1)
+            ;; check edge PR
+	    (setq e tr.e1)
+            (let ((RPx (- Px Rx)) (RPy (- Py Ry))
+                  (RQx (- Qx Rx)) (RQy (- Qy Ry))
+                  (ROx (- Ox Rx)) (ROy (- Oy Ry)) )
+              (setq area1 (- (* RPx RQy) (* RPy RQx))
+                    area2 (- (* RPx ROy) (* RPy ROx)))
+              #{
+                if ($area2==0.0)
+                  $on_edge = $e;
+                if (signbit($area1) != signbit($area2))
+                  $edge = $e;
+              #}))
+          
+          (when (= edge -1)
+            ;; check edge QR
+	    (setq e tr.e0)
+            (let ((QRx (- Rx Qx)) (QRy (- Ry Qy))
+                  (QPx (- Px Qx)) (QPy (- Py Qy))
+                  (QOx (- Ox Qx)) (QOy (- Oy Qy)) )
+              (setq area1 (- (* QRx QPy) (* QRy QPx))
+                    area2 (- (* QRx QOy) (* QRy QOx)))
+              #{ 
+                if ($area2==0.0)
+                  $on_edge = $e;
+                if (signbit($area1) != signbit($area2))
+                  $edge = $e;
+              #}))
+
+          (if (or (= edge on_edge)
+                  (and (= edge -1) (<> on_edge -2)) )
+              -2
+            edge))))
+  ))
+
+
+#? (==> <SimpleTriangulation> find-triangle <x> <y>)
+;; Find triangle that includes point <(x y)>, return -1 if there
+;; is no such triangle, return -2 when the point lies on an edge.
+(defmethod SimpleTriangulation find-triangle (x0 y0)
+  (declare (-double-) x0 y0)
+  (let ((tr 0)
+	(e (==> this farside-edge 0 x0 y0)) )
+    (declare (-int-) tr e)
+    (while (and (> e -1) (> tr -1))
+      (let ((trl (edge-triangles e 0))
+	    (trr (edge-triangles e 1)) )
+	(declare (-int-) trl trr)
+	(setq tr (if (= trl tr) trr trl))
+	(when (<> tr -1) 
+	  (setq e (==> this farside-edge tr x0 y0)) )))
+    (if (= e -2)
+        -2
+      tr))
+  )
+
+#? (==> <SimpleTriangulation> common-edge <tr1> <tr2>)
+;; Return common edge of triangles <tr1> and <tr2>, return -1 when
+;; there is no common edge.
+(defmethod SimpleTriangulation common-edge (tr1 tr2)
+  (declare (-int-) tr1 tr2)
+  (let ((e -1) (f -1))
+    (declare (-int-) e f)
+    (with-triangles (tr1 tr2)
+      (setq f tr1.e0)
+      (when (<> f -1)
+        (cond ((= f tr2.e0) (setq e f))
+              ((= f tr2.e1) (setq e f))
+              ((= f tr2.e2) (setq e f)) ))
+      (setq f tr1.e1)
+      (when (and (= e -1) (<> f -1))
+        (cond ((= f tr2.e0) (setq e f))
+              ((= f tr2.e1) (setq e f))
+              ((= f tr2.e2) (setq e f)) ))
+      (setq f tr1.e2)
+      (when (and (= e -1) (<> f -1))
+        (cond ((= f tr2.e0) (setq e f))
+              ((= f tr2.e1) (setq e f))
+              ((= f tr2.e2) (setq e f)) )))
+    e))
+
+#? (==> <SimpleTriangulation> dual-graph <bem>)
+;; Create the triangulation's dual graph. Every node of the dual graph
+;; corresponds to a triangle and two nodes are connected by an edge if
+;; the corresponding triangles are adjacent.
+;;
+;; The optional argument <bem> is a "boundary edge map". When two 
+;; adjacent triangles share triangulation edge <e>, and <(bem e)> is 
+;; nonzero, then the triangles will not be adjacent in the dual graph.
+;; To create a triangulation graph without explicit boundary edge map, 
+;; use the empty vector <[i]> for <bem>.
+(defmethod SimpleTriangulation dual-graph (bem)
+  (declare (-idx1- (-int-)) bem)
+  (let ((ne 0)
+        (dg-edges (clone-array edge-triangles)) )
+    (declare (-int-) ne)
+
+    (if (idx-emptyp bem)
+        (idx-bloop ((et edge-triangles))
+          (when (and (<> (et 0) -1) (<> (et 1) -1))
+            (dg-edges ne 0 (et 0))
+            (dg-edges ne 1 (et 1))
+            (incr ne) ))
+      (idx-bloop ((et edge-triangles) (be bem))
+        (when (and (<> (et 0) -1) (<> (et 1) -1) (= (be) 0))
+          (dg-edges ne 0 (et 0))
+          (dg-edges ne 1 (et 1))
+          (incr ne) )))
+
+    (idx-trim! dg-edges 0 0 ne)
+    (new IGraph (length triangles) dg-edges) ))
+
+#? (==> <SimpleTriangulation> triangles-midpoint)
+;; Return midpoint for all triangles.
+(defmethod SimpleTriangulation triangles-midpoint ()
+  (let ((midpoints (double-array (length triangles) 2))
+        (tr 0) )
+    (declare (-int-) tr)
+    (idx-bloop ((point midpoints))
+      (triangle-midpoint tr point)
+      (incr tr) )
+    midpoints))
+
+
+#? (==> <SimpleTriangulation> triangles-nbe <bem>)
+;; Compute number of boundary edges for each triangle (0-3)
+;; with the given (ubyte) boundary edge map <bem>.
+(defmethod SimpleTriangulation triangles-nbe (bem)
+  (declare (-idx1- (-ubyte-)) bem)
+  (when (<> (length bem) (length edges))
+    (error "length of boundary edge map does not match number of edges") )
+  (let ((nbe (int-array (length triangles))))
+    (do-triangles* tr
+      (nbe tr (+ (if (> (bem tr.e0) 0) 1 0)
+                 (if (> (bem tr.e1) 0) 1 0)
+                 (if (> (bem tr.e2) 0) 1 0) )))
+    nbe))
+
+#? (==> <SimpleTriangulation> circumcircles)
+;; Compute circumcircles of triangles and as Tx3 matrix.
+(defmethod SimpleTriangulation circumcircles ()
+  (let ((ccs (double-array (length triangles) 3)))
+    ;; we rely on the triangle points being given in counterclockwise order
+    (idx-bloop ((triangle triangles) (cc ccs))
+      (let ((a (idx-select points 0 (triangle 0)))
+	    (b (idx-select points 0 (triangle 1)))
+	    (c (idx-select points 0 (triangle 2))) )
+	(circumcircle a b c cc)))
+    ccs))
+
+(dhc-make-class () SimpleTriangulation)
+
+
+;; Support for option 'plot-midpoint-numbers
+(defmethod SimpleTriangulation display kwdargs
+  (let ((midpm ())
+        (midp-color 'red)
+        (kwds (alist . kwdargs)) 
+        (triangle-numbers ())
+	(nt (length triangles))
+        (my-kwds (list 'midpoint-color 
+                       'plot-midpoints 
+                       'plot-midpoint-numbers)) )
+    
+    (when (alist-get 'plot-midpoints kwds)
+      (when (alist-get 'plot-midpoint-numbers kwds)
+        (setq triangle-numbers (arange* nt)) )
+      (let ((midps (double-array nt 2)))
+	(idx-bloop ((midp midps) (triangle triangles))
+	  (midp () ((array-mean (array-take points 0 triangle)) ())) )
+	(setq midpm (new Mesh midps (int-array 0 2)))
+	(setq midp-color (or (alist-get 'midpoint-color kwds) midp-color)) ))
+
+    ;; tidy up argument list
+    (setq kwdargs (remove-kwdargs kwdargs . my-kwds))
+    (setq kwdargs (mapcar dquote kwdargs))
+    (let ((win (==> this (Mesh . display) . kwdargs)))
+      (when midpm
+	(==> midpm display 
+             'window win  
+             'plot-edges ()
+             'point-color midp-color
+	     'plot-point-numbers triangle-numbers) )
+      win)))
+
+;; Support for option 'plot-midpoint-numbers
+(defmethod SimpleTriangulation -plot-arguments kwdargs
+  (let* ((my-kwds (list 'plot-midpoints          ; plot triangle midpoints
+                        'plot-midpoint-numbers   ;
+                        'midpoint-color          ; 
+                        'plot-circles            ; plot triangle circumcircles
+                        'circle-color            ;
+                        'circle-width
+                        ))
+         (opt (parse-kwdargs* kwdargs
+                              'debug                 ()
+                              'plot-midpoints        ()
+                              'plot-midpoint-numbers ()
+                              'midpoint-color        'red
+                              'plot-circles          ()
+                              'circle-width          1
+                              'circle-color          'black
+                              )) 
+         (mpc (opt 'midpoint-color))
+         (crc (opt 'circle-color))
+         (kwdargs  (mapcar dquote (remove-kwdargs kwdargs . my-kwds)))
+         (plotargs (==> this (Mesh . -plot-arguments) . kwdargs)) )
+    
+    (when (null (*gnuplot-colors* mpc))
+      (error "invalid value for keyword 'midpoint-color'" mpc) )
+    (when (null (*gnuplot-colors* crc))
+      (error "invalid value for keyword 'circle-color'" crc) )
+    (when (opt 'plot-midpoints)
+      (let* ((nt (length triangles))
+             (midpoints (==> this triangles-midpoint))
+             (triangle-numbers (if (opt 'plot-midpoint-numbers) (arange* nt) ())) )
+        (setq plotargs (mapcar dquote plotargs))
+        (setq plotargs (==> (new Mesh midpoints (int-array 0 2)) -plot-arguments
+                            'plot-edges         ()
+                            'point-color        mpc
+                            'plot-point-numbers triangle-numbers
+                            . plotargs))))
+
+    (when (opt 'plot-circles)
+      (let* ((ccs (==> this circumcircles))
+             (plotopt   (parse-kwdargs* plotargs))
+             (preamble  (plotopt 'preamble))
+             (gp        (plotopt 'plotter))
+             (plot-args (plotopt 'plot-args))
+             (plot-data (plotopt 'plot-data)) )
+        
+        ;; requires gnuplot 4.4
+        (setq plot-args (nconc1 plot-args (sprintf "'-' with circles lc rgb '%l' lw %1.2f" crc (opt 'circle-width))))
+        (setq plot-data (nconc1 plot-data (list ccs)))
+        (setq plotargs (list 'plotter gp  'preamble preamble 'debug  (opt 'debug)
+                             'plot-args plot-args  'plot-data plot-data)) ))
+    plotargs))
+
+
+

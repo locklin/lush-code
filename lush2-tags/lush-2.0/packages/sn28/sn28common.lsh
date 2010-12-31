@@ -1,0 +1,93 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: sn28common.lsh,v 1.5 2006/03/29 20:22:42 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "libc/make")
+(libload "libidx/idx-float")
+
+;;; there is no 'bound' in PSU-Lush
+
+(dm bound (_ idx &optional (dim nil)) 
+  (cond 
+   ((= 0 dim) (list 'ndims idx))
+   ((numberp dim) (list '- (list 'shape idx (- dim 1)) 1))
+   (t (list 'shape idx)) ))
+
+(when (not (stringp sn28version))
+  (error "Variable sn28version is not defined") )
+(when (not (stringp sn28flags))
+  (error "Variable sn28flags is not defined") )
+
+(let ((lm (new lushmake 
+               (concat-fname (dirname file-being-loaded) "src")
+               (concat-fname (dirname file-being-loaded) (upcase sn28version)) ) ))
+  (==> lm setflags sn28flags)
+  (==> lm rule "codebook.o" '("codebook.c" "codebook.h"))
+  (==> lm rule "adaptknn.o" '("adaptknn.c" "codebook.h"))
+  (==> lm rule "euclid.o" '("euclid.c" "defn.h"))
+  (==> lm rule "gbp.o" '("gbp.c" "defn.h"))
+  (==> lm rule "iac.o" '("iac.c" "defn.h"))
+  (==> lm rule "interf.o" '("interf.c" "defn.h"))
+  (==> lm rule "miscop.o" '("miscop.c" "defn.h"))
+  (==> lm rule "network.o" '("network.c" "defn.h"))
+  (==> lm rule "nlf.o" '("nlf.c" "defn.h"))
+  (==> lm rule "sn2sn1.o" '("sn2sn1.c" "defn.h"))
+  (==> lm make) 
+  (when (or (functionp iterative-mode)
+            (functionp newton-mode) )
+    (printf "***\007 Lush Warning: Replacing previously loaded SN28 modules\n")
+    (each ((obj (htable-keys :lm:rules)))
+      (let ((m ()))
+        (while (setq m (mod-search (basename obj)))
+          (module-unload m) ) ) ) )
+  (==> lm load) )
+
+(addpath (concat-fname (dirname file-being-loaded) "lib"))
+
+(dmd get-pattern(m n . args)
+  `(get-pattern-2 (select ,m 0 ,n) ,@args) )
+
+(libload "netenv.sn" t)
+(libload "connect.sn")
+(libload "knnenv.sn")
+
+(autoload "plot-nlf" plot-nlf)
+(autoload "perf-file" plot-perf-file)
+(autoload "matrixtool" stattool)
+(autoload "matrixtool" normtool)
+(autoload "nettool" nettool)
+(autoload "bptool" bptool) )
+
+;; Not yet working...
+;; (libload "statenv.sn")
+;; (autoload "imagetool" imagetool)
+
+

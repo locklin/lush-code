@@ -1,0 +1,396 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; The tokenizer recognizes string literals, character literals, 
+;; numbers, identifiers, and preprocessor symbols.
+;;
+;; number literal s  -> (val s)
+;; char literal   s  -> (quote (val s))
+;; string literal s  -> (quote s)
+;; all other      s  -> s
+
+(defclass CTokens iterator
+  fd
+  newline
+  next-item)
+
+(defmethod CTokens CTokens (f)
+  (==> this iterator)
+  (setq fd (or (and (isa f RFile) f) (open-read f)))
+  (setq newline 'start)
+  ())
+
+(defmethod CTokens string ()
+  ;; Lush strings are a superset of C strings
+  (list 'quote (read)) )
+
+(defmethod CTokens base ()
+  (let ((ans 0)
+        (c (skip-char "")) )
+    (cond
+     ;; binary
+     ((str-find c "bB")
+      (read-string 1)
+      (setq c (skip-char ""))
+      (while (str-find c "01")
+        (read-string 1)
+        (setq ans (+ ans ans (if (= c "0") 0 1)))
+        (setq c (skip-char "")) ) )
+     ;; octal
+     ((str-find c "01234567")
+      (while (str-find c "01234567")
+        (read-string 1)
+        (setq ans (+ (* ans 8) (- (asc c) (asc "0"))))
+        (setq c (skip-char "")) ) )
+     ;; hexadecimal
+     ((str-find c "xX")
+      (read-string 1)
+      (setq ans (concat "0x" (read-string "0-9A-Fa-f")))
+      (setq ans (or (val ans) ans))) )
+    ;; return
+    ans))
+
+(defmethod CTokens number ()
+  (let ((ans ())
+        (c (skip-char "")))
+    (cond
+     ;; Numbers starting with zero are special
+     ((= c "0")
+      (setq ans 0)
+      (read-string 1)
+      (setq c (skip-char ""))
+      (cond
+       ((str-find c "xXbB01234567")
+        (setq ans (==> this base)) )
+       ((= c ".")
+        (setq ans (read))) ))
+     ;; Period might indicate a floating point number
+     ((= c ".")
+      (read-string 1)
+      (setq c (skip-char ""))
+      (if (not (str-find c "0123456789"))
+          ;; not a number
+          (setq ans ".")
+        ;; float number
+        (setq ans (concat "." (read-string "0-9")))
+        (setq c (skip-char ""))
+        (when (str-find c "eF")
+          (setq ans (concat ans (read-string 1)))
+          (setq c (skip-char ""))
+          (when (str-find c "+-")
+            (setq ans (concat ans (read-string 1)))
+            (setq c (skip-char "")) )
+          (setq ans (concat ans (read-string "0-9"))) ) 
+        (setq ans (or (val ans) ans)) ))
+     ;; Number starting with 1-9
+     (t
+      (setq ans (read)) ))
+    ;; eat ansi-c suffixes
+    (when (numberp ans)
+      (while (str-find (skip-char "") "ulUL")
+        (read-string 1) ) )
+    ans))
+
+(defmethod CTokens char-literal ()
+  (read-string 1)
+  (let ((ans 0)
+        (c (skip-char "")) )
+    (while (not (str-find c "'\n\r\e"))
+      (if (<> c "\\")
+          (setq ans (+ (* 256 ans) (asc c)))
+        (read-string 1)
+        (setq c (skip-char ""))
+        (setq ans (* 256 ans))
+        (if (str-find c "xX0")
+            (incr ans (==> this base))
+          (let ((n (str-find c "nrbtf")))
+            (incr ans (asc (if n (str-mid "\n\r\t\b\f" n 1) c))) ) ) )
+      (read-string 1)
+      (setq c (skip-char "")) )
+    (if (<> c "'")
+        (cons 'other '<unterminated-char-literal>)
+      (read-string 1)
+      (list 'quote ans)) ))
+
+(defmethod CTokens -make-next ()
+  (setq newline (= newline 'start))
+  (reading fd
+    (let ((again t))
+      (while again
+        (setq again ())
+        (let ((c (skip-char " \t")))
+          (setq next-item-valid (<> c "\e"))
+          (setq next-item (cond
+                           ;; number
+                           ((regex-match "[0-9.]" c)
+                            (==> this number) )
+                           ;; string
+                           ((= c "\"")
+                            (==> this string) )
+                           ;; character literal
+                           ((= c "'")
+                            (==> this char-literal) )
+                           ;; identifier
+                           ((regex-match "[A-Za-z_$]" c)
+                            (read-string "A-Za-z0-9_$") )
+                           ;; newline
+                           ((str-find c "\n\r")
+                            (read-string 1)
+                            (setq again t)
+                            (setq newline t) )
+                           ;; preprocessor symbol
+                           ((and newline (= c "#"))
+                            (read-string 1)
+                            (skip-char " \t")
+                            (concat "#" (read-string "A-Za-z")) )
+                           ;; escape 
+                           ((= c "\\")
+                            (read-string 1)
+                            (when (str-find (skip-char " ") "\n\r")
+                              (setq again t)
+                              (setq newline ())
+                              (read-string 1) )
+                            c )
+                           ;; possible comment
+                           ((= c "/")
+                            (read-string 1)
+                            (let ((cc (skip-char "")))
+                              (selectq cc
+                                ("/" ;; c++ style comment
+                                 (setq again t)
+                                 (setq newline ())
+                                 (read-string "~\n\r") )
+                                ("*" ;; c style comment
+                                 (setq again t)
+                                 (setq newline ())
+                                 (while (and (<> cc "/") (<> cc "\e"))
+                                   (read-string 1)
+                                   (read-string "~*\e")
+                                   (read-string "*")
+                                   (setq cc (skip-char "")) )
+                                 (read-string 1) ) ) )
+                            c)
+                           ((<> c "\e")
+                            (read-string 1) )
+                           (t
+                            (setq next-item-valid ()) )))
+          ))))
+  ())
+           
+;; list of tokens until next (logical) end-of-line
+(defmethod CTokens to-eol ()
+  (let ((toks ()))
+    (peeknext this)
+    (while (not newline)
+      (setq toks (cons (next this) toks))
+      (peeknext this) )
+    (reverse toks) ))
+
+#? * Tokenization
+
+#? (ctokens <filename>)
+;; Yield a stream of tokens in C-file <filename>.
+(defun ctokens (filename)
+  (new CTokens filename) )
+
+#? (cparse <filename> <filter1> <filter2> ...)
+;; 
+(defmacro cparse (filename . filters)
+  (dolist (f filters)
+    (when (not (cfilters- f))
+      (error "not a filter" f) ))
+  `(let ((ts (ctokens ,filename))
+         (got-one ())
+         ,@(domapcar ((f filters)) (list f '(htable))) )
+     (while (not (emptyp ts))
+       ,@(domapcar ((f filters))
+           `(apply ,f ,(list (cfilters- f) 'ts)) )
+       (if got-one
+           (setq got-one ())
+         (next ts) )
+       )
+     (list ,@filters))
+  )
+
+#? * Basic Filters 
+
+(in-namespace cfilters-
+
+;; filters are return hash tables mapping identifiers or tags
+;; to a list of tokens defining the named construct
+
+;; basic block
+(defun bb (ts)
+  (let ((tokens ()))
+    (if (<> (peeknext ts) "{")
+        (error "not at beginning of a block" (peeknext ts))
+      (next ts)
+      (while (<> (peeknext ts) "}")
+        (if (= (peeknext ts) "{")
+            (setq tokens (cons (bb ts) tokens))
+          (setq tokens (cons (next ts) tokens)) )
+        )
+      (next ts)
+      (reverse tokens) )))
+
+#? (define <ts>)
+;; Filter for preprocessor defines.
+(defun define (ts)
+  (if (= (peeknext ts) "#define")
+      (progn
+        (next ts)
+        (setq got-one t)
+        (list (named (next ts)) (==> ts to-eol)) )
+    (list () ())
+    ))
+
+#? (enum-decl <ts>)
+;; Filter for enum declarations.
+(defun enum-decl (ts)
+  (if (= (peeknext ts) "enum")
+      (let ((tag (progn (next ts) (next ts))))
+        (if (<> (peeknext ts) "{")
+            ;; not a declaration
+            (list () ())
+          (setq got-one t)
+          (list (named tag) (bb ts)) ))
+    (list () ()) ))
+
+#? (struct-decl <ts>)
+;; Filter for struct declarations.
+(defun struct-decl (ts)
+  (if (= (peeknext ts) "struct")
+      (let ((tag (progn (next ts) (next ts))))
+        (if (<> (peeknext ts) "{")
+            ;; not a declaration
+            (list () ())
+          (setq got-one t)
+          (list (named tag) (bb ts)) ))
+    (list () ()) ))
+
+) ; cfilters-
+
+
+#? * Specialized Functions
+
+#? (cparse-extract-constants <filename> [<filter>])
+;; Analyzes the C include file <filename>
+;; and returns a <progn> expression that
+;; calls <defcconst> to define the symbolic
+;; constants extracted from the include file.
+;;
+;; Argument <filter> is a function that
+;; takes a possible constant name as input.
+;; It should return a valid symbol name for 
+;; use with <defcconst>.  Otherwise the
+;; potential definition will be ignored.
+
+(de cparse-extract-constants (filename &optional filter)
+  (setq filter (or filter (lambda(s) s)))
+  ;; start parsing
+  (let ((ts (ctokens filename))
+        (idre "[A-Za-z_$][A-Za-z0-9_$]*")
+        (defs ())
+        (tok ()) )
+    (setq tok (next ts))
+    (while (not (emptyp ts))
+      (cond
+       ;; process defines
+       ((= tok "#define")
+        (let ((sym ()) (tval ()))
+          (setq tok (next ts))
+          (when (and (stringp tok) 
+                     (not :ts:newline)
+                     (regex-match idre tok) )
+            (setq sym tok)
+            (setq tok (next ts))
+            (when (not :ts:newline)
+              (if (numberp tok)
+                  (setq tval tok)
+                (setq tval (alist-get tok defs)) )
+              (setq tok (next ts))
+              (when (and sym tval :ts:newline)
+                (setq defs (alist-add sym tval defs)) ) ) ) ) )
+       ;; process enums
+       ((= tok "enum")
+        (setq tok (next ts))
+        (when (regex-match "[A-Za-z_$][A-Za-z0-9_$]*" tok)
+          (setq tok (next ts)) )
+        (when (= tok "{")
+            (setq tok (next ts))
+            (let ((tval 0)
+                  (ndefs defs))
+              (while (and (numberp tval) (regex-match idre tok))
+                (let ((sym tok))
+                  (setq tok (next ts))
+                  (when (= tok "=")
+                    (setq tok (next ts))
+                    (cond
+                     ((consp tok) 
+                      (setq tval (cdr tok)) )
+                     ((= tok "-")
+                      (setq tok (next ts))
+                      (when (numberp tok)
+                        (setq tval (- tok)) ) )
+                     (t
+                      (setq tval (alist-get sym defs)) ) )
+                    (setq tok (next ts)) )                
+                  (when (numberp tval)
+                    (setq ndefs (alist-add sym tval ndefs))
+                    (incr tval) )
+                  (when (= tok ",")
+                    (setq tok (next ts)) ) ) )
+              (when (= tok "}")
+                (setq defs ndefs)
+                (setq tok (next ts)) ) ) ) )
+       ;; other
+       (t
+        (setq tok (next ts)) ) ) )
+    ;; call filters
+    (let ((outs (list t))
+          (symb ()) )
+      (dolist (def defs)
+        (when (stringp (setq symb (filter (car def))))
+          (setq outs `((defconstant ,(named symb) ,(cdr def)) ,@outs)) ) )
+      (cons 'progn outs) ) ) )
+
+#? (cparse-extract-struct-decl <filename> <tag>)
+;; Parse the struct declaration of struct <tag> in file
+;; <filename> and return as an alist mapping field
+;; names to types.
+(defun cparse-extract-struct-decl (filename tag &optional pp)
+  (when (not (symbolp tag))
+    (error "not a symbol" tag) )
+  (when (not (filep filename))
+    (error "file not found" filename) )
+  (let* ((f (if pp
+                (open-read (sprintf "| %s -E %s" (getconf "CC") filename))
+              filename))
+         ((decls) (cparse f struct-decl))
+         (decl    (filter #\(<> $1 ";") (decls tag))) )
+    (assert (evenp (length decl)))
+    (reverse (apply alist (mapcar make-symbol (reverse decl)))) ))

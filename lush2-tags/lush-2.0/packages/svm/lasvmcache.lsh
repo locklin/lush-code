@@ -1,0 +1,204 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: lasvmcache.lsh,v 1.7 2007/01/25 22:42:05 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "libc/make")
+(libload "libidx/idx-double")
+(libload "libidx/idx-float")
+(libload "libidx/idx-int")
+
+(libload "kernel")
+(libload "lasvmload")
+
+
+;; ----------------------------------------
+
+#? * KernelCache.
+;; Abstract kernel interface.
+
+(defclass KernelCache SVMKernel
+  ((-obj- (SVMKernel)) basekernel)
+  ((-gptr-) kcache) )
+
+(defmethod KernelCache KernelCache(k)
+  ((-obj- (SVMKernel)) k)
+  (setq basekernel k)
+  #{ $kcache = lasvm_kcache_create(unikernel, $basekernel); #}
+  () )
+
+(defmethod KernelCache -destructor()
+  #{ lasvm_kcache_destroy($kcache); #}
+  () )
+
+(defmethod KernelCache call(i j)
+  ((-int-) i j)
+  (to-real #{ lasvm_kcache_query($kcache, $i, $j) #}) )
+
+(defmethod KernelCache call-bypass(i j)
+  ((-int-) i j)
+  (==> basekernel call i j) )
+
+(defmethod KernelCache label(i)
+  ((-int-) i)
+  (==> basekernel label i) )
+
+(defmethod KernelCache set-maximum-size(n)
+  ((-real-) n)
+  #{ lasvm_kcache_set_maximum_size($kcache, (long)$n); #}
+  n )
+
+(defmethod KernelCache get-maximum-size()
+  (to-real #{ lasvm_kcache_get_maximum_size($kcache) #}) )
+
+(defmethod KernelCache get-current-size()
+  (to-real #{ lasvm_kcache_get_current_size($kcache) #}) )
+
+(defmethod KernelCache get-i2r(n)
+  ((-int-) n)
+  (let ((x (int-array n)))
+    #{{
+        int i;
+        const int *s = lasvm_kcache_i2r($kcache,$n);
+        int *d = IDX_PTR($x, int);
+        for (i=0; i<$n; i++)
+          d[i] = s[i];
+    }#}
+    x ) )
+
+(defmethod KernelCache get-r2i(n)
+  ((-int-) n)
+  (let ((x (int-array n)))
+    #{{
+        int i;
+        const int *s = lasvm_kcache_r2i($kcache,$n);
+        int *d = IDX_PTR($x, int);
+        for (i=0; i<$n; i++)
+          d[i] = s[i];
+    }#}
+    x ) )
+
+(defmethod KernelCache i2r(i)
+  ((-int-) i)
+  #{{ 
+      const int *s = lasvm_kcache_i2r($kcache,$i+1);
+      $i = s[$i];
+  }#}
+  i )
+
+(defmethod KernelCache r2i(i)
+  ((-int-) i)
+  #{{ 
+      const int *s = lasvm_kcache_r2i($kcache,$i+1);
+      $i = s[$i];
+  }#}
+  i )
+
+(defmethod KernelCache swap-rr(s1 s2)
+  ((-int-) s1 s2)
+  #{ lasvm_kcache_swap_rr($kcache,$s1,$s2); #}
+  () )
+
+(defmethod KernelCache swap-ii(s1 s2)
+  ((-int-) s1 s2)
+  #{ lasvm_kcache_swap_ii($kcache,$s1,$s2); #}
+  () )
+
+(defmethod KernelCache swap-ri(s1 s2)
+  ((-int-) s1 s2)
+  #{ lasvm_kcache_swap_ri($kcache,$s1,$s2); #}
+  () )
+
+(defmethod KernelCache row(i len)
+  ((-int-) i len)
+  (let ((x (float-array len)))
+    #{{
+        int i;
+        const float *s = lasvm_kcache_query_row($kcache, $i, $len);
+        float *d = IDX_PTR($x, float);
+        for (i=0; i<$len; i++)
+          d[i] = s[i];
+    }#}
+    x ) )
+
+(defmethod KernelCache status(i)
+  ((-int-) i)
+  (to-int #{ lasvm_kcache_status_row($kcache, $i) #}) )
+
+(defmethod KernelCache discard(i)
+  ((-int-) i)
+  #{ lasvm_kcache_discard_row($kcache, $i) #}
+  () )
+
+
+(defmethod KernelCache shuffle(a)
+  ((-idx1- (-int-)) a)
+  (let ((len (idx-dim a 0)))
+    ((-int-) len)
+    #{{
+      int *ilist = IDX_PTR($a, int);
+      $len = lasvm_kcache_shuffle($kcache, ilist, $len);
+    }#}
+    len ) )
+
+(defmethod KernelCache set-buddy(k)
+  ((-obj- (KernelCache)) k)
+  (let ((other :k:kcache))
+    #{{
+      lasvm_kcache_set_buddy($kcache, $other);
+    }#}
+    k ) )
+
+
+;; ----------------------------------------
+;; COMPILE
+
+(with-namespace lush1-
+
+(let* ((lasvmdir (concat-fname (dirname file-being-loaded) "lasvm"))
+       (dhc-make-lushflags (concat dhc-make-lushflags " -I" lasvmdir)))
+  (dhc-make ()
+	    #{ 
+	       #include "kcache.h" 
+	    #}
+	    #{
+	       static double unikernel(int i, int j, void *closure)
+	       {
+	         struct CClass_SVMKernel * k = (struct CClass_SVMKernel*)closure;
+	         return (*k->Vtbl->M_call)(k, i, j);
+	       }
+	    #}
+	    (KernelCache KernelCache -destructor call call-bypass label
+			 set-maximum-size get-maximum-size get-current-size
+			 get-i2r get-r2i i2r r2i swap-rr swap-ii swap-ri 
+			 row status discard shuffle set-buddy) ) )
+
+
+) ; lush1-

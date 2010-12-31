@@ -1,0 +1,243 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libimage/image-io")
+(libload "libimage/ubimage")
+(libload "libimage/rgbaimage")
+(libload "libimage/thumbnails")
+(libload "libogre/treebrowser")
+
+(ogre) ;; set up ogre
+
+#? *** Displaying images
+
+(defclass IPTriggerButton StdButton 
+  ogrim label func)
+
+
+(defun recompute-geometry(w)
+  (when (isa w Container)        ;; recompute all the children
+    (lete ((lock (new GeometryLock w)))
+      (domapc (((v . rect) :w:contents))
+	(recompute-geometry v) )))
+  (when (or (isa w EmptySpace)   ;; these do not have a compute-geometry slot
+	    (isa w DarkSpace) )
+    (let (((_ _ ww hh) :w:rect))
+      (==> w resize (min ww hh) (min ww hh)) ) )
+  (==> w compute-geometry) )
+
+(defun -process-image (iptb)
+  (with-object iptb
+    (let ((img current-image))
+      (when img 
+	(setq current-image (func img))
+	(when thiswindowobject
+	  (==> thiswindowobject setdata current-image) )))))
+
+
+(defmethod IPTriggerButton IPTriggerButton (o l f)
+  (setq ogrim o  label l  func f)
+  (==> this StdButton label -process-image) )
+
+(defun -toggle-autoscale (x) 
+  (==> ogrim toggle-autoscale)
+  (if :ogrim:autoscale
+      (==> this settext "Autoscale ON") 
+    (==> this settext "Autoscale OFF") )
+  x)
+
+;; extract accelerator key and fix label
+(defun -dissect-button-label (label)
+  (let ((parts (regex-extract "([^.]*)\\.(.*)" label)))
+    (if parts
+	(cons (str-join "" parts) (right (car parts) 1))
+      (cons label ()) )))
+
+
+(defclass ImageShowWindow AutoWindowObject 
+  title
+  ogrim
+  toolbar
+  tns
+  original-image
+  current-image
+  keys)
+
+#? (new ImageShowWindow <title> <image> <thumbnails> [<named-funcs>])
+;; Create a new ImageShowWindow object which contains an ImageViewer
+;; object and a toolbar (Column of IPTriggerButton objects).
+;; The string <title> gives the window title, <image> is an array.
+;; Optional argument <named-funcs> is an alist of (<label> . <function>)
+;; pairs. When provided, a button will be inserted into the toolbar
+;; for each entry in <named-funcs>.
+;; {<see> image-show}
+(defmethod ImageShowWindow ImageShowWindow (-title img thumbnails nfuncs)
+  (setq title -title)
+  (setq original-image img)
+  (setq current-image img)
+  (setq ogrim (new OgrImage img))
+  (setq toolbar (new Column))
+  (setq tns thumbnails)
+  (setq keys (htable))
+  (let ((buttons (alist     ;; predefined buttons
+		  "Q.uit"      (lambda (x) (==> thiswindowobject delete) x)
+		  "A.utoscale" -toggle-autoscale
+		  "S.ave"      (lambda (x) (setq :thiswindowobject:original-image x))
+		  "R.estore"   (lambda (x) :thiswindowobject:original-image) 
+		  "+."         (lambda (x) (==> ogrim incr-zoom) x)
+		  "-."         (lambda (x) (==> ogrim decr-zoom) x) )))
+    
+    ;; add pre-efined buttons not defined by user
+    (dolist ((label . func) buttons)
+      (when (null (alist-get label nfuncs))
+	(setq nfuncs (alist-add label func nfuncs)) ))
+    
+    ;; create buttons and add to toolbar
+    (dolist (nfunc nfuncs)
+      (let (((label . key) (-dissect-button-label (car nfunc))))
+	(let ((iptbtn (new IPTriggerButton ogrim label (cdr nfunc))))
+	  (when key
+	    (keys key iptbtn) )
+	  (==> toolbar insert iptbtn) )))
+    
+    (let* ((ivrow (new Row ogrim toolbar))
+	   (contents (if tns (new Column tns (new Darkspace 3) ivrow) ivrow)))
+      (==> this AutoWindowObject () () () () title contents) )))
+
+(defmethod ImageShowWindow keypress (c x y)
+  (let ((iptbtn (keys c)))
+    (when iptbtn
+      (-process-image iptbtn) )))
+
+(defmethod ImageShowWindow setdata (img)
+  (setq current-image img)
+  (==> ogrim setdata img)
+  (recompute-geometry this) )
+
+
+#? *image-disp-autoscale*
+;; {<see> image-disp}
+;; Boolean variable. When true, <image-disp> will linearly scale
+;; graylevel images to use the full dynamic range of the display
+;; device (default: <t>).
+(defparameter *image-disp-autoscale* t)
+
+#? (image-disp <img> [<win> [<mag>]])
+;; {<see> image-show, mat-disp}
+;; Display image in window.
+;; 
+;; With one argument, open a new window and display image <img>.
+;; With two arguments, use the existing window <win> for display.
+;; With three arguments, magnify the image by <mag> before display.
+(defun image-disp (img &optional win (s 1)) 
+  (let* (((m n) (mat-shape img))
+         (win (or win (new-window (* n s) (* m s))))
+         (draw (selectq (idx-rank img)
+                 (2 (if *image-disp-autoscale*
+                        (lambda (img s)
+                          (let ((i ((idx-inf img)))
+                                (a ((idx-sup img))) )
+                            (setq a (max (* i 1.1) a))
+                            (gray-draw-matrix 0 0 img i a s s) ))
+                      (lambda (img s)
+                        (gray-draw-matrix 0 0 img 0 255 s s) )))
+                 (3 (lambda (img s)
+                      (rgb-draw-matrix 0 0 img s s) ))
+                 (t (error "not an image" img)) )))
+    (let ((window win))
+      (draw img s) )
+    win))
+
+#? *image-show-autoscale*
+;; {<see> image-disp}
+;; Boolean variable. When true, <image-show> will linearly scale
+;; graylevel images to use the full dynamic range of the display
+;; device (default: <t>).
+(defparameter *image-show-autoscale* t)
+
+#? (image-show <arg> [<label> <func> [...]])
+;; {<see> image-disp}
+;; Open new image viewer and display image(s). Return the viewer.
+;;
+;; When <arg> is an image, show it.
+;; When <arg> is an image filename, load the image and show it.
+;; When <arg> is a directory name, load all images in that 
+;; directory and launch an interactive image viewer.
+;;
+;; Following <arg> you may pass an alternating sequence of labels
+;; and functions. Each such function takes one image and returns
+;; one image. For each label-button pair the image viewer 
+;; includes an extra button. Pressing a button triggers 
+;; application of the  associated function to the currently
+;; displayed image and the viewer is updated with the resulting
+;; image.
+;;
+;; If a label character is followed by a dot ('.'), this
+;; character becomes the accelerator key for the corresponding
+;; button. Examples:
+;;
+;; {<c> (image-show "lena.gif")}
+;;
+;; {<c> (image-show "lena.jpg" "transp.ose" mat-transpose "f.lipud" mat-flipud)}
+(de image-show (arg . args)
+  (let ((arg (if (stringp arg) (image-find arg) arg))
+	(title "")
+	(img ())
+        (win ()) )
+    (cond
+     ((stringp arg)
+      (let ((reload (lambda (img) (image-read :thiswindowobject:title))))
+        (setq img (image-read arg)  title arg)
+        (setq args (cons "reL.oad" (cons reload args))) ))
+     
+     ((listp arg)
+      (setq img (image-read (car arg))  title (car arg)) )
+
+     ((indexp arg)
+      (setq img ##arg  title (pname arg)) )
+
+     (t
+      (error "neither filename nor index" arg) ))
+    
+
+    (setq win (if (listp arg)
+                  (let* ((ncols 8)
+                         (cb (lambda (fn)
+                               (==> thiswindowobject setdata (image-read fn))
+                               (setq :thiswindowobject:title fn)
+                               (let ((window :thiswindowobject:window))
+                                 (x11-configure () () () () () fn) )))
+               (tns (new ThumbnailPanel arg cb ncols 100 100)) )
+                    (when (> (length arg) 30)
+                      (setq tns (new Scroller (+ 28 (* ncols 104)) 312 tns)) )
+                    (new ImageShowWindow title img tns (alist . args)) )
+                (new ImageShowWindow title img () (alist . args)) ))
+    (when *image-show-autoscale*
+      (==> win keypress "A" 0 0) )
+    win))
+  
+

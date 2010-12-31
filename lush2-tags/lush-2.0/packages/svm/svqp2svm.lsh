@@ -1,0 +1,286 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "libidx/idx-macros")
+(libload "libidx/idx-ubyte")
+(libload "libc/make")
+(libload "svm/kernel")
+
+;; ----------------------------------------
+
+#? *** Svqp2SVM
+;; This is a simple SVM implemented with the SVQP2 optimizer.
+;; SVQP2 is much faster than SVQP and slightly faster than LibSVM.
+
+(defclass Svqp2SVM object
+  ;; data
+  ((-obj- (SVMKernel)) kernel)
+  ((-idx1- (-int-)) x)
+  ((-idx1- (-double-)) y)
+  ;; result
+  ((-idx1- (-double-)) alpha)
+  ((-double-) b)
+  ((-double-) w)
+  ((-int-) nsv)
+  ;; parameters
+  ((-double-) epsgr)			;see svqp2.h
+  ((-double-) epskt)			;see svqp2.h
+  ((-double-) maxst)			;see svqp2.h
+  ((-bool-)   sumflag)			;see svqp2.h
+  ((-double-) Cp)			;C for positive examples
+  ((-double-) Cn)			;C for negative examples
+  ((-int-)    maxcachesize)		;see svqp2.h
+  ((-int-)    verbosity)		;see svqp2.h
+  ((-bool-)   verbose)			;flag
+  ;; stuff
+  ((-gptr-)   svqp) )
+
+(defmethod Svqp2SVM Svqp2SVM(ik n)
+  ((-obj- (SVMKernel)) ik)
+  ((-int-) n)
+  (setq kernel ik)
+  (setq x (int-matrix n))
+  (setq y (double-matrix n))
+  (setq alpha (double-matrix n))
+  (setq b 0)
+  (setq w 0)
+  (setq nsv 0)
+  (setq Cp 1)
+  (setq Cn 1)
+  (setq maxcachesize (* 256 1024 1024))
+  (setq verbosity 1)
+  (setq verbose t)
+  (setq epsgr 1e-3)
+  (setq epskt 1e-10)
+  (setq maxst 1e+9)
+  (setq sumflag t)
+  (setq svqp (gptr ()))
+  () )
+
+(defmethod Svqp2SVM -destructor()
+  #{ SVQP2 *svqp = (SVQP2*)$svqp; delete svqp; #}
+  (setq svqp (gptr ())) )
+
+  
+(defmethod Svqp2SVM set-xy(lx ly)
+  (let ((l1 (len lx))
+        (l2 (len ly)) )
+    (when (<> l1 l2)
+      (error "List lengths do not match") )
+    (idx-i1resize x l1)
+    (idx-d1resize y l2)
+    (x () lx)
+    (y () ly) )
+  t )
+
+(defmethod Svqp2SVM call(i j)
+  ((-int-) i j)
+  (==> kernel call (x i) (x j)) )
+
+(defmethod Svqp2SVM get-nsv()
+  (when (<= nsv 0)
+    (error "Must call method 'run' first") )
+  nsv )
+
+(defmethod Svqp2SVM get-expansion()
+  (when (<= nsv 0)
+    (error "Must call method 'run' first") )
+  (let ((sv (int-matrix nsv))
+	(a  (double-matrix nsv))
+	(k  0) )
+    ((-int-) k)
+    (idx-gloop ((i)(alpha1 alpha))
+      (when (<> (alpha1) 0)
+	(sv k (x i))
+	(a  k (alpha1))
+	(incr k) ) )
+    (let ((lsvm (new SVMExpansion kernel sv a)))
+      (setq :lsvm:b b)
+      (setq :lsvm:positive-class +1)
+      (setq :lsvm:negative-class -1)
+      lsvm ) ) ) 
+
+(defmethod Svqp2SVM compute-b()
+  (let ((lexp (==> this get-expansion))
+	(e (2* (sqrt epskt)))
+	(lb -1e9)
+	(ub +1e9)
+	(sf 0)
+	(nf 0) )
+    ((-double-) lb ub sf nf e)
+    (setq :lexp:b 0)
+    (idx-gloop ((i)(alpha1 alpha))
+      (let ((v (==> lexp predict (x i)))
+	    (d (y i))
+	    (a (alpha1)))
+	(if (> d 0)
+	    (cond
+	     ((< a e)        (setq ub (min ub (1- v))))
+	     ((> a (- Cp e)) (setq lb (max lb (1- v))))
+	     (t              (incr nf) (incr sf (1- v))) )
+	  (cond
+	   ((> a (- e))      (setq lb (max lb (1+ v))))
+	   ((< a (- e Cn))   (setq ub (min ub (1+ v))))
+	   (t                (incr nf) (incr sf (1+ v))) ) ) ) )
+    (if (> nf 0)
+	(/ sf nf)
+      (2/ (+ lb ub)) ) ) )
+
+
+(defmethod Svqp2SVM run-with-alpha()
+  (when (<> (idx-dim x 0) (idx-dim y 0))
+    (error "Matrix x and y have different sizes") )
+  (when (or (< Cn 0) (< Cp 0))
+    (error "Negative Cp and/or Cn") )
+  (let* ((n (idx-dim x 0))
+	 (bv (double-matrix n))
+	 (cmin (double-matrix n))
+	 (cmax (double-matrix n)) )
+    ((-int-) n)
+    (idx-d1resize alpha n)
+    (idx-clear alpha)
+    (idx-bloop ((y1 y)(b1 bv)(cmin1 cmin)(cmax1 cmax))
+      (let ((f (> (y1) 0)))
+	(b1      (if f +1 -1))
+	(cmin1   (if f 0 (- Cn)))
+	(cmax1   (if f Cp 0)) ) )
+    #{{
+       SVQP2 *svqp = (SVQP2*)$svqp; 
+       delete svqp;
+       svqp = new SVQP2($n);
+       $svqp = (gptr)svqp;
+       svqp->Afunction = unikernel;
+       svqp->Aclosure = $kernel;
+       svqp->sumflag = (($sumflag) ? true : false);
+       svqp->verbosity = (int)$(if verbose verbosity 0);
+       svqp->epskt = $epskt;
+       svqp->epsgr = $epsgr;
+       svqp->maxst = $maxst;
+       svqp->maxcachesize = $maxcachesize;
+    }#}
+    ;; Fill vectors
+    (cinline-idx1loop x "int" "p" "i"
+		      #{ ((SVQP2*)$svqp)->Aperm[i] = *p; #} )
+    (cinline-idx1loop alpha "double" "p" "i"
+		      #{ ((SVQP2*)$svqp)->x[i] = *p; #} )
+    (cinline-idx1loop bv "double" "p" "i"
+		      #{ ((SVQP2*)$svqp)->b[i] = *p; #} )
+    (cinline-idx1loop cmin "double" "p" "i"
+		      #{ ((SVQP2*)$svqp)->cmin[i] = *p; #} )
+    (cinline-idx1loop cmax "double" "p" "i"
+		      #{ ((SVQP2*)$svqp)->cmax[i] = *p; #} ) 
+    () )
+  ;; Run
+  (let ((status (to-int #{ ((SVQP2*)$svqp)->run() #} )))
+    (when (>= status 0)
+      #{ SVQP2 *svqp = (SVQP2*)$svqp;
+         $b = - (svqp->gmin + svqp->gmax) / 2;
+         $w = svqp->w;   
+      #}
+      (when (not sumflag) (setq b 0))
+      (cinline-idx1loop alpha "double" "p" "i"
+			#{ *p = ((SVQP2*)$svqp)->x[i]; #} )
+      (setq nsv 0)
+      (idx-bloop ((alpha1 alpha))
+	(when (<> (alpha1) 0)
+	  (incr nsv) ) ) )
+    ;; Cleanup
+    #{ SVQP2 *svqp = (SVQP2*)$svqp; delete svqp; #}
+    (setq svqp (gptr ()))
+    status ) )
+
+(defmethod Svqp2SVM run()
+  (array-clear alpha 0)
+  (==> this run-with-alpha) )
+
+(defmethod Svqp2SVM load-expansion(lexp)
+  ((-obj- (SVMExpansion)) lexp)
+  ;; compute reverse example table
+  (let ((n (idx-dim x 0))
+	(nsv 0)
+	(revx (htable)) )
+    (for (i 0 (1- n))
+	 (revx (x i) i) )
+    ;; collect alpha
+    (idx-clear alpha)
+    (idx-bloop ((s1 :lexp:sv)(a1 :lexp:alpha))
+      (let ((i (revx (s1))))
+	(when (and i (>= i 0) (< i n))
+	  (alpha i (a1))
+	  (incr nsv) ) ) )
+    ;; check sum
+    (when (<> nsv (idx-dim :lexp:sv 0))
+      (printf "*** Warning: nsv discrepancy %d != %d\n"
+	      nsv (idx-dim :lexp:sv 0)) )
+    (let ((sum ((idx-sum alpha))))
+      (when (> (abs sum) epsgr)
+	(printf "*** Warning: alpha sum is %l\n" sum)
+	;; TODO: code to project onto constraints
+	() ) ) )
+  ;; compute final nsv
+  (setq b :lexp:b)
+  (setq nsv 0)
+  (idx-bloop((a1 alpha))
+    (when (<> (a1) 0)
+      (incr nsv) ) )
+  nsv )
+
+
+(defmethod Svqp2SVM run-with-expansion(lexp)
+  ((-obj- (SVMExpansion)) lexp)
+  (==> this load-expansion lexp)
+  (==> this run-with-alpha) )
+
+
+;; ----------------------------------------
+
+
+(let* ((cmd (regex-subst "\\$CC" "$CXX" dhc-make-command))
+       (dir (concat-fname (dirname file-being-loaded) "svqp2"))
+       (lm (new LushMake dir)) )
+  (==> lm rule "svqp2.o" '("svqp2.cpp" "svqp2.h") cmd)
+  (==> lm make)
+  (==> lm load) )
+
+
+(with-namespace lush1-
+
+(let* ((dir (concat-fname (dirname file-being-loaded) "svqp2"))
+       (dhc-make-lushflags (concat dhc-make-lushflags " -I" dir)) )
+  (dhc-make-with-c++ () () 
+      #{ #include "svqp2.h" 
+      #}
+      #{ static double unikernel(int i, int j, void *closure) {
+           CClass_SVMKernel * k = (CClass_SVMKernel*)(closure);
+           return (*k->Vtbl->M_call)(k, i, j); }
+      #}
+       (Svqp2SVM Svqp2SVM -destructor call
+		get-nsv get-expansion 
+		compute-b run-with-alpha ) ) )
+
+) ; namespace lush1-

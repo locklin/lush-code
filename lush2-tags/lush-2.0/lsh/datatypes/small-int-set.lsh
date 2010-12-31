@@ -1,0 +1,237 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "datatypes/iterable-datatype")
+
+#? *** Small Integer Sets
+;; This set implementation is more efficient than the general
+;; <IntSet>. It requires that the possible values are in a
+;; fixed range [0..<n>-1], where <n> must be specified at object
+;; creation time. A <SmallIntSet> requires memory linear in <n>.
+;; Another difference to an <IntSet> is that iterating over an
+;; <SmallIntSet> does not yield the set elements in order.
+
+(defclass SmallIntSet IterableDatatype
+  ((-srg- (-int-)) sparse)
+  ((-srg- (-int-)) dense)
+  ((-int-) nelems) )           ; number of items in set
+
+(in-namespace (class SmallIntSet)
+ 
+(defmacro check-nonempty ()
+  `(when (= nelems 0)
+     (error "Set is empty") )
+  )
+
+(defmacro check-bounds (i)
+  `(when (not (and (>= ,i 0) (< ,i (storage-nelems sparse))))
+     (error "Item out of bounds") )
+  )
+
+(defmacro set-member (i)
+  (when (not (symbolp i))
+    (error "not a symbol" i))
+  `(and (< (sparse ,i) nelems) 
+        (= (dense (sparse ,i)) ,i) )
+  )
+
+)
+
+(defclass SmallIntSetIterator DatatypeIterator
+  ((-srg- (-int-)) dense)
+  ((-int-) n)
+  ((-int-) nelems)
+  ((-int-) next-item) )
+
+(defmethod SmallIntSetIterator SmallIntSetIterator (obj d ne)
+  (declare (-obj- (IterableDatatype)) obj)
+  (declare (-srg- (-int-)) d)
+  (declare (-int-) ne)
+  (==> this DatatypeIterator obj)
+  (setq dense d  n 0  nelems ne) )
+
+(defmethod SmallIntSetIterator -make-next ()
+  (when (< n nelems)
+    (setq next-item-valid t)
+    (setq next-item (dense n))
+    (incr n)
+    ()))
+
+#? (new <SmallIntSet> <n>)
+;; Create a <SmallIntSet> object with possible values in the
+;; range [0..<n>-1].
+(defmethod SmallIntSet SmallIntSet (n)
+  (declare (-int-) n)
+  (setq sparse (int-storage n))
+  (setq dense (int-storage n))
+  (setq nelems 0))
+
+(defmethod SmallIntSet -emptyp ()
+  (= nelems 0) )
+
+(defmethod SmallIntSet -deepcopy (clone)
+  (declare (-obj- (SmallIntSet)) clone)
+  (let ((s (int-storage (storage-nelems sparse))))
+    #{ memcpy($s->data, $sparse->data, $(storage-nbytes sparse)); #}
+    (setq :clone:sparse s) )
+  (let ((d (int-storage (storage-nelems dense))))
+    #{ memcpy($d->data, $dense->data, $(storage-nbytes dense)); #}
+    (setq :clone:dense d) )
+  (setq :clone:nelems nelems)
+  ())
+
+#? (==> <SmallIntSet> number-of-items)
+;; Number of items in set.
+(defmethod SmallIntSet number-of-items ()
+  nelems)
+
+#? (==> <SmallIntSet> clear)
+;; Clear set and return self.
+;; After invoking this method the set object is empty.
+(defmethod SmallIntSet clear ()
+  (setq nelems 0)
+  this)
+
+#? (==> <SmallIntSet> insert <i>)
+;; Insert item <i> into set, return <t> on success and <()> when
+;; <i> was already in set.
+(defmethod SmallIntSet insert (i)
+  (declare (-int-) i)
+  (check-mutability)
+  (check-bounds i)
+  (if (set-member i)
+      ()
+    (sparse i nelems)
+    (dense nelems i)
+    (incr nelems)
+    t))
+
+#? (==> <SmallIntSet> insert-all <is>)
+;; Insert all items in vector <is> and return <()>.
+(defmethod SmallIntSet insert-all (items)
+  (declare (-idx1- (-int-)) items)
+  (check-mutability)
+  (for* (i 0 (length items))
+    (declare (-int-) i)
+    (let ((item (items i)))
+      (declare (-int-) item)
+      (when (not (set-member item))
+        (sparse item nelems)
+        (dense nelems item)
+        (incr nelems) )))
+  ())
+
+#? (==> <SmallIntSet> remove <i>)
+;; Remove item <i> from set, return <t> on success and <()> when
+;; <i> was not in set.
+(defmethod SmallIntSet remove (i)
+  (declare (-int-) i)
+  (check-mutability)
+  (check-bounds i)
+  (if (set-member i)
+      (progn
+        (decr nelems)
+        (when (>= nelems 0)
+          (dense (sparse i) (dense nelems))
+          (sparse (dense nelems) (sparse i))
+          t))
+    ()))
+
+#? (==> <SmallIntSet> member <i>)
+;; True if item <i> is in the set.
+(defmethod SmallIntSet member (i)
+  (declare (-int-) i)
+  (check-bounds i)
+  (set-member i) )
+
+#? (==> <SmallIntSet> minimum)
+;; Minimum item in set.
+(defmethod SmallIntSet minimum ()
+  (check-nonempty)
+  (let ((mini (storage-nelems sparse)))
+    (declare (-int-) mini)
+    (for* (i 0 nelems)
+      (declare (-int-) i)
+      (when (< (dense i) mini)
+        (setq mini (dense i)) ))
+    mini))
+
+#? (==> <SmallIntSet> maximum)
+;; Maximum item in set.
+(defmethod SmallIntSet maximum ()
+  (check-nonempty)
+  (let ((maxi -1))
+    (declare (-int-) maxi)
+    (for* (i 0 nelems)
+      (declare (-int-) i)
+      (when (> (dense i) maxi)
+        (setq maxi (dense i)) ))
+    maxi))
+
+#? (==> <SmallIntSet> random)
+;; Return a randomly chosen item from the set.
+(defmethod SmallIntSet random ()
+  (check-nonempty)
+  (let ((i (mod (* (rand) nelems) nelems)))
+    (declare (-int-) i)
+    (dense i) ))
+
+#? (==> <SmallIntSet> complement)
+;; Turn set into its complement and return <()>.
+(defmethod SmallIntSet complement ()
+  (let ((new-dense (int-array (storage-nelems dense)))
+        (n 0) )
+    (declare (-int-) n)
+    (for* (i nelems (storage-nelems dense))
+      (declare (-int-) i)
+      (dense i -1) )
+    (for* (i 0 (storage-nelems sparse))
+      (declare (-int-) i n)
+      (when (<> (dense (sparse i)) i)
+        (new-dense n i)
+        (sparse i n)
+        (incr n) ))
+    (setq dense (idx-storage new-dense)  nelems n)
+    ()))
+
+#? (==> <SmallIntSet> to-array)
+;; Return all elements as a vector.
+(defmethod SmallIntSet to-array ()
+  ##(new-index dense (list nelems)) )
+
+(defmethod SmallIntSet -iterate ()
+  (new SmallIntSetIterator this dense nelems) )
+
+
+(dhc-make-class () SmallIntSetIterator SmallIntSet)
+
+
+(defmethod SmallIntSet pretty ()
+  (==> (new-index #:dense (list nelems)) pretty) )
+
+  
+    

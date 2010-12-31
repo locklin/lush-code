@@ -1,0 +1,354 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Shell Commands
+;; This set of functions is designed to facilitate the
+;; writing of "shell scripts" in Lush. It includes
+;; functions that are more or less equivalent to common 
+;; shell commands such as ls, cd, cp, mv, rm etc.
+;; Those commands manipulate and return lists of strings.
+;; Other functions are provided to manipulate those
+;; lists of strings.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; private utilities
+(de shell.not-hidden-file-p (x) (not (regex-match "^\\.[^/].*" x)))
+(de shell.file-after-p (a b) (> (downcase a) (downcase b)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** String List Utilities
+
+#? (glob <regex> <l>)
+;; Return a list of the elements of <l> that match
+;; the regular expression <regex>. <l> must be a list
+;; of strings, and <regex> a string containing a valid 
+;; Lush regular expression. 
+(de glob (patt l) (filter (lambda (x) (regex-match patt x)) l))
+
+#? (split-words <s>)
+;; split a string of words (space-separated strings)
+;; into a list or those words. 
+(de split-words (s)
+  (regex-split "[^\t ]+" s) )
+
+#? (merge-words <l> [<c>])
+;; turns a list of strings into a single
+;; string composed of the concatenation of
+;; the elements of <l> interspesed with spaces.
+;; if a string is provided in <c>, 
+;; it is interspesed instead of spaces.
+(de merge-words (l &optional c)
+  (let ((n (when l (list (car l)))))
+    (each ((s (cdr l)))
+      (setq n (cons s (cons (if c c " ") n))) ) 
+    (apply concat (reverse n)) ) )
+
+#? (read-lines <f>)
+;; {<see> lines}
+;; read file <f> and return a list of strings,
+;; each of which is a line of the file.
+(de read-lines(f)
+  (reading f
+    (let ((ans ()))
+      (while (<> (skip-char "") "\e")
+        (setq ans (cons (read-string) ans))
+        (let ((c (read-string 1)))
+          (when (and (== c "\r") (= (skip-char "") "\n"))
+            (read-string 1) ) ) )
+      (reverse ans) ) ) )
+
+#? (write-lines <l>)
+;; write each string in list <l>
+;; as a line.
+(de write-lines(l)
+  (each ((x l)) (printf "%s\n" x)))
+
+#? #P<expr>
+;; equivalent to (write-lines <expr>)
+(dmc |#P| `((write-lines ,(read))) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** File Information
+;; The functions in this section provide a simple
+;; interface to the do-it-all function <fileinfo>.
+;; The all return NIL if the file passed as argument does
+;; not exist or is unaccessible. Some functions in this 
+;; section return dates as strings. Those date strings can 
+;; be compared with the usual comparison operators.
+;; {<hlink> (fileinfo <filename>)}
+
+#? (file-type <f>)
+;; return the type of file <f> as an atom equal
+;; to 'reg for a regular file, 'dir for a directory,
+;; 'chr for character device, etc.
+(de file-type (f) (alist-get 'type (fileinfo f)))
+
+#? (file-size <f>)
+;; return the size of file <f> in bytes
+(de file-size (f) (alist-get 'size (fileinfo f)))
+
+#? (file-mode <f>)
+;; return the permissions of file <f> as an integer.
+(de file-mode (f) (alist-get 'mode (fileinfo f)))
+
+#? (file-uid <f>)
+;; return the userid of the owner of file <f>
+(de file-uid (f) (alist-get 'uid (fileinfo f)))
+
+#? (file-gid <f>)
+;; return the groupid of file <f>
+(de file-gid (f) (alist-get 'gid (fileinfo f)))
+
+(de date-to-ymdms (d) (date-to-string d "%Y %m %d %H %M %S"))
+
+#? (file-atime <f>)
+;; return the last access time of file <f> 
+;; as a string of the form "YYYY MM DD hh mm ss".
+;; The string can be turned into a list with split-words.
+(de file-atime (f) (date-to-ymdms (alist-get 'atime (fileinfo f))))
+
+#? (file-mtime <f>)
+;; return the last modification time of file <f> 
+;; as a string of the form "YYYY MM DD hh mm ss".
+;; The string can be turned into a list with split-words.
+(de file-mtime (f) (date-to-ymdms (alist-get 'mtime (fileinfo f))))
+
+#? (file-ctime <f>)
+;; return the creation time of file <f> 
+;; as a string of the form "YYYY MM DD hh mm ss".
+;; The string can be turned into a list with split-words.
+(de file-ctime (f) (date-to-ymdms (alist-get 'ctime (fileinfo f))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (file-newer? <f1> <f2>)
+;; returns t if the modification time of file <f1> 
+;; is later than that of file <f2>, or if <f2> does not
+;; exist. Here is how this function can be use for a
+;; "make"-like function:
+;;
+;; {<code> (when (file-newer? src dst) (produce-dst-from-src src dst)) </code>}
+(de file-newer? (f1 f2)
+  (let ((f2info (fileinfo f2)))
+    (if f2info
+	(> (alist-get 'mtime (fileinfo f1)) (alist-get 'mtime f2info))
+      t)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** Filename Manipulations
+;; a number of functions to manipulate file names, and paths  
+;; are provided as part of the core interpreter, including
+;; <basename, dirname, concat-fname, relative-fname, tmpname>.
+;; The present set of function adds to that set.
+;; The present functions are not as portable as the
+;; the ones in the core interpreter, as they assume
+;; Unix-style or URL-style path constructs (slash-separated
+;; directories)
+;; {<hlink> (basename <path> [<suffix>])}
+;; {<hlink> (dirname <path>)}
+;; {<hlink> (concat-fname [<filename1>] <filename2>)}
+
+
+#? (filename-get-suffixes <f>)
+;; returns all the suffix(es) of a file name,
+;; that is all the characters after the last 
+;; slash and after (and not including) the the last dot.
+;; Return the empty string if no suffix is found.
+;; A trailing dot is not considered a suffix.
+;;
+;; {<ex> (filename-get-suffixes "dirname/basename.suffix")}
+;; {<ex> (filename-get-suffixes "dirname/basename.suffix1.suffix2")}
+;; {<ex> (filename-get-suffixes "dirname.notasuffix/basename.suffix1.suffix2")}
+;; {<ex> (filename-get-suffixes "dirname.notasuffix/basename")}
+;; {<ex> (filename-get-suffixes "dirname.notasuffix/basename.")}
+(de filename-get-suffixes (f) 
+  (let ((suffixes (regex-seek "\\..[^/]*$" f)))
+    (if suffixes 
+	(str-mid f (car suffixes) (cadr suffixes))
+      "")))
+
+#? (filename-chop-suffixes <f>)
+;; remove all the suffix(es) from a file name,
+;; that is all the characters after the last slash
+;; and starting at the first dot.
+;; A trailing dot is not considered a suffix.
+;;
+;; {<ex> (filename-chop-suffixes "dirname/basename.suffix")}
+;; {<ex> (filename-chop-suffixes "dirname/basename.suffix1.suffix2")}
+;; {<ex> (filename-chop-suffixes "dirname.notasuffix/basename.suffix1.suffix2")}
+;; {<ex> (filename-chop-suffixes "dirname.notasuffix/basename")}
+;; {<ex> (filename-chop-suffixes "dirname.notasuffix/basename.")}
+(de filename-chop-suffixes (f) (regex-subst "\\..[^/]*$" "" f))
+
+#? (filename-get-suffix <f>)
+;; returns the last suffix of a file name,
+;; that is all the characters after the last
+;; slash and after (and not including) the last dot.
+;; Return the empty string if no suffix is found.
+;; A trailing dot is not considered a suffix.
+;;
+;; {<ex> (filename-get-suffix "dirname/basename.suffix")}
+;; {<ex> (filename-get-suffix "dirname/basename.suffix1.suffix2")}
+;; {<ex> (filename-get-suffix "dirname.notasuffix/basename.suffix1.suffix2")}
+;; {<ex> (filename-get-suffix "dirname.notasuffix/basename")}
+;; {<ex> (filename-get-suffix "dirname.notasuffix/basename.")}
+(de filename-get-suffix (f) 
+  (let ((suffixes (regex-seek "\\..[^/\\.]*$" f)))
+    (if suffixes 
+	(str-mid f (car suffixes) (cadr suffixes))
+      "")))
+
+#? (filename-chop-suffix <f>)
+;; remove the last suffix from a file name,
+;; that is all the characters after (and including)
+;; the last dot. A trailing dot is not considered a suffix.
+;;
+;; {<ex> (filename-chop-suffix "dirname/basename.suffix")}
+;; {<ex> (filename-chop-suffix "dirname/basename.suffix1.suffix2")}
+;; {<ex> (filename-chop-suffix "dirname.notasuffix/basename.suffix1.suffix2")}
+;; {<ex> (filename-chop-suffix "dirname.notasuffix/basename")}
+;; {<ex> (filename-chop-suffix "dirname.notasuffix/basename.")}
+(de filename-chop-suffix (f) (regex-subst "\\..[^/\\.]*$" "" f))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Variables
+
+#? *home*
+;; user home directory
+(defvar *home* (getenv "HOME"))
+
+#? *dirstack*
+;; directory stack manipulated by pushd and popd
+(defvar *dirstack* ())
+
+#? *tmpdir*
+;; directory used by the function sh to
+;; store temporary files.
+(defvar *tmpdir* (dirname (tmpname)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** Directories
+
+#? (pwd)
+;; return current directory (equivalent to (chdir)).
+(de pwd () (chdir))
+
+#? (cd [<d>])
+;; change current directory to <d>, or to 
+;; user home if <p> is not present.
+(de cd (&optional p) (if p (chdir p) (chdir *home*)))
+
+#? (pushd <d>)
+;; Temporarily change current directory to <d>. 
+;; Returning to the previous directory can be done 
+;; with popd.
+(de pushd (p) 
+  (let ((cp (chdir))) 
+    (prog1 (chdir p) (setq *dirstack* (cons cp *dirstack*)))))
+
+#? (popd)
+;; return to the current directory 
+;; before the last pushd.
+(de popd () 
+  (if (not *dirstack*)
+      (error "empty directory stack")
+    (let ((p (car *dirstack*)))
+      (setq *dirstack* (cdr *dirstack*))
+      (chdir p))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Shell Commands
+
+#? (rm <f>)
+;; remove file <f> (be careful).
+(de rm (s) (unlink s))
+
+#? (cp <from> <to>)
+;; Copy file <from> to file <to> and return <to>.
+(de cp (from to) (copyfile from to) to)
+
+#? (mv <from> <to>)
+;; Move file from <from> to <to> and return <to>.
+(de mv (from to) (rename from to) to)
+
+#? (ls <d1> <d2> ... <dn>)
+;; return a list of all the files in <d1>
+;; (in case-insensitive lexicographic order),
+;; followed by all the files in <d2>, etc...
+;; Invisible files (".", "..", ".xxx", etc) 
+;; are not included.
+(de ls s
+  (when (not s) (setq s (list (pwd))))
+  (apply append 
+	 (all ((x s))
+           (sort-list (filter (lambda (f)
+                                (and (<> "." f)
+                                     (shell.not-hidden-file-p f)))
+                              (files x)) shell.file-after-p))))
+
+#? (ls-a <d1> <d2> ... <dn>)
+;; return a list of all the files in <d1>
+;; (in case-insensitive lexicographic order),
+;; followed by all the files in <d2>, etc...
+;; Invisible files (".", "..", ".xxx", etc) 
+;; are included.
+(de ls-a s
+  (when (not s) (setq s (list (pwd))))
+  (apply append 
+	 (all ((x s)) 
+	   (sort-list (cdr (cdr (files x))) shell.file-after-p))))
+
+#? (sh <cmd> [<l>])
+;; run shell command <cmd> and return the
+;; standard output as a list of strings 
+;; (one string per line). The optional argument
+;; <l> is a list of strings that will be written
+;; to a temporary file (one line per string)
+;; and fed to the standard input of command <cmd>
+(de sh (cmd &optional stdin) 
+  (if (not stdin)
+      (read-lines (concat "| " cmd))
+    (let ((tmp (tmpname *tmpdir*)))
+      (writing tmp (each ((x stdin)) (printf "%s\n" x)))
+      (prog1 
+	  (read-lines (concat "| " cmd " <" tmp))
+	(rm tmp)))))
+
+#? (sh-find <dir> <pattern>)
+;; calls the standard unix command find
+;; to find all the files whose name fit the 
+;; pattern <pattern> (this is a unix-style
+;; shell regex, not a Lush regex).
+;; Example: {<code> (sh-find "." "*.lsh") </code>}
+(de sh-find (dir pat)
+  (sh (sprintf "find %s -name '%s'" dir pat)))
+

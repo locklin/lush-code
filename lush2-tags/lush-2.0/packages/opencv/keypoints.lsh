@@ -1,0 +1,109 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+(libload "opencv/cv-arrays")
+
+#? ** Keypoint detection
+
+(in-namespace cv-
+
+(defun -corner-harris (img corners block_size aperture_size k)
+  (declare (-obj- (CvMat)) img corners)
+  (declare (-int-) block_size aperture_size)
+  (declare (-double-) k)
+  (cv-cpheader)
+  (with-check-error
+   (let ((ip :img:p) (cp :corners:p))
+     #{ cvCornerHarris($ip, $cp, $block_size, $aperture_size, $k); #}
+     ())))
+
+#? (cv-corner-harris <image> [<bs> [<k>]])
+;; Run Harris corner detector and return responses in a corner
+;; map (float array).
+;;
+;; The optional parameter <bs> is the size of the neighborhood over
+;; wich the corner detector averages image gradients (default is 5),
+;; <k> is a parameter of Harris' algorithm (default is 0.04).
+;;
+;; See {<hlink> file:///usr/share/opencv/doc/ref/opencvref_cv.htm#decl_cvCornerHarris}
+;; for further details.
+(defmacro corner-harris (in &optional (bsize 5) (k 0.04) (asize 3))
+  (let ((img (gensym)) (corners (gensym)))
+    `(let* ((,img ,in) 
+            (,corners (float-array* (idx-shape ,img 0) (idx-shape ,img 1))) )
+       (-corner-harris (make-cvmat ,img) (make-cvmat ,corners) ,bsize ,asize ,k)
+       ,corners)
+    ))
+
+(defun -keypoints (img mind quality bsize harris n)
+  (declare (-obj- (CvMat)) img)
+  (declare (-int-) bsize n)
+  (declare (-double-) mind quality)
+  (declare (-bool-) harris)
+  (let ((ip :img:p)
+        (pts (float-array n 2)) ) ;; XXX how many are enough?
+    (with-check-error
+     #{{
+     assert(sizeof(CvPoint2D32f)==2*sizeof(float));
+     IplImage *eig = cvCreateImage(cvGetSize($ip),32,1);
+     IplImage *tmp = cvCreateImage(cvGetSize($ip),32,1);
+     cvGoodFeaturesToTrack($ip,eig,tmp,(CvPoint2D32f*)$(idx-base pts),&$n,$quality,$mind,NULL,$bsize,(int)$harris,0.04);
+     cvReleaseImage(&eig);
+     cvReleaseImage(&tmp);
+     }#})
+    (with-check-error
+     #{ cvFindCornerSubPix($ip,(CvPoint2D32f*)$(idx-base pts),$n,cvSize($bsize,$bsize),cvSize(-1,-1),cvTermCriteria(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS,20,0.03)); #})
+    (idx-trim! pts 0 0 n)
+    pts))
+
+#? (cv-keypoints <image> <mind> [<q> [<bs>]])
+;; Return coordinates of keypoints in <image> (double array).
+;;
+;; Parameter <mind> is the minimum Euclidean distance allowed
+;; between two keypoints, <q> is a keypoint quality parameter
+;; (default is 0.01), and <bs> is the block size over which 
+;; image gradients are averaged (default is 5).
+;;
+;; See {<hlink> file:///usr/share/opencv/doc/ref/opencvref_cv.htm#decl_cvGoodFeaturesToTrack}
+;; for further details.
+(defmacro keypoints (in mind &optional (q 0.01) (bsize 5) (harris ()) (num 5000))
+  (let ((img (gensym)) (pts (gensym)) (n (gensym)))
+    `(let ((,img ,in) (,n ,num))
+       (declare (-int-) ,n)
+       (let ((,pts (-keypoints (make-cvmat ,img) ,mind ,q ,bsize ,harris ,n)))
+         (let ((points (double-array (length ,pts) 2)))
+           (array-copy ,pts points)
+           points)))
+    ))
+
+) ; in-namespace
+
+(dhc-make-cv "opencv_keypoints"
+             cv--corner-harris
+             cv--keypoints
+             )

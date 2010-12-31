@@ -1,0 +1,348 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "boxing")
+
+#? *** Matrix Functions
+;; This is a collection of linear algebra and matrix manipulation
+;; functions. More of these "mat- functions" are part of the LAPACK
+;; interface (<(libload "lapack/mat")>). 
+
+
+;; argument checking functions; raise errors if check fails
+
+;; #? (chk-idx-rankeq2 <m>)
+;; True if array <m> has rank two.
+(defmacro chk-idx-rankeq2 (arg)
+  `(let ((arg ,arg))
+     (if (= 2 (idx-rank arg))
+         arg
+       (error "Argument must be a matrix (two-dimensional array)" arg) )) 
+  )
+
+;; #? (chk-idx-rankge2 <m>)
+;; True if array <m> has rank at least two.
+(defmacro chk-idx-rankge2 (arg)
+  `(let ((arg ,arg))
+     (if (<= 2 (idx-rank arg))
+         arg
+       (error "Argument must be an array with two or more dimensions" ,arg) ))
+  )
+
+;;
+;; mat functions
+;;
+
+(in-namespace mat-
+
+#? ** Namespace mat-
+
+#? * Creating Matrices
+
+#? (mat-col <v1> ... <vn>)
+;; Create a single-column matrix of type double.
+(defmacro col args
+  `(let ((m (double-array ,(length args) 1)))
+     ,@(domapcar ((i (range* (length args))) (arg args))
+         `(m ,i 0 ,arg) )
+     m)
+  )
+
+#? (mat-colp <m>)
+;; True if argument is single-column matrix.
+(defmacro colp (arg)
+  `(let ((arg ,arg))
+     (and (= (idx-rank arg) 2) (= 1 (idx-shape arg 1))) )
+  )
+
+#? (mat-row <v1> ... <vn>)
+;; Create a single-row matrix of type double.
+(defmacro row args
+  `(let ((m (double-array 1 ,(length args))))
+     ,@(domapcar ((i (range* (length args))) (arg args))
+         `(m 0 ,i ,arg) )
+     m)
+  )
+
+#? (mat-rowp <m>)
+;; True if argument is a single-row matrix.
+(defmacro rowp (arg)
+  `(let ((arg ,arg))
+     (and (= (idx-rank arg) 2) (= 1 (idx-shape arg 0))) )
+  )
+
+#? (mat-catcols <m1> <m2> ...)
+;; Concatenate matrices <m1>, <m2>, etc. along the columns. All input
+;; matrices must have the same number of columns.
+;;
+;; {<ex> (let ((m (reshape (array-range 20) '(4 5)))) (mat-catcols m m))}
+(defmacro catcols (arg0 . args)
+  (let ((n (1+ (length args)))
+        (shp (gensym))
+        (arg (gensym)) )
+    `(let* ((,arg ,arg0)
+	    (,shp (nfirst (idx-rank ,arg) (cons ,n 1s))) )
+       (array-splice (idx-reshape (box ,arg ,@args) ,shp)) )
+    ))
+
+(dhm-p catcols (source)
+  (let* ((args (cdr source))
+         (ms (gensyms (length args)))
+         (n  (gensym))
+         (cm (gensym)) )
+    `(let (,@(domapcar ((m ms) (arg args)) `(,m ,arg)))
+       (let ((,n (+ ,@(domapcar ((m ms)) `(length ,m))))
+             (,cm (copy-array (idx-trim ,(car ms) 0 0 0))) ) 
+         (declare (-int-) ,n)
+         (array-extend! ,cm 0 ,n)
+         (setq ,n 0)
+         ,@(domapcan ((m ms))
+             (list
+              `(array-copy ,m (idx-trim ,cm 0 ,n (length ,m)))
+              `(incr ,n (length ,m)) ))
+         ,cm))
+    ))
+
+#? (mat-catrows <m1> <m2> ...)
+;; Concatenate matrices <m1>, <m2>, etc. along the rows. All input
+;; matrices must have the same number of rows.
+;;
+;; {<ex> (let ((m (reshape (array-range 20) '(4 5)))) (mat-catrows m m))}
+(defmacro catrows (arg0 . args)
+  (let ((n (1+ (length args)))
+        (shp (gensym))
+        (arg (gensym)) )
+    `(let* ((,arg ,arg0)
+	    (,shp (nfirst (idx-rank ,arg) (cons 1 (cons ,n 1s)))) )
+       (array-splice (idx-reshape (box ,arg ,@args) ,shp)) )
+    ))
+
+(dhm-p catrows (source)
+  (let* ((args (cdr source))
+         (ms (gensyms (length args)))
+         (n  (gensym))
+         (cm (gensym)) )
+    `(let (,@(domapcar ((m ms) (arg args)) `(,m ,arg)))
+       (let* ((,n (+ ,@(domapcar ((m ms)) `(idx-shape ,m 1))))
+              (,cm (clone-array ; first array must be non-empty
+                    (idx-expand! (idx-trim ,(car ms) 1 0 1) 1 ,n) )))
+         (declare (-int-) ,n)
+         (setq ,n 0)
+         ,@(domapcan ((m ms))
+             (list
+              `(array-copy ,m (idx-trim ,cm 1 ,n (idx-shape ,m 1)))
+              `(incr ,n (idx-shape ,m 1)) ))
+         ,cm))
+    ))
+
+#? (mat-diag <elements>)
+;; Create diagonal matrix with diagonal entries <elements>.
+;; <Elements> may be a list or a vector.
+(defun diag (els)
+  (let* ((n (length els))
+	 (m (double-array n n)) )
+
+    (cond ((listp els)
+           (let ((i 0))
+             (dolist (el els)
+               (m i i el)
+               (incr i) )))
+          ((vectorp els)
+           (for* (i 0 n)
+             (m i i (els i)) ))
+          (t
+           (error "illegal argument" els) ))
+    m))
+
+(dhm-t diag (source)
+  (when (<> (length source) 2)
+    (dhc-error "one argument expected"))
+  (let* ((tn (dhc-parse-expr-t (cadr source)))
+         (v (gensym)) (m (gensym)) (i (gensym))
+         (src (cond ((==> :tn:type is-an-idxptr)
+                     `(let* ((,v ,(cadr source))
+                             (,m (double-array (length ,v) (length ,v))) )
+                        (for* (,i 0 (length ,v))
+                          (declare (-int-) ,i)
+                          (,m ,i ,i (,v ,i)) )
+                        ,m) )
+                    ((==> :tn:type is-a-listptr)
+                     (let ((n (length (dhu-extra (dhu-type :tn:type)))))
+                       `(let ((,v ,(cadr source))
+                              (,m (double-array ,n ,n)) )
+                          ,@(domapcar ((i (range* n)))
+                              `(,m ,i ,i (nth ,i ,v)) )
+                          ,m) ))
+                    (t (dhc-error "argument must be a list or vector")) )) )
+    (dhc-parse-replacement-source-t source src) ))
+
+#? (mat-id <n>)
+;; Identity matrix of size <n>x<n>.
+(defmacro id (n)
+  `(diag ($> [@ 1] ,n))
+  )
+
+ 
+#? * Matrix functions
+
+#? (mat-shape <m>)
+;; Return the extent in the first two dimensions, that is, the shape
+;; of <m> if viewed as a matrix. This is useful, for instance, to get
+;; the size of an image, not knowing whether it is rank 2 or rank 3.
+(defmacro shape (arg)
+  `(let ((arg ,arg))
+     (list (idx-shape arg 0) (idx-shape arg 1)) )
+  )
+
+#? (mat-squarep <m>)
+;; True when matrix <m> is square.
+(defmacro squarep (A)
+  (if (symbolp A)
+      `(= (idx-shape ,A 0) (idx-shape ,A 1))
+    `(let ((A ,A))
+       (squarep A) )
+    ))
+
+#? (mat-flipud <m>)
+;; Reverse dimension 0 (columns) of array <m>. Raise an error if <m> 
+;; has less than two dimensions.
+(defmacro flipud (arg)
+  `(idx-reverse ,arg 0)
+  )
+
+#? (mat-fliplr <m>)
+;; Reverse dimension 1 (rows) of array <m>. Raise an error if <m> has
+;; less than two dimensions.
+(defmacro fliplr (arg)
+  `(idx-reverse ,arg 1) 
+  )
+
+#? (mat-transpose <m>)
+;; Transpose array <m> as a matrix. Raise an error if <m> has less 
+;; than two dimensions.
+(defmacro transpose (arg)
+  `(let* ((arg ,arg)
+          (dims (cons 1 (cons 0 (range* 2 (idx-rank arg))))) )
+     (idx-transpose arg dims) )
+  )
+
+(dhm-t transpose (source)
+  (when (<> (length source) 2)
+    (dhc-error "one arguments expected") )
+  (let* ((m  (dhc-parse-expr-t (cadr source)))
+         (nd (==> :m:type is-an-idxptr)) )
+    (when (null nd)
+      (dhc-error "not an array" (cadr source)) )
+    (let* ((arg (cadr source))
+           (src (selectq nd
+                  ((0 1) (dhc-error "not a matrix" (cadr source)))
+                  (2 `(idx-transpose ,arg '(1 0)) )
+                  (3 `(idx-transpose ,arg '(1 0 2)) )
+                  (4 `(idx-transpose ,arg '(1 0 2 3)) )
+                  (5 `(idx-transpose ,arg '(1 0 2 3 4)) )
+                  (6 `(idx-transpose ,arg '(1 0 2 3 4 5)) )
+                  (7 `(idx-transpose ,arg '(1 0 2 3 4 5 6)) )
+                  (8 `(idx-transpose ,arg '(1 0 2 3 4 5 6 7)) )
+                  (t (dhc-error "dimension not supported" nd)) )))
+      (dhc-parse-replacement-source-t source src) )))
+
+#? (mat-rot90 <m>)
+;; Rotate array <m> counterclockwise by 90 degrees. Raise an error if
+;; <m> has less than two dimensions.
+(defmacro rot90 (arg)
+  `(flipud (transpose ,arg)) )
+
+#? (mat-magnify <m> <f0> <f1>)
+;; Replicate elements of matrix <m> <f0> times along dimension 0, and 
+;; <f1> times along dimension 1. <f0> and <f1> must be integer values.
+;;
+;; {<ex> (let ((m (reshape (array-range 9) '(3 3)))) (mat-magnify m 2 3))}
+(defun magnify (m f0 f1)
+  (declare (-int-) f0 f1)
+  (selectq (idx-rank m)
+    ((0 1) (error "not a matrix" m))
+    (2 (let ((m2 (idx-sink (idx-expand! (idx-nick m 1) 1 f0) f1)))
+         (idx-reshape (copy-array m2)
+                      (list (* f0 (idx-shape m 0)) (* f1 (idx-shape m 1))) )))
+    (t (let ((m2 (idx-expand! (idx-nick 
+                               (idx-expand! (idx-nick m 2) 2 f1) 
+                               1) 1 f0) ))
+         (idx-reshape (copy-array m2)
+                      (append
+                       (list (* f0 (idx-shape m 0)) (* f1 (idx-shape m 1)))
+                       (cddr (idx-shape m))))))))
+
+(dhm-t magnify (source)
+  (when (<> (length source) 4)
+    (dhc-error "three arguments expected") )
+  (let* ((m (dhc-parse-expr-t (cadr source)))
+         (nd (==> :m:type is-an-idxptr))
+         (f0 (dhc-parse-expr-t (caddr source)))
+         (f1 (dhc-parse-expr-t (nth 3 source))) )
+    (when (null nd)
+      (dhc-error "not an array" (cadr source)) )
+    (when (< nd 2)
+      (dhc-error "not a matrix" (cadr source)) )
+    (when (not (==> :f0:type is-a-number))
+      (dhc-error "not a number" (caddr source)) )
+    (when (not (==> :f1:type is-a-number))
+      (dhc-error "not a number" (nth 3 source)) )
+    
+    (let* ((m (cadr source)) (f0 (caddr source)) (f1 (nth 3 source))
+           (m2 (gensym))
+           (src (if (= nd 2)
+                    `(let ((m2 (idx-sink (idx-expand! (idx-nick ,m 1) 1 ,f0) ,f1)))
+                       (idx-reshape (copy-array m2)
+                                    (list (* ,f0 (idx-shape ,m 0)) 
+                                          (* ,f1 (idx-shape ,m 1))) ))
+                  `(let ((m2 (idx-expand! (idx-nick
+                                           (idx-expand! (idx-nick ,m 2) 2 ,f1)
+                                           1) 1 ,f0) ))
+                     (idx-reshape (copy-array m2)
+                                  (list (* ,f0 (idx-shape ,m 0))
+                                        (* ,f1 (idx-shape ,m 1))
+                                        ,@(domapcar ((i (range* 2 nd)))
+                                            `(idx-shape ,m ,i) ) ))) )))
+      (dhc-parse-replacement-source-t source src) )))
+
+#? (mat-sum <m>)
+;; Sum of each column, return results in a vector.
+;; {<see> array-sum}
+(defmacro sum (m)
+  `(array-sum ,m 0)
+  )
+
+#? (mat-prod <m>)
+;; Product of each column, return results in a vector.
+;; {<see> array-prod}
+(defmacro prod (m)
+  `(array-prod ,m 0)
+  )
+
+) ;; namespace
+
+(defalias $t mat-transpose)

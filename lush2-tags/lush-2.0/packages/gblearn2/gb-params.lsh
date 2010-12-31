@@ -1,0 +1,547 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: gb-params.lsh,v 1.5 2003/11/14 16:26:32 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;   params
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gblearn2/gb-config")
+(libload "libidx/idx-macros")
+(libload "libidx/idx-float")
+(libload "libidx/idx-double")
+(libload "gblearn2/gb-states")
+
+(in-namespace* gblearn-
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** gb-param
+;; {<author> Yann LeCun}
+;; a hierarchy of classes that implements gradient-based
+;; learning algorithms.
+;; Various subclasses of gb-param can be used for various learning 
+;; algorithms (stochastic gradient, with separate epsilons, 
+;; with second derivatives.....)
+;; The standard gb-param type contains idx1 slots.
+(defclass gb-param object)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (new-index-offset <s> <dlist> <o>)
+;; like new index, but puts the index at a specific offset in the storage
+;; <s> is a storage, <dlist> a list of dimensions, <o> an offset.
+;; Compilable macro.
+(dmd new-index-offset (s dlist o)
+     `(let ((m (new-index ,s ,dlist))) (idx-set-offset m ,o) m))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx1-param
+;; a gb-param whose slots are idx1.
+;; This is an abstract class (useful classes
+;; are subclasses thereof). no learning algorithm is defined.
+;; Only the x slot is present.
+;; This class is useful for fixed (non adaptive) parameters.
+(defclass idx1-param gb-param ((-idx1- (-gbtype-)) x))
+
+#? (==> <idx1-param> resize <s>)
+;; resize idx1-param to <s> elements.
+(defmethod idx1-param resize (s) (declare (-int-) s) (midx-m1resize x s) ())
+
+#? (new idx1-param <s> <sts>)
+;; create a new idx1-param. <s> is the size, 
+;; and <sts> is the initially allocated size.
+(defmethod idx1-param idx1-param (s sts) 
+  (declare (-int-) s sts) 
+  (setq x (gbtype-matrix sts))
+  (==> this resize s)
+  ())
+
+#? (==> <idx1-param> load <s>)
+;; load the values of <idx1-param> from a 
+;; the matrix file <s>, which must be an
+;; idx1 of floats. The number of elements
+;; in the file <s> must match the size of <idx1-param>.
+(defmethod idx1-param load (s) (array-copy (load-matrix s) x) ())
+
+#? (==> <idx1-param> save <s>)
+;; save the slot <x> of the <idx1-param> in file <s>.
+;; This can be subsequently recovered with the load method.
+(defmethod idx1-param save (s) (save-matrix x s) ())
+
+#? (==> <idx1-param> size)
+;; return the number of elements of <idx1-param>.
+(defmethod idx1-param size () (idx-dim x 0))
+
+(defmethod idx1-param get () (copy-array x))
+
+(defmethod idx1-param set (s) (declare (-idx1- (-gbtype-)) s) (array-copy s x) ())
+
+(defmethod idx1-param alloc-idx0-state ()
+  (let* ((statesize 1)
+	 (s (new-empty idx0-state))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) () oldsize))
+    s))
+
+(defmethod idx1-param alloc-idx1-state (d0)
+  (declare (-int-) d0)
+  (let* ((statesize d0)
+	 (s (new-empty idx1-state))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0) oldsize))
+    s))
+
+(defmethod idx1-param alloc-idx2-state (d0 d1)
+  (declare (-int-) d0 d1)
+  (let* ((statesize (* d0 d1))
+	 (s (new-empty idx2-state))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0 d1) oldsize))
+    s))
+
+(defmethod idx1-param alloc-idx3-state (d0 d1 d2)
+  (declare (-int-) d0 d1 d2)
+  (let* ((statesize (* d0 d1 d2))
+	 (s (new-empty idx3-state))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0 d1 d2) oldsize))
+    s))
+
+(defmethod idx1-param alloc-idx4-state (d0 d1 d2 d3)
+  (declare (-int-) d0 d1 d2 d3)
+  (let* ((statesize (* d0 d1 d2 d3))
+	 (s (new-empty idx4-state))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0 d1 d2 d3) oldsize))
+    s))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx1-dparam
+;; gb-param class for regular stochastic gradient descent algorithm
+(defclass idx1-dparam idx1-param 
+  ((-idx1- (-gbtype-)) dx)
+  ((-idx1- (-gbtype-)) deltas))
+
+(defmethod idx1-dparam resize (s) 
+  (declare (-int-) s)
+  (midx-m1resize x s)
+  (midx-m1resize dx s) 
+  (midx-m1resize deltas s) ())
+
+#? (new idx1-dparam <s> <sts>)
+;; <s> is a size (possibly zero), and <sts> is the 
+;; initial storage size which must be larger than zero,
+;; and (can be larger than <s> to avoid unnecessary reallocs
+;; when the size of the param is increased.
+(defmethod idx1-dparam idx1-dparam (s sts)
+  (declare (-int-) s sts)
+  (setq x (gbtype-matrix sts))
+  (setq dx (gbtype-matrix sts))
+  (setq deltas (gbtype-matrix sts))
+  (==> this resize s)
+  ())
+
+(defmethod idx1-dparam clear-dx () (array-clear dx 0) ())
+(defmethod idx1-dparam clear-deltas () (array-clear deltas 0) ())
+
+#? (==> <idx1-dparam> update-deltas <knew> <kold>)
+;; update the average derivatives <deltas> as follow:
+;; {<c> deltas = knew*dx + kold*deltas}.
+;; The <update> method calls this whenever it is 
+;; called with a non-zero <inertia> parameter.
+(defmethod idx1-dparam update-deltas (knew kold) 
+  (declare (-gbtype-) kold knew)
+  (idx-f1lincomb dx knew deltas kold deltas) ())
+
+#? (==> <idx1-dparam> update <eta> <inertia>)
+;; simple gradient descent update.
+;; This will use momentum if the <inertia> parameter is non zero.
+;; CAUTION: the <deltas> slot is not updated if the <inertia> is zero.
+;; When <inertia> is non zero, the <deltas> are updated as follows:
+;; {<c> deltas = (1-inertia)*dx + inertia*deltas}
+;; (where <dx> is the gradient) and the parameters are subsequently 
+;; updated as follows: {<c> x = eta*deltas}.
+(defmethod idx1-dparam update (eta inertia) 
+  (declare (-gbtype-) eta inertia)
+  (if (= 0 inertia)
+      (idx-f1dotcacc dx (- eta) x)
+    (==> this update-deltas (- 1 inertia) inertia)
+    (idx-f1dotcacc deltas (- eta) x))
+  ())
+
+(defmethod idx1-dparam alloc-idx0-dstate ()
+  (let* ((statesize 1)
+	 (s (new-empty idx0-dstate))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) () oldsize))
+    (setq :s:dx (new-index-offset (idx-storage dx) () oldsize))
+    s))
+
+(defmethod idx1-dparam alloc-idx1-dstate (d0)
+  (declare (-int-) d0)
+  (let* ((statesize d0)
+	 (s (new-empty idx1-dstate))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0) oldsize))
+    (setq :s:dx (new-index-offset (idx-storage dx) (list d0) oldsize))
+    s))
+
+(defmethod idx1-dparam alloc-idx2-dstate (d0 d1)
+  (declare (-int-) d0 d1)
+  (let* ((statesize (* d0 d1))
+	 (s (new-empty idx2-dstate))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0 d1) oldsize))
+    (setq :s:dx (new-index-offset (idx-storage dx) (list d0 d1) oldsize))
+    s))
+
+(defmethod idx1-dparam alloc-idx3-dstate (d0 d1 d2)
+  (declare (-int-) d0 d1 d2)
+  (let* ((statesize (* d0 d1 d2))
+	 (s (new-empty idx3-dstate))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0 d1 d2) oldsize))
+    (setq :s:dx (new-index-offset (idx-storage dx) (list d0 d1 d2) oldsize))
+    s))
+
+(defmethod idx1-dparam alloc-idx4-dstate (d0 d1 d2 d3)
+  (declare (-int-) d0 d1 d2 d3)
+  (let* ((statesize (* d0 d1 d2 d3))
+	 (s (new-empty idx4-dstate))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0 d1 d2 d3) oldsize))
+    (setq :s:dx (new-index-offset (idx-storage dx) (list d0 d1 d2 d3) oldsize))
+    s))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx1-dparam-eps
+;; gb-param class for gradient descent with separate epsilons for each
+;; parameter
+(defclass idx1-dparam-eps idx1-dparam
+  ((-idx1- (-gbtype-)) epsilons)
+  ((-idx1- (-gbtype-)) temp))
+
+(defmethod idx1-dparam-eps resize (s) 
+  (declare (-int-) s)
+  (midx-m1resize x s)
+  (midx-m1resize dx s)
+  (midx-m1resize deltas s)
+  (midx-m1resize temp s)
+  (midx-m1resize epsilons s) ())
+
+#? (new idx1-dparam-eps <s> <sts>)
+;; <s> is a size (possibly zero), and <sts> is the 
+;; initial storage size which must be larger than zero,
+;; and (can be larger than <s> to avoid unnecessary reallocs
+;; when the size of the param is increased.
+(defmethod idx1-dparam-eps idx1-dparam-eps (s sts)
+  (declare (-int-) s sts)
+  (setq x (gbtype-matrix sts))
+  (setq dx (gbtype-matrix sts))
+  (setq deltas (gbtype-matrix sts))
+  (setq temp (gbtype-matrix sts))
+  (setq epsilons (gbtype-matrix sts))
+  (idx-f1fill epsilons 1.0)
+  (==> this resize s)
+  ())
+
+#? (==> <idx1-dparam-eps> update <eta> <inertia>)
+;; simple gradient descent update with one individual learning
+;; rate per parameter. <eta> is a global learning rate by which
+;; each individual parameter learning rate will be multiplied.
+;; This will perform an update "with momentum" if the <inertia> 
+;; parameter is non zero.
+;; CAUTION: the <deltas> slot is not updated if <inertia> is zero.
+;; When <inertia> is non zero, the <deltas> are updated as follows:
+;; {<c> deltas = (1-inertia)*dx + inertia*deltas}
+;; (where <dx> is the gradient) and the parameters are subsequently 
+;; updated as follows: {<c> x = eta*deltas}.
+(defmethod idx1-dparam-eps update (eta inertia)
+  (declare (-gbtype-) eta inertia)
+  (if (= 0 inertia)
+      (progn
+	(idx-mul dx epsilons temp)
+	(idx-f1dotcacc temp (- eta) x))
+    (==> this update-deltas (- 1 inertia) inertia)
+    (idx-mul deltas epsilons temp)
+    (idx-f1dotcacc temp (- eta) x))
+  ())
+
+#? (==> <idx1-dparam-eps> set-epsilons <m>)
+;; copy the values in vector <m> to epsilons
+(defmethod idx1-dparam-eps set-epsilons (m)
+  (declare (-idx1- (-gbtype-)) m)
+  (array-copy m epsilons) ())
+
+#? (==> <idx1-dparam-eps> set-epsilons <m>)
+;; copy the values in vector <m> to epsilons
+(defmethod idx1-dparam-eps set-epsilon (m)
+  (declare (-gbtype-) m)
+  (idx-f1fill epsilons m) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx1-ddparam
+;; a gb-param class for the stochastic diagonal levenberg-marquardt
+;; algorithm. In addition to the usual update method, it has an
+;; update-bbprop method for computing the second derivatives,
+;; and a set-epsilons method to set the epsilons using the second 
+;; derivatives.
+(defclass idx1-ddparam idx1-dparam-eps
+  ((-idx1- (-gbtype-)) ddx)
+  ((-idx1- (-gbtype-)) ddeltas)
+  ((-idx1- (-gbtype-)) xaverage) )
+
+(defmethod idx1-ddparam resize (s) 
+  (declare (-int-) s)
+  (midx-m1resize x s)
+  (midx-m1resize xaverage s)
+  (midx-m1resize dx s)
+  (midx-m1resize deltas s)
+  (midx-m1resize ddx s)
+  (midx-m1resize ddeltas s)  
+  (midx-m1resize temp s)
+  (midx-m1resize epsilons s)())
+
+#? (new idx1-ddparam <s> <alloc>)
+;; <s> is the size (can be 0) <alloc> is the size of storages to be
+;; preallocated. This will prevent memory fragmentation when the size
+;; of the gb-param is subsequently increased.
+(defmethod idx1-ddparam idx1-ddparam (s sts)
+  (declare (-int-) s sts)
+  (setq x (gbtype-matrix sts))
+  (setq xaverage (gbtype-matrix sts))
+  (setq dx (gbtype-matrix sts))
+  (setq deltas (gbtype-matrix sts))
+  (setq temp (gbtype-matrix sts))
+  (setq epsilons (gbtype-matrix sts))
+  (setq ddx (gbtype-matrix sts))
+  (setq ddeltas (gbtype-matrix sts))
+  (==> this resize s) 
+  ())
+
+#? (==> <idx1-ddparam> clear-ddx)
+;; set all the <ddx> vector slot to zero.
+(defmethod idx1-ddparam clear-ddx () (array-clear ddx 0)())
+
+#? (==> <idx1-ddparam> clear-ddeltas)
+;; set all the <ddeltas> vector slot to zero.
+(defmethod idx1-ddparam clear-ddeltas () (array-clear ddeltas 0)())
+
+#? (==> <idx1-ddparam> update-ddeltas <knew> <kold>)
+;; update average second derivative <ddeltas> as follows:
+;; {<c> ddeltas = knew*ddx + kold*ddletas}.
+;; where <ddx> is the instantaneous second derivative.
+(defmethod idx1-ddparam update-ddeltas (knew kold)
+  (declare (-gbtype-) knew kold)
+  (idx-f1lincomb ddx knew ddeltas kold ddeltas) ())
+
+#? (==> <idx1-ddparam> update-xaverage <kappa>)
+;; Update running average of x
+;;  xaverage += kappa ( x - xaverage )
+(defmethod idx1-ddparam update-xaverage (kappa)
+  (declare (-gbtype-) kappa)
+  (idx-f1lincomb xaverage (- 1 kappa) x kappa xaverage) 
+  () )
+
+#? (==> <idx1-ddparam> copy-xaverage)
+;; Copy contents of xaverage into x
+(defmethod idx1-ddparam copy-xaverage()
+  (array-copy xaverage x)
+  () )
+
+#? (==> <idx1-ddparam> swap-xaverage)
+;; Swap contents of x and xaverage
+(defmethod idx1-ddparam swap-xaverage()
+  (idx-bloop ((x0 x)(xa0 xaverage))
+    (let ((tmp (x0)))
+      (x0 (xa0))
+      (xa0 tmp)) )
+  () )
+
+#? (==> <idx1-ddparam> saliencies)
+;; Compute the parameters saliencies as defined by the 
+;; Optimal Brain Damage algorithm of (LeCun, Denker, Solla, NIPS 1989).
+;; This uses the average first and second derivatives of the energy
+;; with respect to each parameter to compute a saliency for each weight.
+;; The saliency is an estimate of how much the energy would increase
+;; by if the parameter was set to zero. It is computed as:
+;; {<c> Si = -Gi * Wi + 1/2 Hii * Wi^2 }.
+;; A vector of saliencies is returned.
+;; The <deltas> and <ddeltas> field must have relevant values
+;; before this function is called.
+(defmethod idx1-ddparam saliencies ()
+  (let ((r1 (idx-mul x deltas))
+	(r2 (idx-mul x x)))
+    (idx-mul ddeltas r2 r2)
+    (idx-f1lincomb r2 0.5 r1 -1 r1) r1))
+
+#? (==> <idx1-ddparam> compute-epsilons <mu>)
+;; compute and set the epsilons using the second derivative.
+;; this method should be called after a few iteration of
+;; update-bbprop
+(defmethod idx1-ddparam compute-epsilons (mu)
+  (declare (-gbtype-) mu)
+  (idx-f1addc ddeltas mu epsilons)
+  (idx-f1inv epsilons epsilons) ())
+
+#? * Allocating an idx-state within an idx1-ddparam
+;; It is often useful to have access to the parameters 
+;; of a trainable module in two different ways.
+;; The first access method is through a slot in the
+;; module object (e.g. the slot kernel in a convolutional
+;; layer [a.k.a. c-layer]). This slot is generally an
+;; idxN-ddstate with an x slot (value), dx slot (gradient),
+;; and ddx slot (second derivatives). The second access
+;; method is through an idx1-ddparam that collects all
+;; the trainable parameters of a learning machine.
+;; The functions described here provide a way of allocating
+;; multiple idxN-ddstate instances within a single
+;; idx1-ddparam. As the modules of a learning machine are
+;; created, their paramter states are allocated within
+;; a single idx1-ddparam which collects all the parameters.
+
+#? (==> <idx1-ddparam> alloc-idx0-ddstate)
+;; Allocate an idx0-ddstate in <idx1-ddparam>
+(defmethod idx1-ddparam alloc-idx0-ddstate ()
+  (let* ((statesize 1)
+	 (s (new-empty idx0-ddstate))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) () oldsize))
+    (setq :s:dx (new-index-offset (idx-storage dx) () oldsize))
+    (setq :s:ddx (new-index-offset (idx-storage ddx) () oldsize))
+    s))
+
+#? (==> <idx1-ddparam> alloc-idx1-ddstate <d0>)
+;; Allocate an idx1-ddstate of size <d0> <idx1-ddparam>
+(defmethod idx1-ddparam alloc-idx1-ddstate (d0)
+  (declare (-int-) d0)
+  (let* ((statesize d0)
+	 (s (new-empty idx1-ddstate))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0) oldsize))
+    (setq :s:dx (new-index-offset (idx-storage dx) (list d0) oldsize))
+    (setq :s:ddx (new-index-offset (idx-storage ddx) (list d0) oldsize))
+    s))
+
+#? (==> <idx1-ddparam> alloc-idx2-ddstate <d0> <d1>)
+;; Allocate an idx2-ddstate of size <d0>,<d1> <idx1-ddparam>
+(defmethod idx1-ddparam alloc-idx2-ddstate (d0 d1)
+  (declare (-int-) d0 d1)
+  (let* ((statesize (* d0 d1))
+	 (s (new-empty idx2-ddstate))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0 d1) oldsize))
+    (setq :s:dx (new-index-offset (idx-storage dx) (list d0 d1) oldsize))
+    (setq :s:ddx (new-index-offset (idx-storage ddx) (list d0 d1) oldsize))
+    s))
+
+#? (==> <idx1-ddparam> alloc-idx3-ddstate <d0> <d1> <d2>)
+;; Allocate an idx3-ddstate of size <d0>,<d1>,<d2> <idx1-ddparam>
+(defmethod idx1-ddparam alloc-idx3-ddstate (d0 d1 d2)
+  (declare (-int-) d0 d1 d2)
+  (let* ((statesize (* d0 d1 d2))
+	 (s (new-empty idx3-ddstate))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0 d1 d2) oldsize))
+    (setq :s:dx (new-index-offset (idx-storage dx) (list d0 d1 d2) oldsize))
+    (setq :s:ddx (new-index-offset (idx-storage ddx) (list d0 d1 d2) oldsize))
+    s))
+
+#? (==> <idx1-ddparam> alloc-idx4-ddstate <d0> <d1> <d2> <d3>)
+;; Allocate an idx4-ddstate of size <d0>,<d1>,<d2>,<d3> <idx1-ddparam>
+(defmethod idx1-ddparam alloc-idx4-ddstate (d0 d1 d2 d3)
+  (declare (-int-) d0 d1 d2 d3)
+  (let* ((statesize (* d0 d1 d2 d3))
+	 (s (new-empty idx4-ddstate))
+	 (oldsize (idx-dim x 0))
+	 (newsize (+ oldsize statesize)))
+    (==> this resize newsize)
+    (setq :s:x (new-index-offset (idx-storage x) (list d0 d1 d2 d3) oldsize))
+    (setq :s:dx (new-index-offset (idx-storage dx) (list d0 d1 d2 d3) oldsize))
+    (setq :s:ddx (new-index-offset (idx-storage ddx) (list d0 d1 d2 d3) oldsize))
+    s))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+) ; in-namespace gblearn-
+
+(dhc-make 
+ ()
+ (gb-param)
+ (idx1-param resize idx1-param size get set 
+	     alloc-idx0-state alloc-idx1-state alloc-idx2-state
+	     alloc-idx3-state alloc-idx4-state)
+ (idx1-dparam resize idx1-dparam clear-dx clear-deltas 
+	      update-deltas update 
+	      alloc-idx0-dstate alloc-idx1-dstate alloc-idx2-dstate
+	      alloc-idx3-dstate alloc-idx4-dstate)
+ (idx1-dparam-eps resize idx1-dparam-eps update 
+		  set-epsilons set-epsilon)
+ (idx1-ddparam resize idx1-ddparam clear-ddx clear-ddeltas
+	       update-ddeltas update-xaverage swap-xaverage copy-xaverage 
+               compute-epsilons saliencies
+	       alloc-idx0-ddstate alloc-idx1-ddstate alloc-idx2-ddstate
+	       alloc-idx3-ddstate alloc-idx4-ddstate))
+
+

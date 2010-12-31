@@ -1,0 +1,518 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: data-sources.lsh,v 1.4 2003/03/02 07:56:25 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libidx/idx-macros")
+(libload "libidx/idx-io")
+(libload "libidx/idx-int")
+(libload "libimage/pnm")
+(libload "gblearn2/gb-states")
+
+
+#? **** Data Sources
+;; data sources are used in machine learning experiments
+;; as sources of training and testing examples.
+;; Data sources are pretty much like regular modules.
+;; Most data sources should implement the following methods
+;; to be compatible with most gradient-based learning algorithms
+;; {<ul>
+;;  {<li> {<c> (==> ds fprop arg1 ... argn)}: write the current
+;;    item into <arg1> ... <argn>}.
+;;  {<li> {<c> (==> ds next)}: go to the next item in the data source.}
+;;  {<li> {<c> (==> ds seek i)}: go to the i-th item in the data source.}
+;;  {<li> {<c> (==> ds tell)}: return the index of the current item.}
+;;  {<li> {<c> (==> ds size)}: return the total number of item.}
+;; }
+;; Optionally, some data sources may implement the following methods:
+;; {<ul>
+;;  {<li> {<c> (==> ds bprop arg1 ... argn)}: backpropagate gradients.}
+;;  {<li> {<c> (==> ds bbprop arg1 ... argn)}: backpropagate diagonal
+;;     second derivatives.}
+;; }
+;; These methods can be used by algorithms that updates samples
+;; or preprocessings internal to the data source, based on 
+;; gradients coming from the learning machine.
+;; However, since those methods are used by a very small number of very
+;; special learning algorithms, implementing them is generally not 
+;; necessary.
+
+#? ** dsource
+;; Semi-abstract class for a data source.
+;; Various subclasses are defined for special cases.
+;; This root class defines the methods seek, tell,
+;; next, and size. Subclasses should define (or redefine)
+;; at least fprop and size.
+(defclass dsource object
+  ((-int-) current))
+
+(defmethod dsource dsource () ())
+
+#? (==> <dsource> seek <i>) 
+;; set pointer to <i>-th item
+(defmethod dsource seek (i) 
+  (declare (-int-) i) 
+  (if (or (< i 0) (> i (1- (==> this size))))
+      (error "data source item index out of bound")
+    (setq current i)))
+
+#? (==> <dsource> tell)
+;; return index of current item.
+(defmethod dsource tell () current)
+
+#? (==> <dsource> next)
+;; move pointer to next item.
+(defmethod dsource next ()
+  (incr current)
+  (when (>= current (==> this size)) (setq current 0))
+  current)
+
+#? (==> <dsource> size)
+;; reutrns the size of the data source.
+(defmethod dsource size () (to-int 0))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** dsource-idx3l
+;; An abstract data source class appropriate for most supervised
+;; learning algorithms that take input data in the form of an 
+;; idx3-state and a label in the form of an idx0 of int.
+;; Most learning machines implemented in the library are
+;; designed to be compatible with this data source and
+;; its subclasses.
+;; This class just defines the fprop method prototypes.
+;; Subclasses actually implement the functionalities.
+(defclass dsource-idx3l dsource)
+
+#? (==> <dsource-idx3l> fprop <out> <lbl>)
+;; get the current item and copy the sample into
+;; <out> (an idx3-state) and the corresponding 
+;; label into <lbl> (and idx0 of int).
+(defmethod dsource-idx3l fprop (out lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl) 
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** dsource-idx3fl
+;; a data source that stores samples as idx3 of floats.
+;; As a subclass of <dsource-idx3l>, this class is
+;; compatible with most learning machines defined
+;; in the gblearn2 library.
+(defclass dsource-idx3fl dsource-idx3l
+  ((-idx4- (-float-)) inputs)
+  ((-idx1- (-int-)) labels))
+
+#? (new dsource-idx3fl <inp> <lbl>)
+;; create a <dsource-idx3fl> where the input
+;; samples are slices of an PxDxYxX idx4 of floats
+;; passed as argument <inp> and labels are slices
+;; of an idx1 of int passed as argument <lbl>.
+;; P is the number of samples, and D,Y,X the dimensions
+;; of each sample. If your data needs less that three 
+;; dimensions simply setq Y and/or X to 1 (i.e. <inp> 
+;; would be a PxDx1x1 matrix).
+(defmethod dsource-idx3fl dsource-idx3fl (inp lbl)
+  (declare (-idx4- (-float-)) inp)
+  (declare (-idx1- (-int-)) lbl)
+  (setq current 0)
+  (setq inputs inp)
+  (setq labels lbl) ())
+
+(defmethod dsource-idx3fl size () (idx-dim inputs 0))
+
+#? (==> <dsource-idx3fl> fprop <out> <lbl>)
+;; get the current item and copy the sample into
+;; <out> (an idx3-state) and the corresponding 
+;; label into <lbl> (and idx0 of int).
+(defmethod dsource-idx3fl fprop (out lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
+  (==> out resize (idx-dim inputs 1) (idx-dim inputs 2) (idx-dim inputs 3))
+  (array-copy (select inputs 0 current) :out:x) 
+  (array-copy (select labels 0 current) lbl) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** dsource-idx3ul
+;; a data source that stores samples as idx3 of ubytes.
+;; As a subclass of <dsource-idx3l>, this class is
+;; compatible with most learning machines defined
+;; in the <gblearn2> library.
+;; The ubyte values (between 0 255) can be shifted and
+;; scaled by before being written to the output idx3-state.
+;; This data source is considerably more economical in 
+;; term of memory than <dsource-idx3fl> (1 byte per sample
+;; per variable, versus 4).
+(defclass dsource-idx3ul dsource-idx3l
+  ((-idx4- (-ubyte-)) inputs)
+  ((-idx1- (-int-)) labels)
+  ((-float-) bias)
+  ((-float-) coeff))
+
+#? (new dsource-idx3ul <inp> <lbl> <bias> <coeff>)
+;; create a <dsource-idx3ul> where the input
+;; samples are idx3 slices of an PxDxYxX idx4 of ubytes
+;; passed as argument <inp> and labels are slices
+;; of an idx1 of int passed as argument <lbl>.
+;; P is the number of samples, and D,Y,X the dimensions
+;; of each sample. If your data needs less that three 
+;; dimensions simply setq Y and/or X to 1 (i.e. <inp> 
+;; would be a PxDx1x1 matrix).
+;; values in the item are shifted by <bias>
+;; and multiplied by <coeff> before being copied
+;; into the destination by <fprop>.
+(defmethod dsource-idx3ul dsource-idx3ul (inp lbl b c)
+  (declare (-idx4- (-ubyte-)) inp)
+  (declare (-idx1- (-int-)) lbl)
+  (declare (-float-) b c)
+  (setq bias b)
+  (setq coeff c)
+  (setq current 0)
+  (setq inputs inp)
+  (setq labels lbl) ())
+
+(defmethod dsource-idx3ul size () (idx-dim inputs 0))
+
+#? (==> <dsource-idx3ul> fprop <out> <lbl>)
+;; get the current item and copy the sample into
+;; <out> (an idx3-state) and the corresponding 
+;; label into <lbl> (and idx0 of int).
+;; Raw values are shifted by the <bias> parameter
+;; and multiplied by the <coeff> parameter before 
+;; being copied into the x slot of <out>.
+(defmethod dsource-idx3ul fprop (out lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
+  (==> out resize (idx-dim inputs 1) (idx-dim inputs 2) (idx-dim inputs 3))
+  (let ((outx :out:x))
+    (array-copy (select inputs 0 current) outx) 
+    (idx-f3addc outx bias outx)
+    (idx-f3dotc outx coeff outx))
+  (array-copy (select labels 0 current) lbl) ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+
+#? ** dsource-image
+;; A data source that stores images of variable sizes, with any number
+;; of components per pixel, and one byte per component.  As a subclass
+;; of <dsource-idx3l>, this class is compatible with most learning
+;; machines defined in the <gblearn2> library.  The <fprop> method
+;; resizes the output argument to the size of the current image.
+;; Pixel values may be shifted and scaled before being written
+;; the the output <idx3-state>.
+(defclass dsource-image dsource-idx3l
+  ((-idx1- (-ubyte-)) images) ;; [n-pixels-per-image*n-images*depth] 
+  ((-idx1- (-int-)) starts) ;; starting position within 
+                            ;; the images matrix of each image
+  ((-idx2- (-int-)) sizes) ;; size of each image: (n-rows, n-columns, depth)
+  ((-idx1- (-int-)) labels)
+  ((-float-) bias)
+  ((-float-) coeff))
+
+#? (new dsource-image <bias> <coeff>)
+;; create an empty <dsource-image>.
+;; When accessing an item, the values are
+;; shifted by <bias> and multiplied by <coeff>.
+(defmethod dsource-image dsource-image (b c)
+  (declare (-float-) b c)
+  (setq bias b)
+  (setq coeff c)
+  (setq current 0)
+  (setq labels (int-array 1))
+  (setq images (ubyte-array 1))
+  (setq starts (int-array 1))
+  (setq sizes (int-array 1 1)) ())
+
+#? (==> <dsource-image> size)
+;; reutnrs the size of the database
+(defmethod dsource-image size () 
+  (let ((z (idx-dim starts 0))) (declare (-int-) z) z))
+
+#? (==> <dsource-image> fprop <dest> <lbl>)
+;; writes the current item into the x slot of <dest>
+;; (an idx3-state) and the corresponding label to
+;; <lbl> (and idx0 of int). <dest> is automatically 
+;; resized to the size of the current item.
+(defmethod dsource-image fprop (out lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
+  (let* ((ni (sizes current 0))
+         (nj (sizes current 1))
+         (nk (sizes current 2))
+         (np (* ni nj nk))
+         (start (starts current))
+         (image (reshape (idx-trim images 0 start np) (list ni nj nk))))
+    (idx-set-offset image start)
+    (==> out resize ni nj nk)
+    (let ((outx :out:x))
+      (array-copy image outx)
+      (idx-f3addc outx bias outx)
+      (idx-f3dotc outx coeff outx))
+    (array-copy (select labels 0 current) lbl) ()))
+
+
+#? (==> <dsource-image> load-ppms <flist> <clist>)
+;; fills up the database with images
+;; from a bunch of PPM files
+;; <clist> is a list of labels (one integer for each image)
+;; or a single category, in which case all the loaded images 
+;; will be in that category.
+(defmethod dsource-image load-ppms (flist clist)
+  (when (and (consp clist) (<> (length flist) (length clist)))
+      (error "file list and category list have different lengths"))
+  (let* ((ims (all ((f flist)) (pnm-read-rgbim f)))
+         (n (length ims))
+         (nbytes (let ((r 0)) (each ((m ims)) (incr r (idx-nelems m))) r)))
+    (idx-u1resize images nbytes)
+    (idx-i1resize starts n)
+    (idx-i1resize sizes n 3)
+    (idx-i1resize labels n)
+    ;; (setq infos (atom-array n))
+    (let ((p 0) (s 0) (i 0))
+      (each ((m ims) (f flist))
+        ;; (infos i f)
+        (setq s (idx-nelems m) )
+        (array-copy m (idx-trim images 0 p s))
+        (starts i p)
+        (sizes i 0 (idx-dim m 0))
+        (sizes i 1 (idx-dim m 1))
+        (sizes i 2 (idx-dim m 2))
+        (incr p s)
+        (incr i)))
+    (if (consp clist)
+        (labels () clist)
+      (idx-i1fill labels clist)) n))
+
+#? (==> <dsource-image> load-pgms <flist> <clist>)
+;; fills up the database with images
+;; from a bunch of PGM files
+;; <clist> is a list of labels (one integer for each image)
+;; or a single category, in which case all the loaded images 
+;; will be in that category.
+(defmethod dsource-image load-pgms (flist clist)
+  (when (and (consp clist) (<> (length flist) (length clist)))
+      (error "file list and category list have different lengths"))
+  (let* ((ims (all ((f flist)) (pnm-read-ubim f)))
+         (n (length ims))
+         (nbytes (let ((r 0)) (each ((m ims)) (incr r (idx-nelems m))) r)))
+    (idx-u1resize images nbytes)
+    (idx-i1resize starts n)
+    (idx-i2resize sizes n 3)
+    (idx-i1resize labels n)
+    (let ((p 0) (s 0) (i 0))
+      (each ((m ims))
+        (setq s (idx-nelems m))
+        (array-copy m (idx-trim images 0 p s))
+        (starts i p)
+        (sizes i 0 (idx-dim m 0))
+        (sizes i 1 (idx-dim m 1))
+        (sizes i 2 (if (= 2 (idx-ndim m)) 1 (idx-dim m 2)))
+        (incr p s)
+        (incr i)))
+    (if (consp clist)
+        (labels () clist)
+      (idx-i1fill labels clist)) n))
+
+#? (==> <dsource-image> save <basename>)
+;; save database into pre-cooked IDX files.
+;; These files can be subsequently loaded quickly
+;; using the load or map methods.
+;; The database is saved in four files named
+;; <basename>images.idx, <basename>starts.idx,
+;; <basename>sizes.idx, and <basename>labels.idx
+(defmethod dsource-image save (basename)
+  (declare (-str-) basename)
+  (save-idx1-ubyte (concat basename "images.idx") images)
+  (save-idx1-int (concat basename "starts.idx") starts)
+  (save-idx2-int (concat basename "sizes.idx") sizes)
+  (save-idx1-int (concat basename "labels.idx") labels)
+  ())
+
+#? (==> <dsource-image> load <basename>)
+;; load database from pre-cooked IDX files
+;; produced through the <save> method.
+;; The database will be loaded from four files named
+;; <basename>images.idx, <basename>starts.idx,
+;; <basename>sizes.idx, and <basename>labels.idx
+(defmethod dsource-image load (basename)
+  (declare (-str-) basename)
+  (load-idx1-ubyte (concat basename "images.idx") images)
+  (load-idx1-int (concat basename "starts.idx") starts)
+  (load-idx2-int (concat basename "sizes.idx") sizes)
+  (load-idx1-int (concat basename "labels.idx") labels)
+  ())
+
+#? (==> <dsource-image> map <basename>)
+;; memory-map database from pre-cooked IDX files
+;; produced through the <save> method.
+;; This is MUCH faster than load, and consumes
+;; fewer memory/disk bandwidth.
+;; The database will be mapped from four files named
+;; <basename>images.idx, <basename>starts.idx,
+;; <basename>sizes.idx, and <basename>labels.idx
+(defmethod dsource-image map (basename)
+  (setq images (map-idx1-ubyte (concat basename "images.idx") ))
+  (setq starts (map-idx1-int (concat basename "starts.idx") ))
+  (setq sizes (map-idx2-int (concat basename "sizes.idx") ))
+  (setq labels (map-idx1-int (concat basename "labels.idx") ))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** dsource-idx3l-narrow
+;; a data source constructed by taking patterns in
+;; an existing data source whose indices are within a 
+;; given range.
+(defclass dsource-idx3l-narrow dsource-idx3l
+  ((-obj- (dsource-idx3l)) base)
+  ((-int-) offset)
+  ((-int-) size))
+
+#? (new dsource-idx3l-narrow <base> <size> <offset>)
+;; make a new data source by taking <size> items 
+;; from the data source passed as argument, starting
+;; at item <offset>.
+(defmethod dsource-idx3l-narrow dsource-idx3l-narrow (b siz off)
+  (declare (-obj- (dsource-idx3l)) b)
+  (declare (-int-) siz off)
+  (when (> (+ siz off) (==> b size)) (error "illegal range for narrow-db"))
+  (when (or (< off 0) (< siz 0)) 
+    (error "offset and size of narrow-db must be positive"))
+  (setq base b)
+  (setq offset off)
+  (setq size siz)
+  (setq current 0) ())
+
+(defmethod dsource-idx3l-narrow size () size)
+
+#? (==> <dsource-idx3l-permute> fprop <out> <lbl>)
+;; copy current item and label into <out> and <lbl>.
+(defmethod dsource-idx3l-narrow fprop (out lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
+  (==> base seek (+ offset current))
+  (==> base fprop out lbl) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** dsource-idx3l-permute
+;; a data source constructed by shuffling the items
+;; of a base data source.
+(defclass dsource-idx3l-permute dsource-idx3l
+  ((-obj- (dsource-idx3l)) base)
+  ((-idx1- (-int-)) map))
+
+#? (new dsource-idx3l-permute <base>)
+;; make a new data source by taking the <base>
+;; data source and building a permutation map
+;; of its items. Initially, the permutation map
+;; is equal to the identity. It can be shuffled 
+;; into a random order by calling the <shuffle>
+;; method.
+(defmethod dsource-idx3l-permute dsource-idx3l-permute (b)
+  (declare (-obj- (dsource-idx3l)) b)
+  (setq base b)
+  (setq map (int-array (==> base size)))
+  (idx-i1fill-with-index map)
+  (setq current 0) ())
+
+(defmethod dsource-idx3l-permute size () (idx-dim map 0))
+
+#? (==> <dsource-idx3l-permute> fprop <out> <lbl>)
+;; copy current item and label into <out> and <lbl>.
+(defmethod dsource-idx3l-permute fprop (out lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
+  (==> base seek (map current))
+  (==> base fprop out lbl) ())
+
+#? (==> <dsource-idx3l-permute> shuffle)
+;; randomly shuffles the samples of the db.
+(defmethod dsource-idx3l-permute shuffle ()
+  (let ((n (idx-dim map 0)))
+    (declare (-int-) n)
+    (for (i 0 (- n 2))
+	 (let ((j (int (rand i (- n 0.01))))
+	       (v (map i)))
+	   (declare (-int-) j v)
+	   (map i (map j))
+	   (map j v)))) ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** dsource-idx3l-concat
+;; a data source constructed by concatenating
+;; two base data sources.
+(defclass dsource-idx3l-concat dsource-idx3l
+  ((-obj- (dsource-idx3l)) base1)
+  ((-int-) size1)
+  ((-obj- (dsource-idx3l)) base2)
+  ((-int-) size2))
+
+#? (new dsource-idx3l-concat <base1> <base2>)
+;; make a new data source by taking concatenating
+;; two base data sources <base1> and <base2>.
+;; the Two data sources must be <dsource-idx3l>
+;; or subclasses thereof.
+(defmethod dsource-idx3l-concat dsource-idx3l-concat (b1 b2)
+  (declare (-obj- (dsource-idx3l)) b1 b2)
+  (setq base1 b1)
+  (setq base2 b2)
+  (setq size1 (==> base1 size))
+  (setq size2 (==> base2 size)) ())
+
+(defmethod dsource-idx3l-concat size () (+ size1 size2))
+
+#? (==> <dsource-idx3l-concat> fprop <out> <lbl>)
+;; copy item and label into <out> and <lbl>.
+(defmethod dsource-idx3l-concat fprop (out lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
+  (if (< current size1)
+      (progn
+	(==> base1 seek current)
+	(==> base1 fprop out lbl))
+    (==> base2 seek (- current size1))
+    (==> base2 fprop out lbl)) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make
+ ()
+ (dsource dsource size seek tell next)
+ (dsource-idx3l fprop)
+ (dsource-idx3fl dsource-idx3fl size fprop)
+ (dsource-idx3ul dsource-idx3ul size fprop)
+ (dsource-image dsource-image size fprop)
+ (dsource-idx3l-narrow dsource-idx3l-narrow size fprop)
+ (dsource-idx3l-permute dsource-idx3l-permute size fprop shuffle)
+ (dsource-idx3l-concat dsource-idx3l-concat size fprop)
+ )

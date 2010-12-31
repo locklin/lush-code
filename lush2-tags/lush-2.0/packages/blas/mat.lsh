@@ -1,0 +1,223 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "blas/blas")
+
+;; useful code that uses the blas interface
+
+(in-namespace* blas-
+
+;; Do half of a reduced QR factorization via Householder
+;; reflections, write R to A and hyperplane normals to W.
+(defun -house! (A W)
+  (declare (-idx2- (-double-)) A W)
+  (assert (same-shape-p A W))
+  (let ((m (idx-shape A 0))
+        (n (idx-shape A 1))
+        (R (copy-index A))
+        (W (copy-index W)) )
+    (for* (k 0 (min m n))
+      (declare (-int-) k n)
+      (let ((x (idx-select R 1 0))
+            (v (idx-select W 1 0)) )
+        (array-copy x v)
+        (incr (v 0) (* (nrm2 x) (sgn (x 0))))
+        (scal1! v)
+        (ger1! -2 v (gevm 1 v R) R)
+        (idx-trim! R 0 1) (idx-trim! R 1 1)
+        (idx-trim! W 0 1) (idx-trim! W 1 1) ))
+    ()))
+
+;; Create square Q from W.
+(defun -W2Q (W)
+  (declare (-idx2- (-double-)) W)
+  (let ((Q (mat-id (length W))))
+    (for* (k 0 (idx-shape W 1))
+      (declare (-int-) k)
+      (let* ((v (idx-select W 1 k))
+             (u (gemv 1 Q v)) )
+        (ger1! -2 u v Q) ))
+    Q))
+
+;; Compute Q times b with implicit representation of Q (W).
+;; Write result to b.
+(defun -implicit-Q.b! (W b)
+  (declare (-idx2- (-double-)) W)
+  (declare (-idx1- (-double-)) b)
+  (let ((m (idx-shape W 0))
+        (n (idx-shape W 1)) )
+    (declare (-int-) m n)
+    (assert (= (length b) m))
+    (for (k (- (min m n) 1) 0 -1)
+      (declare (-int-) k)
+      (let ((bk (idx-trim b 0 k))
+            (vk (idx-trim (idx-select W 1 k) 0 k)) )
+        (axpy! (* -2 (dot vk bk)) vk bk) ))
+    ()))
+
+;; Compute Q* times b with implicit representation of Q (W).
+;; Write result to b.
+(defun -implicit-Q*.b! (W b)
+  (declare (-idx2- (-double-)) W)
+  (declare (-idx1- (-double-)) b)
+  (let ((m (idx-shape W 0))
+        (n (idx-shape W 1)) )
+    (declare (-int-) m n)
+    (assert (= (length b) m))
+    (for* (k 0 (min m n))
+      (declare (-int-) k)
+      (let ((bk (idx-trim b 0 k))
+            (vk (idx-trim (idx-select W 1 k) 0 k)) )
+        (axpy! (* -2 (dot vk bk)) vk bk) ))
+    ()))
+
+(in-namespace mat-
+
+#? (mat-vander <v> [<n>])
+;; Vandermonde matrix of vector <v>.
+;;
+;; The resulting matrix is <(length v)>x<n>, default for
+;; <n> is <(length v)>.
+(defun -vander (v n)
+  (declare (-idx1- (-double-)) v)
+  (declare (-int-) n)
+  (when (< n 0)
+    (setq n (length v)) )
+  (let ((A (double-array (length v) n)))
+    (when (> n 0)
+      (let ((c0 (idx-trim A 1 0 1))
+	    (c1 (idx-trim A 1 0 1))
+	    (u ($> v)) )
+	(array-clear c0 1)
+	(for* (i 1 n)
+	      (declare (-int-) i)
+	      (idx-shift! c1 1 1)
+	      (idx-mul c0 u c1)
+	      (idx-shift! c0 1 1) )))
+      A))
+
+(defmacro vander (v &optional (n -1))
+  `(-vander ,v ,n)
+  )
+
+#? (mat-qr! <A>)
+;; Compute QR factorization of <A>, owerwrite <A>
+;; with <R> and return <Q>.
+(defun qr! (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((W (clone-array A)))
+    (array-clear W 0)
+    (-house! A W)
+    (-W2Q W)))
+
+#? (mat-qr <A>)
+;; Compute QR factorization of <A> and return <(list Q R)>.
+(defmacro qr (A)
+  `(let ((R (copy-array ,A)))
+     (let ((Q (qr! R)))
+       (list Q R)))
+  )
+
+#? (mat-solve! <A> <b>)
+;; Solve <A>.<x> = <b> for <x> and write to <b>.
+;;
+;; Matrix <A> is written to as well.
+(defun solve! (A b)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-double-)) b)
+  (let ((W (clone-array A))
+        (m (idx-shape A 0))
+        (n (idx-shape A 1)) )
+    (declare (-int-) m n)
+    (-house! A W)          ; A <- R  , vs in W
+    (-implicit-Q*.b! W b)  ; b <- Q*b
+    (when (< m n)
+      (idx-trim! A 1 0 m)) ; make A square
+    (when (> m n)
+      (idx-trim! A 0 0 n)
+      (idx-trim! b 0 0 n) )
+    (utsv! A b)
+    (idx-trim b 0 0 (idx-shape A 1)) ))
+
+#? (mat-solve <A> <b>)
+;; Solve <A>.<x> = <b> for <x> and return <x>.
+;;
+;; When <A> is square an exact solution is sought,
+;; otherwise a solution in the least squares sense.
+(defmacro solve (A b)
+  `(mat-solve! (copy-array ,A) (copy-array ,b))
+  )
+
+#? (mat-power <A> <n>)
+;; <n>th power of matrix <A>.
+;;
+;; <A> is square and <n> a non-negative integer.
+(defun power (A i)
+  (declare (-idx2- (-double-)) A)
+  (declare (-int-) i)
+
+  (when (not (squarep A))
+    (error "not a square matrix") )
+  (cond
+   ((< i 0)
+    (error "negative exponent") )
+   ((= i 0)
+    (id (length A)) )
+   ((= i 1)
+    (copy-array A) )
+   (t
+    (let ((p (1- (floor (log2 (to-double i)))))
+          (m (copy-array A))
+          (r (clone-array A)) )
+      (declare (-int-) p)
+      (while (>= p 0)
+        (gemm! 1 m m 0 r)
+        (rotatef r m)
+        (when (testbit i p)
+          (gemm! 1 m A 0 r)
+          (rotatef r m) )
+        (decr p) )
+      m))
+   ))
+
+) ; in-namespace mat-
+) ; in-namespace* blas
+
+(dhc-make "blas_mat"
+          -house!
+          -W2Q
+          -implicit-Q.b!
+          -implicit-Q*.b!
+          mat--vander
+          mat-qr!
+          ;mat-solve!
+          mat-power
+          )
+
+
+
+

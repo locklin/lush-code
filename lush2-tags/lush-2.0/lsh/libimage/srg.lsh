@@ -1,0 +1,450 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Written by Ralf Juengling.
+
+(libload "libimage/segment-config")
+(libload "libimage/mask-tools")
+(libload "libimage/integral")
+(libload "datatypes/int-heap")
+(libload "libidx/idx-sort")
+
+;; +max-region-index+ and +neighborhood-size+ are defined
+;; segment-config.lsh
+
+(in-namespace temp-
+
+(defun frame-image (img)
+  (declare (-idx2- (-double-)) img)
+  (let ((fimg (double-array* (+ ($ img 0) 2) (+ ($ img 1) 2))))
+    (array-clear fimg NAN)
+    (idx-trim! fimg 0 1 ($ img 0))
+    (idx-trim! fimg 1 1 ($ img 1))
+    (array-copy img fimg)
+    fimg))
+
+(defmacro shift-windows wins
+  (cons 'progn
+        (domapcar ((win wins))
+          `(cinline "(%s)->offset = %s;" ,win offset)
+          ))
+  )
+
+(defmacro cell-valid-p (i j)
+  `(not (nanp (wi ,i ,j)))
+  )
+
+;; compute smallest deviation from mean
+(defun compute-delta (wi wm means)
+  (declare (-idx2- (-double-)) wi)
+  (declare (-idx2- (-int-)) wm)
+  (declare (-idx1- (-double-)) means)
+  (assert (= (wm 1 1) 0)) ; use for new boundary cells only
+  (unprotect
+  (let ((delta INF))
+    ;; 4-neighborhood
+    (when (and (cell-valid-p 0 1) (> (wm 0 1) 0))
+      (setq delta (min delta (abs (- (wi 0 1) (means (wm 0 1)))))) )
+    (when (and (cell-valid-p 1 2) (> (wm 1 2) 0))
+      (setq delta (min delta (abs (- (wi 1 2) (means (wm 1 2)))))) )
+    (when (and (cell-valid-p 2 1) (> (wm 2 1) 0))
+      (setq delta (min delta (abs (- (wi 2 1) (means (wm 2 1)))))) )
+    (when (and (cell-valid-p 1 0) (> (wm 1 0) 0))
+      (setq delta (min delta (abs (- (wi 1 0) (means (wm 1 0)))))) )
+    ;; diagonal neighbors
+    (when (> +neighborhood-size+ 4)
+      (when (and (cell-valid-p 0 0) (> (wm 0 0) 0))
+        (setq delta (min delta (abs (- (wi 0 0) (means (wm 0 0)))))) )
+      (when (and (cell-valid-p 0 2) (> (wm 0 2) 0))
+        (setq delta (min delta (abs (- (wi 0 2) (means (wm 0 2)))))) )
+      (when (and (cell-valid-p 2 0) (> (wm 2 0) 0))
+        (setq delta (min delta (abs (- (wi 2 0) (means (wm 2 0)))))) )
+      (when (and (cell-valid-p 2 2) (> (wm 2 2) 0))
+        (setq delta (min delta (abs (- (wi 2 2) (means (wm 2 2)))))) )
+      )
+    (assert (not (infinityp delta)))
+    delta)
+  ) ; unprotect
+  )
+
+) ; namespace temp-
+
+
+(in-namespace* temp-
+
+
+#? (make-seeds! <img> <mask> <nw> <sel>)
+;; Move window of size <nw>x<nw> over the grayscale image <img>
+;; (minimum <nw>=2) and compute variance estimates. Pick the
+;; lowest-variance points as seeds. Write seeds to <mask> and
+;; return number of seeds.
+;;
+;; The number of seeds depends on the window size: The minimum
+;; distance between seeds is <nw>. Argument <sel> is a structuring
+;; element the seed points are dilated with. When <sel> is nonempty,
+;; its size must be <nw>x<nw>.
+(defun make-seeds! (img mask nw sel)
+  (declare (-idx2- (-double-)) img)
+  (declare (-idx2- (-int-)) mask sel)
+  (declare (-int-) nw)
+  (when (< nw 2)
+    (error "invalid window size (must be at least 2)") )
+  (when (not (same-shape-p img mask))
+    (error "image and mask do not match in shape") )
+  (when (not (emptyp sel))
+    (when (or (<> ($ sel 0) nw) (<> ($ sel 1) nw))
+      (error "structuring element must be of same size as window") ))
+  (let* ((size (idx-nelems img))
+         (wm  (idx-trim* mask nw nw))
+         (hp  (new IntHeap))
+         (m   ($ img 0))
+         (n   ($ img 1))
+         (nw- (- nw 1))
+         (nw+ (+ nw 1)) 
+         (wsize (* nw nw))            ; number of cells in window
+         (ws/2 (floor (/ nw- 2)))
+         (offset 0)                   ; 
+         (ii  (double-array* m n))    ; integral image
+         (ii2 (double-array* m n))    ; integral image of values squared
+         (ns 0)                       ; number of seeds
+         )                            
+    (declare (-int-) size m n nw- nw+ wsize ws/2 offset ns)
+    
+    ;; compute ii and ii2
+    (let ((iisrg (idx-storage ii))  (imgsrg (idx-storage img)))
+      (for* (i 0 size)
+        (declare (-int-) i)
+        (iisrg i (* (imgsrg i) (imgsrg i)))
+        )
+      (integral-image! ii ii2)
+      (integral-image! img ii)
+      )
+
+    ;; calculate variance estimates and put into heap for all
+    ;; window positions
+    (setq offset (idx-offset wm))    ; save offset of origin
+    ;; do upper left corner
+    (let ((winavg (/ (ii nw- nw-) wsize))
+          (winsqr (/ (ii2 nw- nw-) wsize)) )
+      (==> hp insert (- winsqr (* winavg winavg)) offset)
+      (unprotect
+      ;; do first row
+      (for* (j 1 (- n nw))
+        (declare (-int-) j)
+        (setq winavg (- (ii nw- (+ j nw-)) (ii nw- (- j 1))))
+        (setq winsqr (- (ii2 nw- (+ j nw-)) (ii2 nw- (- j 1))))
+        (setq winavg (/ winavg wsize)  winsqr (/ winsqr wsize))
+        (idx-shift! wm 1 1)
+        (==> hp insert (- winsqr (* winavg winavg)) (idx-offset wm))
+        )
+      
+      ;; do first column
+      (shift-windows wm) ; back to 0,0
+      (for* (i 1 (- m nw))
+        (declare (-int-) i)
+        (setq winavg (- (ii (+ i nw-) nw-) (ii (- i 1) nw-)))
+        (setq winsqr (- (ii2 (+ i nw-) nw-) (ii2 (- i 1) nw-)))
+        (setq winavg (/ winavg wsize)  winsqr (/ winsqr wsize))
+        (idx-shift! wm 0 1)
+        (==> hp insert (- winsqr (* winavg winavg)) (idx-offset wm))
+        )
+      
+      ;; do remaining
+      (for* (i 1 (- m nw))
+        (shift-windows wm)             ; back to last starting point
+        (idx-shift! wm 0 1)            ; down one
+        (setq offset (idx-offset wm))  ; save
+        (for* (j 1 (- n nw))
+          (declare (-int-) i j)
+          (setq winavg (- (+ (ii (+ i nw-) (+ j nw-)) (ii (- i 1) (- j 1)))
+                          (ii (- i 1) (+ j nw-)) (ii (+ i nw-) (- j 1))))
+          (setq winsqr (- (+ (ii2 (+ i nw-) (+ j nw-)) (ii2 (- i 1) (- j 1)))
+                          (ii2 (- i 1) (+ j nw-)) (ii2 (+ i nw-) (- j 1))))
+          (setq winavg (/ winavg wsize)  winsqr (/ winsqr wsize))
+          (idx-shift! wm 1 1)
+          (==> hp insert (- winsqr (* winavg winavg)) (idx-offset wm))
+          ))
+      ) ; unprotect
+      )
+    ;; process prospective seed points
+    (array-clear mask 0)
+    (while (not (emptyp hp))
+      (let ((offset (next hp)))
+        (shift-windows wm)
+        (when (and (= (wm 0 0) 0) (= (wm nw- 0) 0)
+                   (= (wm 0 nw-) 0) (= (wm nw- nw-) 0))
+          (incr ns)
+          (if (emptyp sel)
+              (progn
+                (array-clear wm -1)  ; mark all cells in window as off-limits
+                (wm ws/2 ws/2 ns)    ; tag window center as seed point
+                )
+            (for* (i 0 nw)
+              (for* (j 0 nw)
+                (declare (-int-) i j)
+                (if (= (sel i j) 0)
+                    (wm i j -1)
+                  (wm i j ns) )
+                ))
+            ))))
+    ;; post-process mask
+    (let ((masksrg (idx-storage mask)))
+      (for* (i 0 size)
+        (declare (-int-) i)
+        (when (= (masksrg i) -1)
+          (masksrg i 0) )))
+    ns))
+
+
+#? (segment-srg! <img> <mask>)
+;; Segment grayscale image <img> by Seeded Region Growing. 
+;;
+;; <Img> is a two-dimensional double array. <Mask> is an
+;; integer array of the same size as the <img>. All entries
+;; in <mask> are zero except for the cells chosen as seeds.
+;; Different nonzero <mask>-entries with the same value are
+;; considered belonging to the same region.
+;;
+;; <Segment-srg!> updates the <mask> argument and returns a
+;; histogram of region sizes.
+(defun segment-srg! (img mask0)
+  ;; "Seeded Region Growing" image segmentation algorithm, see
+  ;; Adams & Bischoff, IEEE TPAMI 16(6), pp 641--647, 1994.
+  (declare (-idx2- (-double-)) img)
+  (declare (-idx2- (-int-)) mask0)
+  (let* ((img  (frame-image img))
+         (mask (frame-mask mask0))    ; avoid oob errors
+         (size (storage-nelems (idx-storage img)))
+         (hp  (new SmallIntHeap size))
+         (wi  (idx-trim* img 3 3))
+         (wm  (idx-trim* mask 3 3))
+         (m   ($ img 0))
+         (n   ($ img 1))
+         (sums (double-array 100))    ; store sum of gray values for region
+         (counts (int-array 100))     ; store number of pixels for region
+         (means (double-array 100))   ; store mean for region
+         (maxr 0)                     ; maximum possible entry in sums and counts
+         (di  [-1 0 1  0 -1 -1  1 1]) ; shifts to neighbor cells
+         (di+ [ 0 1 2  1  0  0  2 2]) ;
+         (dj  [ 0 1 0 -1 -1  1 -1 1]) ;
+         (dj+ [ 1 2 1  0  0  2  0 2]) ;
+         (offset 0) 
+         )
+    (declare (-int-) m n size offset)
+    
+    (idx-trim! di  0 0 +neighborhood-size+)
+    (idx-trim! di+ 0 0 +neighborhood-size+)
+    (idx-trim! dj  0 0 +neighborhood-size+)
+    (idx-trim! dj+ 0 0 +neighborhood-size+)
+
+    (idx-shift! wi 0 -1) (idx-shift! wi 1 -1) ; center on cell (0,0)
+    (idx-shift! wm 0 -1) (idx-shift! wm 1 -1) ; 
+
+    ;; first scan: pick up the seeds and compute means
+    (unprotect
+    (setq offset (idx-offset wi))     ; save offset for 2nd scan
+    (for* (i 0 m)
+      (for* (j 0 n)
+        (declare (-int-) i j)
+        (assert (cell-valid-p 1 1))
+        (let ((si (wm 1 1)))
+          (declare (-int-) si)
+          (when (< si 0)
+            (error "invalid seed index") )
+          (when (> si 0)
+            ;; this is a seed. update sum and counts ... 
+            (when (> si maxr)
+              (array-extend! sums 0 (- si maxr) 0)
+              (array-extend! counts 0 (- si maxr) 0)
+              (array-extend! means 0 (- si maxr) 0)
+              (setq maxr si) )
+            (incr (sums si) (wi 1 1))
+            (incr (counts si))
+            (means si (/ (sums si) (counts si)))
+            ))
+        (idx-shift! wi 1 1)
+        (idx-shift! wm 1 1)
+        )
+      (idx-shift! wi 1 2)
+      (idx-shift! wm 1 2)
+      )
+    (idx-trim! sums 0 0 (+ maxr 1))
+    (idx-trim! counts 0 0 (+ maxr 1))
+    (idx-trim! means 0 0 (+ maxr 1))
+
+    ;; second scan: pick up the seeds and compute means
+    (shift-windows wi wm)  ; move wi, wm back to (0,0)
+    (for* (i 0 m)
+      (for* (j 0 n)
+        (declare (-int-) i j)
+        (assert (cell-valid-p 1 1))
+        (let ((si (wm 1 1)))
+          (declare (-int-) si)
+          (when (> si 0)
+            ;; this is a seed, scan the neighbors
+            (for* (k 0 +neighborhood-size+)
+              (declare (-int-) k)
+              (when (and (cell-valid-p (di+ k) (dj+ k))
+                         (= (wm (di+ k) (dj+ k)) 0))
+                (let ((wit (idx-shift* wi (di k) (dj k)))
+                      (wmt (idx-shift* wm (di k) (dj k))) )
+                  (==> hp insert (compute-delta wit wmt means) (idx-offset wit) )
+                  )))
+            ))
+        (idx-shift! wi 1 1)
+        (idx-shift! wm 1 1)
+        )
+      (idx-shift! wi 1 2)
+      (idx-shift! wm 1 2)
+      )
+    ;; Now grow the regions.
+    ;; Unlike Adams & Bischoff, check the delta value of top in heap,
+    ;; update heap if necessary.
+    (while (not (emptyp hp))
+      (let ((d2 INF) (id2 -1) (si -1) (d (==> hp key)) (offset (==> hp next)))
+        (declare (-int-) id2 si offset)
+        (shift-windows wi wm)
+        (assert (= (wm 1 1) 0)) ; this cell has not been assigned to a region
+        ;; recompute delta value
+        (for* (k 0 +neighborhood-size+)
+          (declare (-int-) k)
+          (when (and (cell-valid-p (di+ k) (dj+ k))
+                     (> (setq si (wm (di+ k) (dj+ k))) 0) )
+            (let ((delta (abs (- (wi (di+ k) (dj+ k)) (means si)))))
+              (when (< delta d2)
+                (setq d2 delta  id2 si) ))
+            ))
+        (if (= d d2)
+            ;; assign cell to region id2
+            (progn
+              (wm 1 1 id2)
+              (incr (sums id2) (wi 1 1))
+              (incr (counts id2))
+              (means si (/ (sums id2) (counts id2)))
+              (for* (k 0 +neighborhood-size+)
+                (declare (-int-) k)
+                (when (and (cell-valid-p (di+ k) (dj+ k))
+                           (= (wm (di+ k) (dj+ k)) 0) )
+                  (let ((wit (idx-shift* wi (di k) (dj k)))
+                        (wmt (idx-shift* wm (di k) (dj k))) )
+                    (==> hp insert (compute-delta wit wmt means) (idx-offset wit) )
+                    )))
+              )
+          ;; put cell back into heap
+          (assert (< d2 INF))
+          (==> hp insert d2 offset)
+          )))
+    ) ; unprotect
+    (array-copy mask mask0)
+    counts))
+
+
+#? (oversegment <img> [<minreg> [<nw>]])
+;; Oversegment grayscale image <img> and return a region mask.
+;;
+;; Parameter <minreg> is a lower bound on the region size (in pixels).
+;; <Nw> is the window size used in the search for seed points. The
+;; larger <nw>, the fewer seed points will be selected.
+(defmacro oversegment (img &optional (minregion -1) (nw 7))
+  `(-oversegment ,img ,minregion ,nw)
+  )
+
+(defun -oversegment (img minregion nw)
+  (declare (-idx2- (-double-)) img)
+  (declare (-int-) minregion nw)
+  ;; process arguments
+  (setq minregion (max (ceil (* nw 1.5)) minregion))
+  (setq nw (max 3 nw (ceil (sqrt (to-double minregion)))))
+  (when (evenp nw)
+    (incr nw) )
+  (let ((sel (int-array nw nw))
+        (mask (int-array* ($ img 0) ($ img 1)))
+        (ns -1) (ns+ 0)
+        (m  (/ (- nw 3) 2)) )
+    (declare (-int-) ns m)
+
+    ;; Make seeds
+    (let ((sel* (idx-trim sel 0 m 3)))
+      (idx-trim! sel* 1 m 3)
+      (array-clear sel* 1) )
+    (setq ns (make-seeds! img mask nw sel))
+    (setq ns+ (+ ns 1))
+
+    ;; Grow regions & remove small regions
+    (let ((histo (segment-srg! img mask))
+          (idxs (int-array ns+))
+          (perm (int-array ns+))
+          (msrg (idx-storage mask))
+          (maxi 1) )
+      (declare (-int-) maxi)
+      (assert (= ns+ (length histo)))
+
+      ;; first remap mask indices
+      (for* (i 0 ns+)
+        (declare (-int-) i)
+        (idxs i i)
+        (perm i i) )
+      (array-sortup! histo idxs)
+      (array-sortup! idxs perm)
+      (for* (i 0 (storage-nelems msrg))
+        (msrg i (perm (msrg i))) )
+      
+      ;; determine largest index of too small regions
+      (while (< (histo maxi) minregion)
+        (incr maxi) )
+
+      ;; remove small regions
+      (for* (i 0 (storage-nelems msrg))
+        (declare (-int-) i)
+        (when (< (msrg i) maxi)
+          (msrg i 0) ))
+
+      ;; Grow regions a second time
+      (segment-srg! img mask)
+      
+      ;; Normalize indices
+      (decr maxi)
+      (for* (i 0 (storage-nelems msrg))
+        (declare (-int-) i)
+        (msrg i (- (msrg i) maxi))
+        (assert (> (msrg i) 0)) )
+      )
+    mask))
+
+
+) ; namespace temp-
+
+(dhc-make ()
+          temp-frame-image
+          temp-compute-delta
+          make-seeds!
+          segment-srg!
+          -oversegment
+          )
+
+
+(delete-namespace temp-)

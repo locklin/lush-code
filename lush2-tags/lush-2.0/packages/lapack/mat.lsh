@@ -1,0 +1,608 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "blas/mat")  ;; below are help texts for functions imported from blas/mat
+(libload "lapack")
+
+;; make explicit matrices L and U from result of lapack-getrf
+(defun -mk-lu (A q)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-int-)) q)
+  (let ((m (shape A 0))
+        (n (shape A 1)) )
+    (declare (-int-) m n)
+    (if (< m n)
+        (let ((L (mat-id m)))
+          (let ((lrow (idx-trim* L 1 0))
+                (arow (idx-trim* A 1 0)) )
+            (for* (i 1 m)
+              (declare (-int-) i)
+              (idx-extend! lrow 1 1)
+              (idx-shift!  lrow 0 1)
+              (idx-extend! arow 1 1)
+              (idx-shift!  arow 0 1)
+              (array-copy  arow lrow)
+              (array-clear arow 0) )
+            (list L A)))
+      (let ((U ##(idx-trim A 0 0 n)))
+        (let ((urow (idx-trim* U 1 0))
+              (arow (idx-trim  A 0 0 1)) )
+          (array-clear arow 0)
+          (arow 0 0 1)
+          (for* (i 1 m)
+            (declare (-int-) i)
+            (idx-shift!  arow 0 1)
+            (idx-trim!   arow 1 1)
+            (array-clear arow 0)
+            (arow 0 0 1)
+            (when (< i n)
+              (idx-shift!  urow 0 1)
+              (idx-extend! urow 1 1)
+              (array-clear urow 0) ))
+          (list A U q))))))
+
+;; copy upper triangle
+(defun -cp-ut (A B)
+  (declare (-idx2- (-double-)) A B)
+  (assert (same-shape-p A B))
+  (let ((arow (idx-trim A 0 0 1))
+        (brow (idx-trim B 0 0 1)) )
+    (for* (i 1 (length A))
+      (array-copy arow brow)
+      (idx-trim!  arow 1 1)
+      (idx-shift! arow 0 1)
+      (idx-trim!  brow 1 1)
+      (idx-shift! brow 0 1) )
+    (array-copy arow brow) )
+  B)
+
+(defmacro -.*-result (m1 m2)
+  `(let ((m1 ,m1) (m2 ,m2))
+     ;(chk-idx-rankeq2 m2)
+     (if (= (idx-shape m1 1) (idx-shape m2 0))
+	 (clone-array 
+          (idx-expand! (idx-expand! (idx-trim* m1 1 1) 0 (idx-shape m1 0))
+                       1 (idx-shape m2 1)))
+       (ifcompiled
+           (error "matrix-multiply of incompatible matrices")
+         (error "matrix-multiply of incompatible matrices" (list ,m1 ,m2)) )))
+  )
+
+;; helper for mat-exp
+(defun -pade-approx (A degree c)
+  (declare (-idx2- (-double-)) A)
+  (declare (-int-) degree)
+  (declare (-idx1- (-double-)) c)
+  (let* ((m  (length A))
+         (A2 (blas-gemm 1 A A))
+         (Ai (mat-id m))
+         (A+ (clone-array Ai))
+         (U  (double-array m m))
+         (V  (double-array m m)) )
+    (declare (-int-) m)
+    ;; compute U and V
+    (if (< degree 13)
+        (progn
+          (for (i 0 degree 2)
+            (blas-axpy! (c (+ i 1)) ($- Ai) ($- U))
+            (blas-axpy! (c i)       ($- Ai) ($- V))
+            (blas-gemm! 1 A2 Ai 0 A+)
+            (rotatef Ai A+) )
+          (blas-gemm! 1 A U 0 A+)
+          (setq U A+) )
+
+      (let* ((A4 (blas-gemm 1 A2 A2))
+             (A6 (blas-gemm 1 A2 A4))
+             (U0 (double-array m m))
+             (V0 (double-array m m)) )
+        (array-clear (mat-band U0 0) (c 1))
+        (blas-axpy! (c  3) ($- A2) ($- U0))
+        (blas-axpy! (c  5) ($- A4) ($- U0))
+        (blas-axpy! (c  7) ($- A6) ($- U0))
+        (blas-axpy! (c  9) ($- A2) ($- U))
+        (blas-axpy! (c 11) ($- A4) ($- U))
+        (blas-axpy! (c 13) ($- A6) ($- U))
+        (blas-gemm! 1 A6 U 1 U0)
+        (blas-gemm! 1 A U0 0 U)
+
+        (array-clear (mat-band V 0) (c 0))
+        (blas-axpy! (c  2) ($- A2) ($- V))
+        (blas-axpy! (c  4) ($- A4) ($- V))
+        (blas-axpy! (c  6) ($- A6) ($- V))
+        (blas-axpy! (c  8) ($- A2) ($- V0))
+        (blas-axpy! (c 10) ($- A4) ($- V0))
+        (blas-axpy! (c 12) ($- A6) ($- V0))
+        (blas-gemm! 1 A6 V0 1 V)))
+    
+    (blas-axpy! 1 ($- U) ($- V))  ; V is V+U
+    (blas-scal! -2 ($- U))
+    (blas-axpy! 1 ($- V) ($- U))  ; U is V-U
+    (lapack-gesv U V)))
+
+(in-namespace mat-
+
+#? (mat-band <A> <i>)
+;; Return vector accessing <i>th band of matrix <A>.
+;;
+;; Band 0 is the diagonal of <A>; positive bands are
+;; above the diagonal, negative bands below the diagonal.
+(defun band (A i)
+  (declare (-idx2- (-double-)) A)
+  (declare (-int-) i)
+  (when (idx-emptyp A)
+    (error "matrix is empty") )
+  (let* ((m ($ A 0)) (n ($ A 1))
+         (s0 (idx-mod A 0)) (s1 (idx-mod A 1))
+         (offs (idx-offset A))
+         (nb (min m n))
+         (sb (+ s0 s1)) )
+    (declare (-int-) m n s0 s1 offs nb sb)
+    (when (< i 0)
+      (when (< (+ m i) 1)
+        (error "invalid band argument") )
+      (incr offs (* (- i) s0))
+      (setq nb (min nb (+ m i))) )
+    (when (> i 0)
+      (when (< (- n i) 1)
+        (error "invalid band argument") )
+      (incr offs (* i s1))
+      (setq nb (min nb (- n i))) )
+    (let ((b (new-index (idx-storage A) (list nb))))
+      (idx-set-offset b offs)
+      (idx-set-dim b 0 nb)
+      (idx-set-mod b 0 sb)
+      b)))
+
+
+#? (mat-condnum <A>)
+;; Condition number of <A> (ratio of largest to smallest singular value).
+(defun condnum (A)
+  (declare (-idx2- (-double-)) A)
+  (let* ((S (lapack-gesdd/n! ##A))
+         (last (- (length S) 1)) )
+    (declare (-int-) last)
+    (if (<= (S last) 0)
+        INF
+      (/ (S 0) (S last)) )))
+
+;; todo: use blas-gemm here
+
+#? (mat-.* <A> <B> ...)
+;; Matrix-multiply matrices <A>, <B>, ... .
+(defmacro .* (m1 m2 . ms)
+  (if (null ms)
+      `(let ((m1 ,m1) (m2 ,m2))
+         (idx-m2timesm2 m1 m2 (-.*-result m1 m2)))
+    `(.* (.* ,m1 ,m2) ,(car ms) ,@(cdr ms)) ))
+
+
+#? (mat-eigvals <A>)
+;; {<see> mat-singvals, mat-spectral}
+;; Eigenvalues of square matrix <A>.
+;;
+;; Return the complex eigenvalues as a nx2-matrix with the
+;; real parts in the first column and the imaginary parts
+;; in the second column.
+(defmacro eigvals (A &optional (evi ()))
+  `(let* ((A ,A)
+	  (result (double-array 2 (length A))) )
+     (array-copy (lapack-geev/n! ##A ($*0 result 1)) ($*0 result 0))
+     ($t result))
+  )
+
+#? (mat-eigvals/symm <A>)
+;; {<see> mat-singvals, mat-eigvals}
+;; Eigenvalues of symmetric matrix <A>.
+;;
+;; Note: <eigvals/symm> does not check that <A> is actually 
+;; symmetric and reads from the upper triangular part of <A>
+;; only.
+(defmacro eigvals/symm (A)
+  `(lapack-gsyevd/n! (copy-array ,A))
+  )
+
+#? (mat-specrad <A>)
+;; {<see> mat-eigvals, mat-norm}
+;; Spectral radius of square matrix <A>.
+(defun specrad (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((ev (eigvals A))
+        (sr 0) )
+  (for* (i 0 (length ev))
+    (setq sr (max sr (+ (* (ev i 0) (ev i 0))
+			(* (ev i 1) (ev i 1)) )))
+    )
+  (sqrt sr)))
+
+#? (mat-exp <A>)
+;; Exponential of square matrix <A>.
+(defun exp (A)
+  (declare (-idx2- (-double-)) A)
+  ;; N. J. Higham, "The Scaling and Squaring Method for the Matrix Exponential Revisited"
+  ;; SIAM J. Matrix Anal. Appl. Vol. 26, No. 4, pp 1179-1193, 2005.
+  (let ((t3  1.495585217958292e-2)
+        (t5  2.539398330063230e-1)
+        (t7  9.504178996162932e-1)
+        (t9  2.097847961257068)
+        (t13 5.371920351148152)
+        (c3  [120 60 12 1])
+        (c5  [30240 15120 3360 420 30 1])
+        (c7  [17297280 8648640 1995840 277200 25200 1512 56 1])
+        (c9  [17643225600 8821612800 2075673600 302702400 
+              30270240 2162160 110880 3960 90 1])
+        (c13 [64764752532480000 32382376266240000 7771770303897600
+              1187353796428800 129060195264000 10559470521600
+              670442572800 33522128640 1323241920 40840800 960960
+              16380 182 1])
+        (nrm1 (mat-norm/1 A))
+        (s 0) (d 0) (c []) )
+    (declare (-int-) s d)
+    (if (<= nrm1 t13)
+        (progn 
+          (cond
+           ((<= nrm1 t3) (setq d 3  c c3))
+           ((<= nrm1 t5) (setq d 5  c c5))
+           ((<= nrm1 t7) (setq d 7  c c7))
+           ((<= nrm1 t9) (setq d 9  c c9))
+           (t            (setq d 13 c c13)) )
+          (-pade-approx A d c) )
+      (while (> nrm1 t13)
+        (setq s (+ s 1)  nrm1 (/ nrm1 2)) )
+      (setq A ##A)
+      (blas-scal! (** 0.5 s) ($- A))
+      (let ((X ##(-pade-approx A 13 c13)) (X2 A))
+        (for* (i 0 s)
+          (declare (-int-) i)
+          (blas-gemm! 1 X X 0 X2)
+          (rotatef X X2) )
+        X))))
+
+
+#? (mat-inv <A>)
+;; {<see> mat-pinv, mat-solve}
+;; Inverse of square matrix <A>.
+;;
+;; When <A> is singular, <mat-inv> will raise an error.
+(defun inv (A)
+  (declare (-idx2- (-double-)) A)
+  (when (not (squarep A))
+    (error "matrix not square") )
+  (lapack-gesv A (mat-id (length A))) )
+  
+
+#? (mat-norm <A>)
+;; {<see> mat-singvals, mat-norm/1, mat-norm/inf, mat-norm/frob}
+;; Largest singular value of <A> (2-norm).
+(defmacro norm (A)
+  `((mat-singvals ,A) 0)
+  )
+
+#? (mat-norm/1 <A>)
+;; {<see> mat-norm}
+;; Largest absolute column sum of <A> (1-norm).
+(defun norm/1 (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((maxc 0))
+    (idx-bloop ((c ($t A)))
+      (setq maxc (max maxc (blas-asum c))) )
+    maxc))
+
+#? (mat-norm/inf <A>)
+;; {<see> mat-norm}
+;; Largest absolute row sum of <A> (supremum-norm).
+(defun norm/inf (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((maxr 0))
+    (idx-bloop ((r A))
+      (setq maxr (max maxr (blas-asum r))) )
+    maxr))
+
+#? (mat-norm/frob <A>)
+;; {<see> mat-norm}
+;; Frobenius norm of matrix <A>.
+(defun norm/frob (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((d (mat-band A 0)))
+    (sqrt (blas-dot d d)) ))
+
+
+#? (mat-perm <p>)
+;; {<see> mat-permute}
+;; Create permutation matrix from permutation vector <p>.
+(defun perm (v)
+  (declare (-idx1- (-int-)) v)
+  (let* ((n (length v))
+         (P (double-array n n)) )
+    (for* (i 0 n)
+      (declare (-int-) i)
+      (when (or (>= (v i) n) (< (v i) 0))
+        (error "not a permutation vector") )
+      (P i (v i) 1) )
+    P))
+
+
+#? (mat-permute! <A> <p>)
+;; {<see> mat-perm, mat-permute}
+;; Permute rows of matrix <A> with permutation vector <p> and 
+;; return modified <A>.
+(defun permute! (A v)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-int-)) v)
+  (let* ((n (length v))
+         (c (double-array n)) )
+    (for* (i 0 n)
+      (declare (-int-) i)
+      (when (or (>= (v i) n) (< (v i) 0))
+        (error "not a permutation vector") )
+      (c (v i) 1))
+    (when (<> (blas-asum c) n)
+      (error "not a permutation vector"))
+   (for* (j 0 (idx-shape A 1))
+     (for* (i 0 n)
+       (declare (-int-) i)
+       (c i (A (v i) j)) )
+     (array-copy c (idx-select A 1 j)) ))
+  A)
+
+
+#? (mat-permute <A> <p>)
+;; {<see> mat-permute!, mat-perm}
+;; Create new matrix by permuting rows of <A> with <p>.
+(defmacro permute (A p)
+  `(array-take ,A 0 ,p) )
+
+
+#? (mat-pinv <A>)
+;; {<see> mat-inv, mat-solve}
+;; Pseudoinverse of matrix <A>.
+(defun pinv (A)
+  (declare (-idx2- (-double-)) A)
+  (when (emptyp A)
+    (error "pinv not defined for empty matrix") )
+  (let* ((m  ($ A 0))
+         (n  ($ A 1))
+         (U  (double-array m m))
+         (Vt (double-array n n))
+         (CA ##A)
+         (S  (lapack-gesdd/a! CA U Vt))
+         (tol (* (max ($ A 0) ($ A 1)) (eps (S 0)))) )
+    (declare (-int-) m n)
+    (for* (i 0 (length S))
+      (declare (-int-) i)
+      (if (> (S i) tol)
+          (blas-scal! (/ 1 (S i)) ($*1 U i))
+        (blas-scal! 0 ($*1 U i)) ))
+    ;; reuse CA for result
+    (idx-trim! Vt 0 0 (min m n))
+    (idx-trim! U 1 0 (min m n))
+    (blas-gemm! 1 U Vt 0 CA)
+    ($t CA) ))
+      
+#? (mat-power <A> <n>)
+;; <n>th power of matrix <A>.
+;;
+;; <A> is square and <n> a non-negative integer.
+
+
+;; XXX: implement a more efficient test for pos. definiteness
+
+#? (mat-posdef <A>)
+;; {<see> mat-cholesky}
+;; True when symmetric matrix <A> is positive definite.
+;;
+;; Note: <mat-posdef> does not check that <A> is symmetric.
+(defun posdef (A)
+  (declare (-idx2- (-double-)) A)
+  (let* ((n (length A))
+         (B (double-array n n)) )
+    (declare (-int-) n)
+    (-cp-ut A B) ; copy upper triangle
+    (lapack-potrf! B) )) 
+
+
+#? (mat-rank/tol <A> <tol>)
+;; Number of singular values of <A> that are greater than <tol>.
+(defun rank/tol (A tol)
+  (declare (-idx2- (-double-)) A)
+  (declare (-double-) tol)
+  (when (emptyp A)
+    (error "rank of empty matrix not defined") )
+  (let ((S (lapack-gesdd/n! ##A))
+        (r 0) )
+    (declare (-int-) r)
+    (when (< tol 0)
+      (setq tol (* (max ($ A 0) ($ A 1)) (eps (S 0)))) )
+    (for* (i 0 (length S))
+      (declare (-int-) i)
+      (when (> (S i) tol)
+        (incr r) ))
+    r))
+
+#? (mat-rank <A>)
+;; Rank of matrix <A>.
+(defmacro rank (A)
+  `(rank/tol ,A -1)
+  )
+
+#? (mat-singvals <A>)
+;; {<see> mat-svd, mat-eigvals}
+;; Return singular values of <A>.
+(defmacro singvals (A)
+  `(lapack-gesdd/n! (copy-array ,A))
+  )
+
+;; #? (mat-solve! <A> <X>)
+;; Solve <A>.<X> = <B> for <X> and write to <B>.
+;;
+;; When <A> is square an exact solution is sought,
+;; otherwise a solution in the least squares sense.
+;;
+;; Note that <mat-solve!> ovewrites <A> as well.
+
+#? (mat-solve <A> <B>)
+;; Solve <A>.<X> = <B> for <X> and return <X>.
+;;
+;; When <A> is square an exact solution is sought,
+;; otherwise a solution in the least squares sense.
+(defalias solve lapack-gelsd)
+
+
+#? (mat-trace <A>)
+;; Sum of diagonal elements of square matrix <A>.
+(defun trace (A)
+  (declare (-idx2- (-double-)) A)
+  (when (not (squarep A))
+    (error "matrix not square") )
+  ((idx-sum (mat-band A 0))) )
+
+
+#? (mat-vander <v> [<n>])
+;; Vandermonde matrix of vector <v>.
+;;
+;; The resulting matrix is <(length v)>x<n>, default for
+;; <n> is <(length v)>.
+  
+
+#? * Matrix factorizations
+
+#? (mat-cholesky <A>)
+;; {<see> mat-posdef, lapack-potrf!}
+;; Cholesky factorization of <A>. Return the upper triangular
+;; factor of <A> or raise an error when <A> is not positive
+;; definite.
+(defun cholesky (A)
+  (declare (-idx2- (-double-)) A)
+  (let* ((n (length A))
+         (R (double-array n n)) )
+    (declare (-int-) n)
+    (-cp-ut A R) ; copy upper triangle
+    (when (not (lapack-potrf! R))
+      (error "matrix not positive definite") )
+    R))
+
+
+#? (mat-lu <A>)
+;; {<see> lapack-getrf, mat-permute}
+;; LU factorization of <A>. Return as <(list L U p)>.
+;; 
+;; The result consists of the factors <L> and <U>, and a permutation
+;; vector <p>, such that <(mat-permute A p)> = <(mat-.* L U)>.
+(defun lu (A)
+  (declare (-idx2- (-double-)) A)
+  (let* ((p (int-array (length A)))
+         (q (clone-array p))
+         (A (lapack-getrf A p)) )
+    (for* (i 0 (length q))
+      (q i i) )
+    (for* (i 0 (length p))
+      (let ((qpi (q (p i))))
+        (declare (-int-) i qpi)
+        (q (p i) (q i))
+        (q i qpi) ))
+    (-mk-lu A q) ))
+
+
+#? (mat-qr! <A>)
+;; QR factorization of <A>. Overwrite <A> with <R> and return <Q>.
+
+
+#? (mat-qr <A>)
+;; QR factorization of <A>, return as <(list Q R)>.
+
+
+#? (mat-spectral! <A>)
+;; {<see> mat-eigvals}
+;; Spectral factorization of symmetric matrix <A>. Overwrite <A> with
+;; eigenvectors and return eigenvalues.
+(defmacro spectral! (A)
+  `(lapack-gsyevd/v! ,a)
+  )
+
+#? (mat-spectral <A>)
+;; {<see> mat-eigvals, mat-spectral!}
+;; Spectral factorization of symmetric matrix <A>. Return as 
+;; <(list V ev)>, with <V> the matrix of eigenvectors.
+;; 
+;; Example how to reconstruct matrix <A> from ids spectral factorization:
+;; {<code>
+;;
+;;   (let (((V ev) (mat-spectral A))
+;;     (mat-.* V (mat-diag ev) ($t V)) )
+;; </code>}
+(defmacro spectral (A)
+  `(let ((V (copy-array ,A)))
+     (list V (lapack-gsyevd/v! V)) )
+  )
+
+#? (mat-svd <A>)
+;; Compute the full SVD of <A> and return <(list U s Vt)>,
+;; where matrix <U> contains the left singular vectors, vector
+;; <s> contains the singular values, and <Vt> is the transpose
+;; of the matrix containing the right singular vectors.
+;;
+;; Example how to reconstruct matrix <A> from its SVD:
+;; {<code>
+;;
+;;   (let (((U ss Vt) (mat-svd A)) (S (double-array ($ A))))
+;;     ((mat-band S 0) [] ss)
+;;     (mat-.* U S Vt) )
+;; </code>}
+(defun svd (A)
+  (declare (-idx2- (-double-)) A)
+  (let ((m ($ A 0)) (n ($ A 1)))
+    (declare (-int-) m n)
+    (let ((U (double-array m m))
+          (Vt (double-array n n)) )
+      (list U (lapack-gesdd/a! ##A U Vt) Vt) ))) 
+
+
+
+) ; in-namespace mat-
+
+(dhc-make "lapack_mat"
+          -mk-lu
+          -cp-ut
+          mat-band
+          mat-condnum
+          mat-norm/1
+          mat-norm/inf
+          mat-norm/frob
+          -pade-approx
+          mat-exp
+          mat-specrad
+          mat-inv
+          mat-perm
+          mat-permute!
+          mat-pinv
+          mat-posdef
+          mat-rank/tol
+          mat-trace 
+
+          mat-cholesky
+          mat-lu
+          mat-svd
+          )

@@ -1,0 +1,180 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+(libload "opencv/cv-util")
+(libload "opencv/cv-arrays")
+
+#? ** Color space conversion and thresholding
+
+(in-namespace cv-
+
+#? cv-conversion-codes
+;; Hash table of valid color conversion codes.
+(defparameter conversion-codes
+  (normalize-constants (parse-defines (concat-fname cv-include-path "cv.h")
+                                      "/* Constants for color conversion */"
+                                      "#define  CV_COLORCVT_MAX  100")))
+
+#? cv-tresholding-types 
+;; Hash table of thresholding types.
+(defparameter thresholding-types
+  (normalize-constants (parse-defines (concat-fname cv-include-path "cv.h")
+                                      "/* Types of thresholding */"
+                                      "#define CV_THRESH_MASK        7")))
+
+;; #? cv-threshold-selection-method
+;; Flag for automatic threshold selection.
+(defparameter threshold-selection-methods
+  (normalize-constants (parse-defines (concat-fname cv-include-path "cv.h")
+                                      "#define CV_THRESH_MASK        7"
+                                      "/* Applies fixed-level threshold to grayscale image.")))
+)
+
+;; need to close and re-open because of read-time evaluation (#.) below
+
+(in-namespace cv-
+
+#? (cv-convert-color <img-from> <img-to> <code>)
+;; {<see> cv-conversion-codes}
+;; Convert image <img-from> from one color space to another, write the
+;; converted image to <img-to> and return <()>.
+;; Argument <code> must be a valid color conversion code (a key in hash
+;; table <cv-conversion-codes>)
+;; {<hlink> file:///usr/share/opencv/doc/ref/opencvref_cv.htm#decl_cvCvtColor}
+;;
+;; Examples:
+;; {<code>
+;; (defun rgb2lab (img)
+;;   (let ((img2 (clone-array img)))
+;;     (cv-convert-color img img2 cv_rgb2lab) 
+;;     img2))
+;;
+;; (defun rgb2gray (img)
+;;   (let ((img2 (clone-array (idx-select img 2 0))))
+;;     (cv-convert-color img img2 cv_rgb2gray)
+;;     img2))
+;; }
+
+(defun -convert-color (img-from img-to code)
+  (declare (-obj- (CvMat)) img-from img-to)
+  (declare (-int-) code)
+  (cv-cpheader)
+  (with-check-error
+   (let ((from :img-from:p) (to :img-to:p))
+     #{ cvCvtColor($from, $to, $code); #}
+     ())))
+
+(defmacro convert-color (img-from img-to code)
+  (assert (not (emptyp conversion-codes)))
+  (let ((code-val (conversion-codes code)))
+    `(-convert-color (make-cvmat ,img-from) (make-cvmat ,img-to) ,code-val)
+    ))
+
+#? (cv-rgb2gray <ubimg>)
+;; Create gray-scale image from RGB or RGBA image and return it.
+(defun rgb2gray (img)
+  (declare (-idx3- (-ubyte-)) img)
+  (let* ((img2 (clone-array (idx-select img 2 0)))
+         (cvimg2 (new-cvmat img2 "CV_8UC(1)")) )
+    (when (not (idx-contiguousp img))
+      (error "image must be contiguous") )
+    (selectq (idx-shape img 2)
+      (3 (let ((cvimg (new-cvmat img "CV_8UC(3)")))
+           (-convert-color cvimg cvimg2 #.(cv-conversion-codes 'cv_rgb2gray))) )
+      (4 (let ((cvimg (new-cvmat img "CV_8UC(4)")))
+           (-convert-color cvimg cvimg2 #.(cv-conversion-codes 'cv_rgba2gray))) )
+      (t (error "not an RGB or RGBA image") ))
+    img2))
+
+
+(defun -threshold (img-from img-to val max_val type)
+  (declare (-obj- (CvMat)) img-from img-to)
+  (declare (-double-) val max_val)
+  (declare (-int-) type)
+  (with-check-error
+   (let ((from :img-from:p) (to :img-to:p))
+     #{ cvThreshold($from, $to, $val, $max_val, $type); #}
+     ())))
+
+#? (cv-threshold <img> <val> [<type> [<max-val>]])
+;; Threshold gray-scale image <img> at value <val> and return the
+;; result (a binary image).
+;;
+;; Argument <max-val> is not used for every possible <type> of thresholding. 
+;; The default for <type> is <cv_thresh_binary>. For details see
+;; {<hlink> file:///usr/share/opencv/doc/ref/opencvref_cv.htm#decl_cvThreshold}
+(defmacro threshold (img-from val &optional (type cv-thresh-binary) (max-val 255))
+  (assert (not (emptyp thresholding-types)))
+  (let ((type-val (thresholding-types type)))
+    `(let* ((img-from ,img-from)
+            (img-to (clone-array img-from)) )
+       (-threshold (make-cvmat img-from) (make-cvmat img-to) ,val ,max-val ,type-val)
+       img-to)
+    ))
+
+#? (cv-auto-threshold <img> [<type> [<max-val>]])
+;; Threshold gray-scale image <img> with automatic threshold selection
+;; by "Otsu's method" and return the result (a binary image).
+;;
+;; Argument <max-val> is not used for every possible <type> of thresholding. 
+;; The default for <type> is <cv_thresh_binary>. For details see
+;; {<hlink> file:///usr/share/opencv/doc/ref/opencvref_cv.htm#decl_cvThreshold}
+(defmacro auto-threshold (img-from &optional (type cv_thresh_binary) (max-val 255) (method cv_thresh_otsu))
+  (assert (not (emptyp thresholding-types)))
+  (let ((type-val (thresholding-types type))
+        (meth-val (threshold-selection-methods method)) )
+    `(let* ((img-from ,img-from)
+            (img-to (clone-array img-from)) )
+       (-threshold (make-cvmat img-from) (make-cvmat img-to) -1 ,max-val (+ ,type-val ,meth-val))
+       img-to)
+    ))
+
+#? (cv-gray2binary <ubimg>)
+;; Create a binary image by thresholding <ubimg> and return it.
+(defun gray2binary (img)
+  (declare (-idx2- (-ubyte-)) img)
+  (let ((img2 (clone-array img)))
+    (when (not (idx-contiguousp img))
+      (error "image must be contiguous") )
+    (let ((cvimg (new-cvmat img "CV_8UC(1)"))
+          (cvimg2 (new-cvmat img2 "CV_8UC(1)")) )
+      (-threshold cvimg cvimg2 0 255 #.(+ (cv-thresholding-types 'cv_thresh_binary)
+                                         (cv-threshold-selection-methods 'cv_thresh_otsu)) )
+      img2)))
+
+) ; in-namespace
+
+(let ((dhc-make-lushflags (concat dhc-make-lushflags cv-flags)))
+  (dhc-make "opencv_color"
+            cv--convert-color cv-rgb2gray
+            cv--threshold cv-gray2binary)
+  )
+
+
+  
+  

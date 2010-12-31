@@ -1,0 +1,200 @@
+#!/bin/sh
+exec lush2 "$0" "$@"
+!#
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? * lushsocket
+;; This script starts Lush and lets it listen to a socket
+;; on port 4000 (or 4001 if 4000 is not available).
+;; Lush will start a toplevel read-eval loop that listens
+;; the socket. Any output sent to the file descriptor 
+;; <socket-output> will be sent to the socket.
+;; Output to standard output is NOT sent to the socket,
+;; but to the standard output of lushsocket.
+;; When an evaluation is performed succesfully, a single
+;; line of the form:
+;; {<pre> 
+;; #OK result-of-evaluation
+;; </pre>}{<br>}
+;; is sent to the socket.
+;; When an error occurs, a single line of the form
+;; {<pre> 
+;; #ER error-message
+;; </pre>}{<br>} 
+;; is sent to the socket.
+;; Example: start lushsocket to listen on port 4010
+;; {<pre>
+;; $ lushsocket -p 4010
+;; </pre>}
+;; here is an example of manual interaction through telnet:
+;; {<pre>
+;; $ telnet localhost 4010
+;; Trying 127.0.0.1...
+;; Connected to gegene.lecun.org (127.0.0.1).
+;; Escape character is '^]'.
+;; (+ 3 4)
+;; #OK 7
+;; (/ 3 0)
+;; #ER / : Floating exception
+;; (de asd (x) (* x x))
+;; #OK asd
+;; (asd 4)
+;; #OK 16
+;; (writing socket-output (printf "hello world\n"))
+;; hello world
+;; #OK ()
+;; </pre>}
+
+
+
+(defvar socket-input ())
+(defvar socket-output ())
+(defvar zz ())
+(defvar port 4000)
+
+(cond
+ ((or (member "-h" argv)
+      (member "--help" argv))
+  (writing "$stderr" 
+    (render-brace-text 0 72
+     '{<p> Synopsis: ,,(basename (or (car argv) "")) [-h] [-p port] {<br>}
+      This script starts Lush and lets it listen to a socket
+      on port 4000 (or 4001 if 4000 is not available).
+      Lush will start a toplevel read-eval loop that listens
+      the socket. Any output sent to the file descriptor 
+      <socket-output> will be sent to the socket.
+      Output to standard output is NOT sent to the socket,
+      but to the standard output of lushsocket.
+      When an evaluation is performed succesfully, a single
+      line of the form:
+      {<pre> 
+       #OK result-of-evaluation
+      </pre>}{<br>}
+      is sent to the socket.
+      When an error occurs, a single line of the form
+      {<pre> 
+      #ER error-message
+      </pre>}{<br>} 
+      is sent to the socket.
+      Example: start lushsocket to listen on port 4010
+      {<pre>
+       $ lushsocket -p 4010
+       </pre>}
+      here is an example of manual interaction through telnet:
+      {<pre>
+       $ telnet localhost 4010
+       Trying 127.0.0.1...
+       Connected to gegene.lecun.org (127.0.0.1).
+       Escape character is '^]'.
+       (+ 3 4)
+       #OK 7
+       (/ 3 0)
+       #ER / : Floating exception
+       (de asd (x) (* x x))
+       #OK asd
+       (asd 4)
+       #OK 16
+       (writing socket-output (printf "hello world\n"))
+       hello world
+       #OK ()
+       </pre>}
+   }) (exit 0)))
+
+ ((setq zz (member "-p" argv))
+  (if (not (cadr zz))
+      (progn
+	(writing "$stderr" (printf "port number missing\n"))
+	(exit 1))
+    (setq zz (val (cadr zz)))
+    (if (and zz (>= zz 0))
+	(setq port zz) 
+      (writing "$stderr" (printf "illegal port number\n"))
+      (exit 1)))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(de socket-open (port)
+  (when (not (socketaccept port)) 
+    (writing "$stderr" (printf "could not open socket port=%d, exiting\n" port))
+    (exit 1))
+  (printf "LUSHSOCKET %s %d %d\n" 
+	  (reading "| hostname" (read-string)) port (getpid) )
+  (flush)
+  (socketaccept port 'socket-input 'socket-output))
+
+
+(de socket-debug-hook()
+  (let ((err (errname)))
+    (writing "$stderr" (printf "*** %s\n" err))
+    (lush-is-quiet t)
+    (writing socket-output
+      (printf "#ER %s\n" err)
+      (flush) ) )
+  (lush-is-quiet ()) 
+  (flush)
+  t )
+
+(de socket-break-hook()
+  (writing "$stderr" (printf "*** Break\n"))
+  (lush-is-quiet t)
+  (writing socket-output
+    (printf "#ER Break\n")
+    (flush) ) 
+  (lush-is-quiet ())
+  (flush)
+  t )
+
+(unlock-symbol toplevel)
+
+(de toplevel()
+  (let ((debug-hook socket-debug-hook)
+        (break-hook socket-break-hook))
+    (lush-is-quiet ())
+    (while (<> (reading socket-input (skip-char)) "\e")
+      (let* ((command (reading socket-input (read)))
+	     (result (eval command)))
+        (writing socket-output 
+	  (printf "#OK ") (print result) (flush) ))
+	(flush) ) 
+    (lush-is-quiet t)
+    (printf "LUSHSOCKET TERMINATED\n")
+    (exit 0) ) )
+
+(socket-open port)
+
+(lock-symbol socket-input 
+             socket-output
+             socket-debug-hook
+             socket-break-hook
+             toplevel )
+
+(toplevel)
+
+

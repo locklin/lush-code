@@ -1,0 +1,503 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; A dynamic graph offers methods for modifying the graph in-place.
+
+(libload "datatypes/int-heap")
+(libload "datatypes/graph")
+(libload "datatypes/int-set")
+(libload "datatypes/ipair-set")
+(libload "libidx/idx-sort")
+
+#? ** IntGraph
+;; This class allows dynamic creation and manipulation of graphs.
+;; Vertices are identified with integers, edges with integer-pairs.
+;; The identifiers for vertices may be chosen freely, the identifiers
+;; for edges result from pairing two vertex identifiers.
+;;
+;; An <IntGraph> object may represent directed or undirected graphs.
+;; Directed edges are called {<i> arcs}, and undirected edges are
+;; called {<i> edges}. For example, method <insert-edge> inserts an
+;; edge, method <insert-arc> inserts an arc into the graph. Some 
+;; methods make only sense for undirected graphs. The result of
+;; applying a method for undirected graphs to a graph that is not
+;; undirected is undefined.
+
+(defclass IntGraph object
+  ((-obj- (IntSet))   vertices)
+  ((-obj- (IPairSet)) arcs)
+  ((-bool-)           undirected)  ; if true, graph is undirected
+  ((-bool-)           recycle)     ; if true, reuse free vertex ids
+  ((-obj- (IntHeap))  free-vertices) )
+
+(in-namespace (class IntGraph)
+(libload "datatypes/int-graph-utils" t)
+(import (lt gt eq) from IPairSet)
+
+(defmacro check-vertex (v)
+  `(when (not (==> vertices member ,v))
+     (errorf "not a vertex (%d)" ,v) )
+  )
+)
+
+#? (new <IntGraph>)
+;; Create a new empty graph.
+(defmethod IntGraph IntGraph ()
+  (setq vertices (new IntSet))
+  (setq arcs (new IPairSet))
+  (setq undirected t)
+  (setq recycle t)
+  (setq free-vertices (new IntHeap))
+  ())
+
+(defmethod IntGraph -emptyp ()
+  (==> vertices -emptyp) )
+
+(defmethod IntGraph -deepcopy (clone)
+  (declare (-obj- (IntGraph)) clone)
+  (setq :clone:vertices (deepcopy vertices))
+  (setq :clone:arcs (deepcopy arcs))
+  (setq :clone:undirected undirected)
+  (setq :clone:recycle recycle)
+  (setq :clone:free-vertices (new IntHeap))
+  ())
+
+#? (==> <IntGraph> number-of-vertices)
+(defmethod IntGraph number-of-vertices ()
+  (==> vertices number-of-items))
+
+#? (==> <IntGraph> number-of-edges)
+(defmethod IntGraph number-of-edges ()
+  (if undirected
+      (to-int (/ (==> arcs number-of-items) 2))
+    (let ((n 0))
+      (declare (-int-) n)
+      (do-set (a arcs)
+        (when (==> arcs member (iprot a))
+          (incr n) ))
+      (to-int (/ n 2)) )))
+
+#? (==> <IntrGraph> clear)
+(defmethod IntGraph clear ()
+  (==> vertices clear)
+  (==> arcs clear)
+  (setq undirected t)
+  (==> free-vertices clear)
+  ())
+
+#? (==> <IntGraph> number-of-arcs)
+(defmethod IntGraph number-of-arcs ()
+  (==> arcs number-of-items) )
+
+#? (==> <IntGraph> new-vertex)
+;; Insert a new vertex into graph and return it.
+(defmethod IntGraph new-vertex ()
+  (let ((v (if (or (emptyp free-vertices) (not recycle))
+               (if (emptyp vertices) 0 (+ (==> vertices maximum) 1))
+             (next free-vertices) )))
+    (declare (-int-) v)
+    (==> vertices insert v)
+    v))
+
+#? (==> <IntGraph> insert-vertex <v>)
+;; Insert vertex <v> into graph, return <t> on success and <()> when <v>
+;; was already in the graph.
+(defmethod IntGraph insert-vertex (v)
+  (declare (-int-) v)
+  (==> vertices insert v) )
+
+#? (==> <IntGraph> insert-vertices <vs>)
+;; Insert vertices (integers) in table <vs> into graph and return <()>.
+(defmethod IntGraph insert-vertices (vs)
+  (declare (-idx1- (-int-)) vs)
+  (==> vertices insert-all vs) )
+
+#? (==> <IntGraph> insert-vertex-range <v0> <v1>)
+;; Insert vertices [<v0>..<v1>], return <()>.
+(defmethod IntGraph insert-vertex-range (v0 v1)
+  (declare (-int-) v0 v1)
+  (for (v v0 v1)
+    (declare (-int-) v)
+    (==> vertices insert v) )
+  ())
+
+#? (==> <IntGraph> has-vertex <v>)
+;; True when <v> is a vertex in the graph.
+(defmethod IntGraph has-vertex (v)
+  (declare (-int-) v)
+  (==> vertices member v) )
+
+#? (==> <IntGraph> remove-vertex <v>)
+;; Remove vertex <v> and all edges incident with <v>. Return <t> on success
+;; and <()> when <v> was not an existing vertex.
+(defmethod IntGraph remove-vertex (v)
+  (declare (-int-) v)
+  (if (not (==> vertices member v))
+      (progn (printf "*** Warning: vertex %d does not exist\n" v) ())
+    ;; remove adjacencies
+    (let ((es (==> arcs remove-range* 
+                   (ipair v +int-min+) 
+                   (ipair v +int-max+) )))
+      (do ((e es)) (==> arcs remove (iprot e))) )
+    ;; remove vertex
+    (==> vertices remove v)
+    (==> free-vertices insert (to-double v) v)
+    t))
+
+#? (==> <IntGraph> eliminate-vertex <v>)
+;; Eliminate vertex <v> and return the set of new arcs added to the
+;; graph. Raise an error if vertex <v> does not exist.
+(defmethod IntGraph eliminate-vertex (v)
+  (declare (-int-) v)
+  (check-vertex v)
+  (when (not undirected)
+    (error "vertex elimination not implemented for directed graphs") )
+  (let ((adjs (make-stack 32 int))
+        (newarcs (new IPairSet)) )
+    (do-vertices (w adjacent-to v)
+      (declare (-int-) w)
+      (push adjs w) )
+    (for* (i 0 (length adjs))
+      (==> arcs remove (ipair v (adjs i)))
+      (==> arcs remove (ipair (adjs i) v))
+      (for* (j (+ i 1) (length adjs))
+        (declare (-int-) i j)
+        (let ((eij (ipair (adjs i) (adjs j)))
+              (eji (ipair (adjs j) (adjs i))) )
+          (when (==> arcs insert eij)
+            (==> newarcs insert eij) )
+          (when (==> arcs insert eji)
+            (==> newarcs insert eji) ) )))
+    (==> vertices remove v)
+  newarcs))
+
+#? (==> <IntGraph> merge-vertices <v0> <v1>)
+;; Merge vertices <v0> and <v1> or raise an error when there
+;; is no edge linking <v0> and <v1>. Return the set of new
+;; arcs added to the graph.
+;;
+;; The resulting vertex is identified with <v0>, <v1> is not
+;; a vertex of the graph after completing this operation.
+(defmethod IntGraph merge-vertices (v0 v1)
+  (declare (-int-) v0 v1)
+  (check-vertex v0)
+  (check-vertex v1)
+  (when (not (and (==> arcs member (ipair v0 v1))
+                  (==> arcs member (ipair v1 v0)) ))
+    (error "vertices are not mutual neighbors") )
+  (==> arcs remove (ipair v0 v1))
+  (==> arcs remove (ipair v1 v0))
+  (let ((newarcs (new IPairSet)))
+    (do-vertices (u adjacent-to v1)
+      (let ((uv (ipair u v0)) (vu (ipair v0 u)))
+        (when (not (==> arcs member uv))
+          (==> newarcs insert uv) )
+        (when (not (==> arcs member vu))
+          (==> newarcs insert vu) ) ))
+    (==> this remove-vertex v1)
+    (do-set (uv newarcs)
+      (==> arcs insert uv) )
+    newarcs))
+
+#? (==> <IntGraph> deficiency <v>)
+;; Return deficiency set of vertex <v> (an arc table).
+(defmethod IntGraph deficiency (v)
+  (declare (-int-) v)
+  (check-vertex v)
+  (let ((adjs (make-stack 32 int)))
+    (do-vertices (w adjacent-to v)
+      (declare (-int-) w)
+      (push adjs w) )
+
+    (let* ((n (length adjs))
+           (d 0)
+           (dfcy (int-array (* n n) 2)) )
+      (declare (-int-) n d)
+
+      (for* (i 0 n)
+        (for* (j (+ i 1) n)
+          (declare (-int-) i j)
+          (when (not (==> arcs member (ipair (adjs i) (adjs j))))
+            (dfcy d 0 (adjs i))
+            (dfcy d 1 (adjs j))
+            (incr d) )
+          (when (not (==> arcs member (ipair (adjs j) (adjs i))))
+            (dfcy d 0 (adjs j))
+            (dfcy d 1 (adjs i))
+            (incr d) ) ))
+
+      (idx-trim! dfcy 0 0 d)
+      dfcy)))
+
+#? (==> <IntGraph> degree <v>)
+;; Return out-degree of vertex <v>.
+(defmethod IntGraph degree (v)
+  (declare (-int-) v)
+  (check-vertex v)
+  (let ((d 0))
+    (declare (-int-) d)
+    (do-vertices (w adjacent-to v)
+      (declare (-int-) w)
+      (incr d) )
+    d))
+
+#? (==> <IntGraph> neighbors <v>)
+;; Return all neighbors of vertex <v> as a set.
+(defmethod IntGraph neighbors (v)
+  (declare (-int-) v)
+  (check-vertex v)
+  (let ((ns (new IntSet)))
+    (do-vertices (w adjacent-to v)
+      (declare (-int-) w)
+      (==> ns insert w) )
+    ns))
+
+#? (==> <IntGraph> degrees)
+;; Return out-degree for all vertices as a vector.
+(defmethod IntGraph degrees ()
+  (if (emptyp vertices)
+      (int-array 0)
+    (let ((ds (int-array (==> vertices number-of-items)))
+          (i -1)
+          (v +int-max+) )
+      (declare (-int-) v i)
+      (do-set (a arcs)
+        (when (<> v (ipi1 a))
+          (incr i)
+          (setq v (ipi1 a)) )
+        (incr (ds i)) )
+      ds)))
+
+(defmethod IntGraph -insert-edge (v0 v1 di)
+  (declare (-int-) v0 v1)
+  (declare (-bool-) di)
+  (check-vertex v0)
+  (check-vertex v1)
+  ;; add adjacencies (two directed edges per edge)
+  (let ((result ())
+        (a01 (ipair v0 v1)))
+    (setq result (==> arcs insert a01))
+    (if di
+        (setq undirected ())
+      (setq result (or (==> arcs insert (iprot a01)) result)) )
+    result))
+
+#? (==> <IntGraph> insert-edge <v0> <v1>)
+;; Insert edge <(v0,v1)> and return <t> when it is a new edge.
+(defmethod IntGraph insert-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (==> this -insert-edge v0 v1 ()) )
+
+#? (==> <IntGraph> insert-edge* <v0> <v1>)
+;; Insert edge <(v0,v1)> and return <t> when it is a new edge.
+;;
+;; Unlike <insert-edge> this method does not check existence
+;; of the vertices <v0> and <v1>.
+(defmethod IntGraph insert-edge* (v0 v1)
+  (declare (-int-) v0 v1)
+  (let ((a01 (ipair v0 v1)))
+    (or (==> arcs insert a01)
+        (==> arcs insert (iprot a01)))))
+
+#? (==> <IntGraph> has-edge <v0> <v1>)
+;; True when edge <(v0,v1)> is in the graph.
+(defmethod IntGraph has-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (and (==> arcs member (ipair v0 v1))
+       (==> arcs member (ipair v1 v0)) ))
+
+#? (==> <IntGraph> remove-edge <v0> <v1)
+;; Remove edge <(v0,v1)> and return <t> when it was in the graph.
+(defmethod IntGraph remove-edge (v0 v1)
+  (declare (-int-) v0 v1)
+  (and (==> arcs remove (ipair v0 v1))
+       (==> arcs remove (ipair v1 v0))))
+
+;; #? (==> <IntGraph> all-edges)
+;; Return all edges as a table (matrix).
+(defmethod IntGraph all-edges ()
+  (let ((edges (int-array (==> this number-of-edges) 2))
+        (arcs2 (deepcopy arcs))
+        (i 0) )
+    (declare (-int-) i)
+    (do-set (a arcs)
+      (when (==> arcs2 member (iprot a))
+        (edges i 0 (ipi1 a))
+        (edges i 1 (ipi2 a))
+        (==> arcs2 remove a)
+        (incr i) ))
+    (assert (= i (length edges)))
+    (==> arcs2 clear)
+    edges) )
+
+#? (==> <IntGraph> insert-arc <v0> <v1>)
+;; Insert arc <(v0,v1)> and return <t> when it is a new arc.
+;; Raise an error when either vertex is not in the graph.
+(defmethod IntGraph insert-arc (v0 v1)
+  (declare (-int-) v0 v1)
+  (==> this -insert-edge v0 v1 t) )
+
+#? (==> <IntGraph> has-arc <v0> <v1>)
+;; True when arc <(v0,v1)> is in the graph.
+(defmethod IntGraph has-arc (v0 v1)
+  (declare (-int-) v0 v1)
+  (==> arcs member (ipair v0 v1)) )
+
+#? (==> <IntGraph> remove-arc <v0> <v1)
+;; Remove arc <(v0,v1)> and return <t> when it was in the graph.
+(defmethod IntGraph remove-arc (v0 v1)
+  (declare (-int-) v0 v1)
+  (==> arcs remove (ipair v0 v1)) )
+
+(defmethod IntGraph -insert-edges (edges di)
+  (declare (-idx2- (-int-)) edges)
+  (declare (-bool-) di)
+  (when (<> (idx-shape edges 1) 2)
+    (error "not a valid edge table") )
+  ;; insert edges into graph
+  (for* (i 0 (length edges))
+    (declare (-int-) i)
+    (==> this -insert-edge (edges i 0) (edges i 1) di) )
+  ())
+
+#? (==> <IntGraph> insert-edges <edges>)
+;; Insert edges in table <edges> into graph and return <()>.
+(defmethod IntGraph insert-edges (edges)
+  (declare (-idx2- (-int-)) edges)
+  (==> this -insert-edges edges ())
+  ())
+
+#? (==> <IntGraph> insert-arcs <arcs>)
+;; Insert arcs in table <arcs> into graph and return <()>.
+(defmethod IntGraph insert-arcs (edges)
+  (declare (-idx2- (-int-)) edges)
+  (==> this -insert-edges edges t)
+  ())
+
+#? (==> <IntGraph> from-igraph <ig>)
+(defmethod IntGraph from-igraph (ig)
+  (declare (-obj- (IGraph)) ig)
+  (when (not (emptyp this))
+    (error "graph not empty") )
+  (for* (v 0 (==> ig number-of-vertices))
+    (declare (-int-) v)
+    (==> vertices insert v) )
+  (==> this insert-edges :ig:edges)
+  () )
+
+(defmethod IntGraph -check-undirected ()
+  (lete ((ud t) (it (iterate arcs)))
+    (while (and ud (not (emptyp it)))
+      (setq ud (==> arcs member (iprot (next it)))) )
+    (setq undirected ud) )
+  ())
+
+#? (==> <IntGraph> undirected)
+;; True if an undirected graph.
+(defmethod IntGraph undirected ()
+  (when (not undirected)
+    (==> this -check-undirected) )
+  undirected)
+
+#? (==> <IntGraph> vector-dimension <ord>)
+;; Return the vector dimension of the vertex ordering <ord>.
+(defmethod IntGraph vector-dimension (ord)
+  (declare (-idx1- (-int-)) ord)
+  (when (<> (length ord) (==> vertices number-of-items))
+    (error "not a valid ordering (length mismatch)") )
+  (let ((gg (deepcopy this))
+        (vd (clone-array ord)) )
+    (for* (i 0 (length ord))
+      (declare (-int-) i)
+      (when (not (==> :gg:vertices member (ord i)))
+        (errorf "invalid or duplicate vertex %d" (ord i)) )
+      (vd i (==> gg degree (ord i)))
+      (==> gg eliminate-vertex (ord i)) )
+    (array-sortdown! vd)
+    vd))
+
+#? (==> <IntGraph> perfect <ord>)
+;; True if <ord> is a perfect elimination ordering for
+;; this graph.
+(defmethod IntGraph perfect (ord)
+  (declare (-idx1- (-int-)) ord)
+  (when (<> (length ord) (==> vertices number-of-items))
+    (error "not a valid ordering (length mismatch)") )
+  (let ((iord (new IPairSet))        ; inverse ordering
+        (hp   (new IntHeap))         ; 
+        (as   (new IPairSet))        ; adjacencies to check
+        (perfect t)
+        (i 0)
+        (v 0) )
+    (declare (-int-) i v)
+
+    (for* (k 0 (length ord))    
+      (declare (-int-) k)
+      (==> iord insert (ipair (ord k) k)) )
+
+    (while (and perfect (< i (- (length ord) 1)))
+      (assert (emptyp hp))
+      (setq v (ord i))
+
+      ;; find relevant adjacent vertices
+      (do-vertices (u adjacent-to v)
+        (declare (-int-) u)
+        (do-set (p iord (ipair u i))
+          (when (= (ipi1 p) u)
+            (==> hp insert (to-double (ipi2 p)) u) )
+          (setq continue ()) )
+        (==> as remove (ipair v u)))
+      
+      ;; update as
+      (when (not (emptyp hp))
+        (let ((u (==> hp next)))
+          (declare (-int-) u)
+          (do ((w hp)) (==> as insert (ipair u w))) ))
+      
+      ;; check for missing adjacents of v
+      (do-set (p as (ipair v +int-min+))
+        (setq perfect (<> (ipi1 p) v))
+        (setq continue ()) )
+      
+      (incr i) )
+    perfect))
+
+(defmethod IntGraph pretty ()
+  (printf "Graph with %d vertices\n" (==> vertices number-of-items))
+  (printf "Vertex | Adjacent vertices\n")
+  (printf "--------------------------------------------------\n")
+  (do ((v vertices))
+    (declare (-int-) v)
+    (printf "%5d  |" v)
+    (do-vertices (u adjacent-to v)
+      (declare (-int-) u)
+      (printf " %3d" u) )
+    (printf "\n") )
+  ())
+
+(dhc-make-class () IntGraph)
+

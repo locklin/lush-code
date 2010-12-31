@@ -1,0 +1,73 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; a data source for the MNIST database.
+;; The files for the MNIST database can be obtained
+;; at http://yann.lecun.com
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gblearn2/data-sources")
+
+#? ** dsource-mnist
+;; a data source appropriate for most learning algorithms
+;; that take input data in the form of an idx3-state
+;; and a label in the form of an idx0 of int.
+;; This includes most supervised learning algorithms 
+;; implemented in this library.
+(defclass dsource-mnist dsource-idx3l
+  ((-idx3- (-ubyte-)) inputs)
+  ((-idx1- (-ubyte-)) labels)
+  ((-int-) width)
+  ((-int-) height)
+  ((-float-) bias)
+  ((-float-) coeff))
+
+#? (new dsource-mnist <inp> <lbl> <w> <h> <bias> <coeff>)
+;; create a <dsource-mnist>. 
+;; <inp> must be a ubyte-array of input patterns
+;; and <lbl> a ubyte-array of labels.
+;; <w> and <h> are the size of the output, in which
+;; the actual images will be centered.
+;; <bias> and <coeff> are used to shift and scale
+;; the values.
+(defmethod dsource-mnist dsource-mnist (inp lbl w h b c)
+  (declare (-idx3- (-ubyte-)) inp)
+  (declare (-idx1- (-ubyte-)) lbl)
+  (declare (-float-) b c)
+  (declare (-int-) w h)
+  (setq bias b)
+  (setq coeff c)
+  (setq width w)
+  (setq height h)
+  (setq current 0)
+  (setq inputs inp)
+  (setq labels lbl) ())
+
+(defmethod dsource-mnist size () (idx-dim inputs 0))
+
+#? (==> <dsource-mnist> fprop <out> <lbl>)
+;; get the current item and copy the sample into
+;; <out> (an idx3-state) and the corresponding 
+;; label into <lbl> (and idx0 of int).
+(defmethod dsource-mnist fprop (out lbl)
+  (declare (-obj- (idx3-state)) out)
+  (declare (-idx0- (-int-)) lbl)
+  (==> out resize 1 height width)
+  (let* ((outx :out:x)
+	 (ni (idx-dim inputs 1))
+	 (nj (idx-dim inputs 2))
+	 (di (* 0.5 (- height ni)))
+	 (dj (* 0.5 (- width nj))))
+    (idx-f3fill outx (* bias coeff))
+    (array-copy 
+     (select inputs 0 current) 
+     (idx-trim (idx-trim (select outx 0 0) 0 di ni) 1 dj nj))
+    (idx-f3addc outx bias outx)
+    (idx-f3dotc outx coeff outx))
+  ;; this breaks:
+  ;; (array-copy (select labels 0 current) lbl) 
+  ;; this workz
+  (lbl ((select labels 0 current)))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make 
+ () (dsource-mnist dsource-mnist size fprop))

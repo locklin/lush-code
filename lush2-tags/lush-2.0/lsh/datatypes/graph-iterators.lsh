@@ -1,0 +1,203 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "iterator")
+(libload "libidx/idx-sort")
+
+(defclass IGraphComponent object
+  ((-int-) nv)
+  ((-int-) ne)
+  ((-idx1- (-int-)) vertices)
+  ((-idx1- (-int-)) edges) )
+
+(defmethod IGraphComponent IGraphComponent (-nv -ne)
+  (declare (-int-) -nv -ne)
+  (setq nv -nv  ne -ne)
+  (setq vertices (int-array nv))
+  (setq edges (int-array ne))
+  ())
+
+(defclass IGraphComponentIterator iterator
+  ((-int-) nv)
+  ((-int-) max-degree)
+  ((-idx2- (-int-)) edges)
+  ((-idx2- (-int-)) v-es)
+  ((-idx1- (-ubyte-)) vmap)
+  ((-idx1- (-ubyte-)) emap)
+  ((-idx1- (-int-)) vstack)
+  ((-idx1- (-int-)) vestack)
+  ((-obj- (IGraphComponent)) next-item) )
+
+(in-namespace (class IGraphComponentIterator)
+(libload "datatypes/graph-utils" IGraphComponentIterator)
+
+(defmacro trim-comp! (cc nv ne)
+  `(progn
+     (idx-trim! (scope ,cc vertices) 0 0 ,nv)
+     (idx-trim! (scope ,cc edges) 0 0 ,ne)
+     ())
+  )
+
+(defmacro untrim-comp! (cc)
+  `(progn
+     (idx-trim! (scope ,cc vertices) 0 0 0)
+     (idx-extend! (scope ,cc vertices) 0 (scope ,cc nv))
+     (idx-trim! (scope ,cc edges) 0 0 0)
+     (idx-extend! (scope ,cc edges) 0 (scope ,cc ne))
+     ())
+  )
+)
+
+(defmethod IGraphComponentIterator -fill-vstack ()
+  () )
+
+(defmethod IGraphComponentIterator IGraphComponentIterator (-nv -edges -v-es)
+  (declare (-int-) -nv)
+  (declare (-idx2- (-int-)) -edges)
+  (declare (-idx2- (-int-)) -v-es)
+  (==> this iterator)
+  (setq nv -nv  edges -edges  v-es -v-es)
+  (setq max-degree (- (idx-shape v-es 1) 2))
+  (setq vmap (ubyte-array nv))
+  (setq emap (ubyte-array (length edges)))
+  (setq vstack (make-stack (+ nv 10) int))
+  (setq vestack (make-stack (* 10 max-degree) int))
+  (==> this -fill-vstack)
+  (setq next-item (new IGraphComponent nv (length edges)))
+  ())
+
+
+;; connected component iterator
+(defclass IGraphCCIterator IGraphComponentIterator)
+
+(defmethod IGraphCCIterator -fill-vstack ()
+  (for* (v 0 nv)
+    (declare (-int-) v)
+    (push vstack v) ))
+
+(defmethod IGraphCCIterator -make-next ()
+  (if (emptyp vstack)
+      (setq next-item-valid ())
+
+    (let ((v 0) (e 0) (s -1))
+      (declare (-int-) v e s)
+      (untrim-comp! next-item)
+      
+      (while (and (= v 0) (not (emptyp vstack)))
+        (setq s (pop vstack))
+        (when (= (vmap s) 0)
+          (setq next-item-valid t)
+          (vmap s 1)
+          (:next-item:vertices v s)
+          (incr v)
+          (do-edges-around ei (vertex s)
+            (push vestack s)
+            (push vestack ei) )))
+      
+      (while (not (emptyp vestack))
+        (let* ((ei (pop vestack)) (s (pop vestack)) (vi (other-vertex ei s)))
+          (declare (-int-) ei s vi)
+          (when (or (= (vmap vi) 0) (= (emap ei) 0))
+            (when (= (vmap vi) 0)
+              (vmap vi 1)
+              (:next-item:vertices v vi)
+              (incr v) )
+            (when (= (emap ei) 0)
+              (emap ei 1)
+              (:next-item:edges e ei)
+              (incr e) )
+            (do-edges-around ei (vertex vi)
+              (push vestack vi)
+              (push vestack ei) ))))
+      (trim-comp! next-item v e) )))
+
+(defclass IGraphBranchIterator IGraphComponentIterator)
+
+(defmethod IGraphBranchIterator -fill-vstack ()
+  (let ((degrees (int-array* nv))
+        (vdir    (int-array* nv)) )
+    (for* (v 0 nv)
+      (declare (-int-) v)
+      (degrees v (vertex-degree v))
+      (vdir v v) )
+    (idx-i1i1sortup degrees vdir)
+
+    ;; do degree-2 points last
+    (let ((d2 (idx-i1bsearch degrees 2)))
+      (for (v d2 0 -1)
+        (declare (-int-) v)
+        (push vstack (vdir v)) )
+      (for* (v (+ d2 1) nv)
+        (declare (-int-) v)
+        (push vstack (vdir v)) ))
+    ()))
+
+(defmethod IGraphBranchIterator -make-next ()
+  (if (emptyp vstack)
+      (setq next-item-valid ())
+
+    (let ((v 0) (e 0) (s -1) (continue t))
+      (declare (-int-) v e s)
+      (untrim-comp! next-item)
+      
+      (while (and (= v 0) (not (emptyp vstack)))
+        (when (emptyp vestack)
+          (setq s (pop vstack))
+          (when (= (vmap s) 0)
+            (do-edges-around ei (vertex s)
+              (push vestack s)
+              (push vestack ei) )))
+        
+        (while (and continue (not (emptyp vestack)))
+          (let* ((ei (pop vestack)) (s (pop vestack)) (vi (other-vertex ei s)))
+            (declare (-int-) ei s vi)
+            (when (= (emap ei) 0)
+              (when (= v 0)
+                (:next-item:vertices v s)
+                (incr v) )
+              (vmap vi 1)
+              (:next-item:vertices v vi)
+              (incr v)
+              (emap ei 1)
+              (:next-item:edges e ei)
+              (incr e)
+              (do-edges-around ei (vertex vi)
+                (push vestack vi)
+                (push vestack ei) )
+              (setq continue (= (vertex-degree vi) 2)) ))))
+      
+      (setq next-item-valid (> v 0))
+      (trim-comp! next-item v e) )))
+
+
+(dhc-make-class () 
+                IGraphComponent 
+                IGraphComponentIterator
+                IGraphCCIterator
+                IGraphBranchIterator
+                )
+                

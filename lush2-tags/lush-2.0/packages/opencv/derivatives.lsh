@@ -1,0 +1,96 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+(libload "opencv/cv-arrays")
+
+#? ** Image derivatives
+
+(in-namespace cv-
+
+(defun -sobel (img-from img-to xord yord size)
+  (declare (-obj- (CvMat)) img-from img-to)
+  (declare (-int-) xord yord size)
+  (cv-cpheader)
+  (with-check-error
+   (let ((from :img-from:p) (to :img-to:p))
+     #{ cvSobel($from, $to, $xord, $yord, $size) #}
+     ())))
+
+#? (cv-sobel <img> <xord> <yord> <n>)
+;; Compute image derivative of order <xord>+<yord> using a
+;; pixel neighborhood of size <n>x<n> and return it as a
+;; float matrix. Valid values for <n> are 1,3,5, and 7.
+;; For more details see
+;; {<hlink> file:///usr/share/opencv/doc/ref/opencvref_cv.htm#decl_cvSobel}
+(defmacro sobel (in xo yo n)
+  (let ((img (gensym)) (out (gensym)))
+    `(let* ((,img ,in)
+            (,out (float-array* (idx-shape ,img 0) (idx-shape ,img 1))))
+       (-sobel (make-cvmat ,img) (make-cvmat ,out) ,xo ,yo ,n)
+       ,out)
+    ))
+
+#? (cv-gradient <img> [<n>])
+;; Compute the gradient of an image using an <n>x<n> Sobel
+;; operator and return it as a float array. The default for
+;; <n> is 3.
+(defmacro gradient (in &optional (n 3))
+  (let ((img (gensym)) (out (gensym)))
+    `(let* ((,img (make-cvmat ,in))
+            (,out (float-array* (idx-shape ,img 0) (idx-shape ,img 1) 2)) )
+       (-sobel ,img (make-cvmat (idx-select ,out 2 0)) 1 0 ,n)
+       (-sobel ,img (make-cvmat (idx-select ,out 2 1)) 0 1 ,n)
+       ,out)
+    ))
+
+(defun -laplace (img-from img-to size)
+  (declare (-obj- (CvMat)) img-from img-to)
+  (declare (-int-) size)
+  (with-check-error
+   (let ((from :img-from:p) (to :img-to:p))
+     #{ cvLaplace($from, $to, $size); #}
+     ())))
+
+#? (cv-laplace <img> [<n>])
+;; Compute the Laplacian of an image using an <n>x<n> operator
+;; and return it as a float matrix. For details see
+;; {<hlink> file:///usr/share/opencv/doc/ref/opencvref_cv.htm#decl_cvLaplace}
+(defmacro laplace (in &optional (n 3))
+  (let ((img (gensym)) (out (gensym)))
+    `(let* ((,img ,in)
+            (,out (float-array* (idx-shape ,img 0) (idx-shape ,img 1))) )
+       (-laplace (make-cvmat ,img) (make-cvmat ,out) ,n)
+       ,out)
+    ))
+
+) ; in-namespace
+
+(dhc-make-cv "opencv_derivatives"
+             cv--sobel
+             cv--laplace
+             )

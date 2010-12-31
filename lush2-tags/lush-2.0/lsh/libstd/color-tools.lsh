@@ -1,0 +1,99 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "iterator")
+
+(defun -genrgb (i)
+  (declare (-int-) i)
+  (let ((r 0) (g 0) (b 0))
+    (declare (-int-) r g b)
+    #{
+    $i = $i & 0x00FFFFFF; /* mask out lowest three bytes */
+    int s = 7;
+    while ($i > 0) {
+      int bit = 1 << s;
+      switch ($i & 7) {
+        case 1: $r |= bit;                       break;
+        case 2:            $g |= bit;            break;
+        case 3:                       $b |= bit; break;
+        case 4: $r |= bit; $g |= bit; $b |= bit; break;
+        case 5: $r |= bit; $g |= bit;            break;
+        case 6:            $g |= bit; $b |= bit; break;
+        case 7: $r |= bit;            $b |= bit; break;
+        }
+      $i >>= 3;
+      s--;
+    }
+    $r = ($r + 127) & 0xFF;
+    $g = ($g + 127) & 0xFF;
+    $b = ($b + 127) & 0xFF;
+    #}
+    (list r g b)))
+
+(dhc-make () -genrgb)
+
+;; generate distinct colors
+(defclass DistinctColorsIterator iterator
+  ((-int-) i)
+  ((-obj- (Window)) window)
+  ((-int-) next-item) )
+
+(defmethod DistinctColorsIterator DistinctColorsIterator (start)
+  (==> this iterator)
+  (setq window (new-window))
+  ((gdriver-feature hide) window)
+  (setq i start) )
+
+(defmethod DistinctColorsIterator -make-next ()
+  (let (((r g b) (-genrgb i)))
+    (incr i)
+    (setq next-item (alloccolor (/ r 255) (/ g 255) (/ b 255))
+	  next-item-valid t) ))
+
+(defmethod DistinctColorsIterator -destructor ()
+  (delete window)
+  ())
+  
+(defun distinct-colors (&optional (start 10131))
+  (new DistinctColorsIterator start))
+
+(de -show-distinct-colors (n &optional start)
+  (let ((window (if start 
+                    (new-window 10 10 1210 610 (sprintf "distinct colors %d to %d" start (+ n start -1)))
+                  (new-window 10 10 1210 610 (sprintf "first %d distinct colors" n)) ))
+	(it (if start (distinct-colors start) (distinct-colors))) )
+    (when (null start) (setq start 0))
+    (for* (i 0 n)
+      (let ((x (* (mod i 20) 60))
+	    (y (* (div i 20) 60)) )
+	(color (==> it next))
+	(fill-rect x y 40 25)
+	(color color-fg)
+	(draw-text x (+ y 37) (str (+ i start))) ))
+    window))
+
+

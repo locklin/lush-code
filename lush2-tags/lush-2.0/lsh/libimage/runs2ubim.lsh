@@ -1,0 +1,295 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Converting RLE Image to Greyscale Pixelmap
+
+(libload "libimage/ubimage")
+(libload "libimage/run-macros")
+(libload "libidx/idx-ubyte")
+
+(defalias in-stack progn)
+#? (nt-runs2ubim <runs> <ubim>)
+;;.VP
+;; ((-idx2- (-int-)) runs):
+;; ((-idx2- (-ubyte-)) ubim):
+;;
+;; CREATED: P.Haffner, August 97
+;; TEMPORARIES: ?
+;; DESCRIPTION:
+;; maps runs into a ubyte image
+(de nt-runs2ubim (runs ubim)
+  ((-idx2- (-int-)) runs)
+  ((-idx2- (-ubyte-)) ubim)
+
+  (in-stack
+  (let* (
+         (xinf ((idx-inf (select runs 1 (RUN-X1)))))
+         (xsup ((idx-sup (select runs 1 (RUN-X2)))))
+         (yinf ((idx-inf (select runs 1 (RUN-Y)))))
+         (ysup ((idx-sup (select runs 1 (RUN-Y)))))
+         (xdim (1+ (- xsup xinf)))
+         (ydim (1+ (- ysup yinf)))
+         )
+    ((-int-) xinf xsup xdim)
+    ((-int-) yinf ysup ydim)
+    (idx-u2resize ubim ydim xdim)
+    (idx-clear ubim)
+    (idx-bloop ((run runs))
+      (let (
+            (x1 (run (RUN-X1)))
+            (x2 (run (RUN-X2)))
+            (line (select ubim 0 (- (run (RUN-Y)) yinf)))
+            )
+        ((-int-) x1 x2)
+        (idx-ub1fill (narrow line 0 (1+ (- x2 x1)) (- x1 xinf)) 255)
+        ))
+    )
+  ()))
+
+
+#? (static-runs2ubim <runs> <ubim> <white> <black>)
+;;.VP
+;; ((-idx2- (-int-)) runs):
+;; ((-idx2- (-ubyte-)) ubim):
+;; ((-int-) white black):
+;;
+;; CREATED: P.Haffner, August 97
+;; TEMPORARIES: ?
+;; DESCRIPTION:
+(de static-runs2ubim (runs ubim white black)
+  ((-idx2- (-int-)) runs)
+  ((-idx2- (-ubyte-)) ubim)
+  ((-int-) white black)
+
+  (in-stack
+(if (= 0 (idx-dim runs 0))
+    (idx-ub2fill ubim white)
+  (let* (
+         (xsup ((idx-sup (select runs 1 (RUN-X2)))))
+         (ysup ((idx-sup (select runs 1 (RUN-Y)))))
+         (xdim (max (+  xsup 1)  (idx-dim ubim 1)))
+         (ydim (max (+  ysup 1)  (idx-dim ubim 0)))
+         )
+    ((-int-) xsup xdim)
+    ((-int-) ysup ydim)
+    (idx-u2resize ubim ydim xdim)
+    (idx-ub2fill ubim white)
+    (idx-bloop ((run runs))
+      (let (
+            (x1 (run (RUN-X1)))
+            (x2 (run (RUN-X2)))
+            (line (select ubim 0 (run (RUN-Y))))
+            )
+        ((-int-) x1 x2)
+        (idx-ub1fill (narrow line 0 (1+ (- x2 x1)) x1) black)
+        ))
+    ))
+  ()))
+
+
+#? (nt-runs2ubim-dil <runs> <ubim>)
+;;.VP
+;; ((-idx2- (-int-)) runs):
+;; ((-idx2- (-int-)) ubim):
+;;
+;; CREATED: P.Haffner, August 97
+;; TEMPORARIES: ?
+;; DESCRIPTION:
+;; 1-dilattion while applying <nt-run2ubim>
+(de nt-runs2ubim-dil (runs ubim cc)
+  ((-idx2- (-int-)) runs)
+  ((-idx1- (-int-)) cc)
+  ((-idx2- (-ubyte-)) ubim)
+
+  (in-stack
+(if (= 0 (idx-dim runs 0))
+    (idx-ub2fill ubim 0)
+  (let* (
+         (xinf (cc (CC-LEFT)))
+         (xsup (cc (CC-RIGHT)))
+         (yinf (cc (CC-TOP)))
+         (ysup (cc (CC-BOTTOM)))
+         (xdim (+ 3 (- xsup xinf)))
+         (ydim (+ 3 (- ysup yinf)))
+         )
+    ((-int-) xinf xsup xdim)
+    ((-int-) yinf ysup ydim)
+    (idx-u2resize ubim ydim xdim)
+    (idx-clear ubim)
+    (idx-bloop ((run runs))
+      (let (
+            (x1 (run (RUN-X1)))
+            (x2 (run (RUN-X2)))
+            (line (narrow ubim 0 3 (- (run (RUN-Y)) yinf)))
+            )
+        ((-int-) x1 x2)
+        (idx-ub2fill (narrow line 1 (+ (- x2 x1) 3) (- x1 xinf)) 255)
+        ))
+    ))
+  ()))
+
+
+#? (static-runs2ubim-dil <runs> <ubim>)
+;;.VP
+;; ((-idx2- (-int-)) runs):
+;; ((-idx2- (-ubyte-)) ubim):
+;;
+;; CREATED: P.Haffner, August 97
+;; TEMPORARIES: ?
+;; DESCRIPTION:
+(de static-runs2ubim-dil (runs ubim white black)
+  ((-idx2- (-int-)) runs)
+  ((-idx2- (-ubyte-)) ubim)
+  ((-int-) white black)
+
+  (in-stack
+    (idx-ub2fill ubim white)
+    (idx-bloop ((run runs))
+      (let (
+            (x1 (run (RUN-X1)))
+            (x2 (run (RUN-X2)))
+            (line (narrow ubim 0 3 (run (RUN-Y))))
+            )
+        ((-int-) x1 x2)
+        (idx-ub2fill (narrow line 1 (+ (- x2 x1) 3)  x1) black)
+        ))
+  ()))
+
+
+
+
+(dm subsamp (f x x-sub)
+    `(int (+ .5 (/ (flt ,x) ,x-sub))))
+
+#? (static-runs2ubim-subsample <runs> <ubim> <x-sub> <y-sub>)
+;;.VP
+;; ((-idx2- (-int-)) runs):
+;; ((-idx2- (-ubyte-)) ubim):
+;; ((-int-) x-sub y-sub):
+;;
+;; CREATED: P.Haffner, August 97
+;; TEMPORARIES: ?
+;; DESCRIPTION:
+;; <nt-runs2ubim> with subsampling
+;;.SEE (nt-runs2ubim <runs> <ubim>)
+(de static-runs2ubim-subsample (runs ubim x-sub y-sub)
+  ((-idx2- (-int-)) runs)
+  ((-idx2- (-ubyte-)) ubim)
+  ((-int-) x-sub y-sub)
+
+  (in-stack
+(if (= 0 (idx-dim runs 0))
+    (idx-ub2fill ubim 255)
+  (let* (
+         (xsup (/ ((idx-sup (select runs 1 (RUN-X2)))) x-sub))
+         (ysup (/ ((idx-sup (select runs 1 (RUN-Y)))) y-sub))
+         (xdim (max (1+ xsup) (idx-dim ubim 1)))
+         (ydim (max (1+ ysup) (idx-dim ubim 0)))
+         (val (- (/ 255 (flt y-sub))))
+         (val2 (/ 255 (flt (* x-sub y-sub))))
+         )
+    ((-int-) xsup ysup)
+    ((-int-) xdim ydim)
+    ((-int-) val)
+
+    (idx-u2resize ubim ydim xdim)
+    (idx-ub2fill ubim 0)
+    (idx-bloop ((run runs))
+      (let* (
+             (run-left (run (RUN-X1)))
+             (run-right (run (RUN-X2)))
+             (x1 (1+ (/ run-left x-sub)))
+             (x2 (/ run-right x-sub))
+             (y (/ (run (RUN-Y)) y-sub))
+             (line (select ubim 0  y))
+            )
+        ((-int-) x1 x2 y)
+        (if (< x2 x1)
+            (line x2 (- (line x2) (* val2 (1+ (-  run-right  run-left)))))
+          (when (> x2 x1)
+            (idx-ub1add (narrow line 0  (- x2 x1) x1)
+                        val))
+          (let ((xx1 (1- x1))
+                )
+            ((-int-) xx1)
+            (line xx1 (- (line xx1) (* val2 (-  (* x1 x-sub)  run-left))))
+            (line x2 (- (line x2) (* val2 (1+ (-  run-right  (* x2 x-sub))))))
+            )
+          )
+        )
+      )
+    ))
+  ()))
+
+
+#? (runs2ubim <runs> <white> <black>)
+;;.VP
+;; ((-idx2- (-int-)) runs):
+;; ((-int-) white black):
+;;
+;; CREATED: P.Haffner, August 97
+;; TEMPORARIES: ?
+;; DESCRIPTION:
+(de runs2ubim (runs white black)
+  ((-idx2- (-int-)) runs)
+  ((-int-) white black)
+
+  (let* (
+         (ubim (ubyte-array 1 1))
+         )
+    (static-runs2ubim runs ubim white black)
+    ubim))
+
+#? (runs2ubim-subsample <runs> <x-sub> <y-sub>)
+;;.VP
+;; ((-idx2- (-int-)) runs):
+;; ((-int-) x-sub y-sub):
+;;
+;; CREATED: P.Haffner, August 97
+;; DESCRIPTION:
+;; Subsample on the fly --> grey levels
+(de runs2ubim-subsample (runs x-sub y-sub)
+  ((-idx2- (-int-)) runs)
+  ((-int-) x-sub y-sub)
+
+  (let* (
+         (ubim (ubyte-array 1 1))
+         )
+    (static-runs2ubim-subsample runs ubim x-sub y-sub)
+    ubim))
+
+
+(dhc-make-sf () 
+          static-runs2ubim-dil
+          nt-runs2ubim-dil
+
+          nt-runs2ubim
+          static-runs2ubim
+          runs2ubim
+          static-runs2ubim-subsample
+          runs2ubim-subsample
+)

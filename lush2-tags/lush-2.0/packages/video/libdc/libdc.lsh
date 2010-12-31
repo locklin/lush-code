@@ -1,0 +1,286 @@
+(libload "video/libdc/libdc_config")
+(libload "libc/stdio")
+
+(libload "video/libdc/libdc_const")
+
+(eval `(de dummy_dc1394 () ,dc1394-cpheader-cmd ()))
+
+(defclass dc1394_cameras object
+  ((-gptr- "raw1394handle_t *") handles)
+  ((-gptr- "dc1394_cameracapture *") cameras)
+  ((-str-)  devname)
+  ((-int-)  speed)
+  ((-int-)  nports)
+  ((-int-)  ncam)
+  ((-int-) width)
+  ((-int-) height)
+  ((-int-) depth))
+
+
+(defmethod dc1394_cameras dc1394_cameras ( dvnm spd )
+  ((-str-) dvnm)
+  ((-int-) spd)
+  (setq devname dvnm)
+  (setq speed spd)
+  (let ((retcode 0))
+    ((-int-) retcode)
+  #{
+      raw1394handle_t raw_handle;      
+      int numports;
+      struct raw1394_portinfo *ports;
+
+      ports = (struct raw1394_portinfo *)malloc( MAX_PORTS * 
+                                        sizeof(struct raw1394_portinfo));
+      raw_handle = raw1394_new_handle();
+      if (raw_handle==NULL) {
+        $retcode = -1;
+        $nports = -1;
+        perror("Unable to acquire a raw1394 handle.\n");
+      } else {
+        numports = raw1394_get_port_info(raw_handle, ports, MAX_PORTS);
+        raw1394_destroy_handle(raw_handle);
+        free(ports);
+        $nports = numports;
+      }
+   #}
+    (if (<> retcode 0) (error "Found no firewire ports. Did you modprobe raw1394? Did you chmod 666 /dev/raw1394?"))
+    )
+  ())
+
+(defmethod dc1394_cameras cleanup ()
+  #{
+     int i;
+     for(i=0; i<$ncam; i++)
+      {
+         dc1394_dma_unlisten( $handles[i], &($cameras[i]));
+         dc1394_dma_release_camera( $handles[i], &($cameras[i]));
+         dc1394_destroy_handle( $handles[i]);
+      }
+  #}
+  ())
+
+(defmethod dc1394_cameras init ( format mode fps)
+  ((-int-) format mode fps)
+  (cond 
+   ((= mode @MODE_160x120_YUV444) (setq depth 3))
+   ((= mode @MODE_320x240_YUV422) (setq depth 2))
+   ((= mode @MODE_640x480_YUV411) (setq depth 2))
+   ((= mode @MODE_640x480_YUV422) (setq depth 2))
+   ((= mode @MODE_640x480_RGB)    (setq depth 3))
+   ((= mode @MODE_640x480_MONO)   (setq depth 1))
+   (t ()))
+  (let ((retcode 0))
+    ((-int-) retcode)
+   #{
+      $handles = (raw1394handle_t *) malloc(MAX_CAMERAS * sizeof(raw1394handle_t));
+      $cameras = (dc1394_cameracapture *) malloc(MAX_CAMERAS * sizeof(dc1394_cameracapture));
+
+      raw1394handle_t raw_handle;      
+      nodeid_t *camera_nodes;
+      char *device_name = (char *)$devname->data;
+
+      int n = 0;
+      int i,j;
+      for(i=0; i< $nports; i++)
+       {
+          int ncam;
+          raw_handle = dc1394_create_handle(i);
+          camera_nodes = dc1394_get_camera_nodes( raw_handle, &ncam, 1);
+          dc1394_destroy_handle(raw_handle);
+
+          for(j=0; j<ncam; j++)
+          {
+             $handles[n] = dc1394_create_handle(i);
+             if ($handles[n]==NULL) {
+               perror("Unable to aquire a raw1394 handle\n");
+               perror("did you modprobe raw1394?\n");
+               $retcode = -1;
+               
+             }
+             $cameras[n].node = camera_nodes[j];
+             if ( dc1394_dma_setup_capture( $handles[n], $cameras[n].node,
+                          j+1, $format, $mode, $speed, $fps, 
+                          NUM_BUFFERS, DROP_FRAMES, device_name, 
+                          &($cameras[n])) != DC1394_SUCCESS )
+             {
+               perror("Unable to setup cameras");
+               $retcode = -1;
+             } else {
+               dc1394_start_iso_transmission( $handles[n], 
+                                            $cameras[n].node);
+             }
+             n++;
+          }
+          dc1394_free_camera_nodes( camera_nodes );
+       }
+       $ncam = n;
+       $height = (int) $cameras[n-1].frame_height;
+       $width  = (int) $cameras[n-1].frame_width;
+  #}
+    (if (= ncam 0)    (progn (==> this cleanup)(error "No cameras found")))
+    (if (<> retcode 0)(progn (==> this cleanup)(error "Loading cameras")))
+    )
+  ()
+  )
+
+(defmethod dc1394_cameras -destructor ()
+  (==> this cleanup)
+  ())
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; get/set methods for cameras
+;; for now only using those methods I know are useful for the unibrain cameras
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmethod dc1394_cameras get_width () width)
+(defmethod dc1394_cameras get_height () height)
+
+(defmethod dc1394_cameras _get_white_balance ( index u_b_value v_r_value )
+  ((-int-) index u_b_value v_r_value)
+    (int  #{  
+     dc1394_get_white_balance( $handles[$index], $cameras[$index].node , 
+                               (unsigned int *)&$u_b_value,(unsigned int *)&$v_r_value ) 
+     #} ))
+
+(defmethod dc1394_cameras get_white_balance ( index )
+  ((-int-) index)
+  (let ((u_b_value 0)(v_r_value 0))
+    (==> this _get_white_balance index u_b_value v_r_value) ;; call compiled C
+    (list u_b_value v_r_value)
+    )
+  )
+
+ 
+(defmethod dc1394_cameras set_white_balance ( u_b_value v_r_value )
+  
+  ((-int-) u_b_value)   ;; unsigned int -> int
+  ((-int-) v_r_value)   ;; unsigned int -> int
+  (int  #{  dc1394_set_white_balance( $handles[$index], $cameras[$index].node , $u_b_value  ,$v_r_value ) #} ))
+ 
+
+(defmethod dc1394_cameras get_hue ( index )
+  ((-int-) index)
+  (let ((hue -1))
+    ((-int-) hue)
+    #{ dc1394_get_hue( $handles[$index] , $cameras[$index].node ,(unsigned int *)&$hue ) #}
+    hue))
+
+
+
+(defmethod dc1394_cameras resize-img (img)
+  ;; ((-idx4- (-ubyte-)) img)
+  (idx-redim img (list ncam height width depth))
+  )
+
+(defmethod dc1394_cameras grab-yuv422-into-yuv422 ( img)
+  ((-idx4- (-ubyte-)) img)
+  (when (or (<> (idx-dim img 0) ncam)
+	    (<> (idx-dim img 1) height)
+	    (<> (idx-dim img 2) width)
+	    (<> (idx-dim img 3) depth))
+    (error "wrong size for YUV422 image"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+        unsigned char *imgptr = IDX_PTR($img, unsigned char);
+
+        dc1394_dma_multi_capture($cameras, $ncam);
+
+        int frame_length = $width * $height * 2;
+        int i;
+        for(i=0; i< $ncam; i++)
+           memcpy(imgptr + (i * frame_length), 
+                  $cameras[i].capture_buffer,
+                  frame_length);
+
+        for(i=0; i< $ncam; i++)
+           dc1394_dma_done_with_buffer(&($cameras[i]));
+     } #}
+    (if (<> retcode 0) -1 0)
+    ))
+
+(defmethod dc1394_cameras grab-rgb24-into-rgbx (img)
+  ((-idx4- (-ubyte-)) img)
+  (when (or (<> (idx-dim img 0) ncam)
+	    (<> (idx-dim img 1) height)
+	    (<> (idx-dim img 2) width)
+	    (<> (idx-dim img 3) depth))
+      (error "wrong size for RGBX image matrix"))
+  (let ((retcode 0))
+    ((-int-) retcode)
+    #{{
+	unsigned char *imgptr = IDX_PTR($img, unsigned char);
+
+        dc1394_dma_multi_capture($cameras, $ncam);
+
+        /* int frame_length = $width * $height * 2; */
+
+        int mod2 = $img->mod[2];
+        int k,i,j;
+        for(k=0; k<$ncam; k++) {
+           unsigned char *bufptr = (unsigned char *)$cameras[k].capture_buffer;
+           for (i=0; i<$height; i++) {
+              for (j=0; j<$width; j++) {
+	        imgptr[0] = bufptr[0];
+	        imgptr[1] = bufptr[1];
+	        imgptr[2] = bufptr[2];
+	        bufptr += 3;
+                imgptr += mod2;
+	    }
+	  }
+        }
+        for(i=0; i< $ncam; i++)
+           dc1394_dma_done_with_buffer(&($cameras[i]));
+
+     } #}
+    (if (<> retcode 0) -1 0)    ;; frame 
+))
+
+
+(defmethod dc1394_cameras yuv422-to-rgb (src dst)
+  ((-idx3- (-ubyte-)) src dst)
+  (when (<> 2 (idx-dim src 2)) (error "wrong depth for uyuv image"))
+  (when (< (idx-dim dst 2) 3) (error "wrong depth for rgbx image"))
+  #{ { 
+     unsigned char *src = IDX_PTR($src, unsigned char);
+     unsigned char *dest = IDX_PTR($dst, unsigned char);
+     int NumPixels = $width*$height*2;
+     int i=0,j=0;
+     register int y0, y1, u, v;
+     float r, g, b;
+     while (i < NumPixels)
+       {
+         u  = src[i++];
+         y0 = src[i++];
+         v  = src[i++];
+         y1 = src[i++];
+    /* u and v are +-0.5 */
+         u -= 128;
+         v -= 128;
+
+    /* RGB conversion http://local.wasp.uwa.edu.au/~pbourke/dataformats/yuv/ */
+         r = 1.370705 * (float)v;
+         g = 0.698001 * (float)v - 0.337633 * (float)u;
+         b = 1.732446 * (float)u;
+         dest[j++] = RGBSATURATE((float)y0 + r);
+         dest[j++] = RGBSATURATE((float)y0 - g);
+         dest[j++] = RGBSATURATE((float)y0 + b);
+         dest[j++] = RGBSATURATE((float)y1 + r);
+         dest[j++] = RGBSATURATE((float)y1 - g);
+         dest[j++] = RGBSATURATE((float)y1 + b);
+      }
+   }
+  #}
+  ()
+  )
+ 
+(dhc-make-with-libs () (list dc1394-lib1394  raw1394-lib1394)
+  dummy_dc1394
+  #{ #define RGBSATURATE(x) (unsigned char)( (x<0)? 0 : ( (x>255)? 255 : x)) #}
+  (dc1394_cameras  dc1394_cameras cleanup init -destructor 
+		   get-hue _get-white-balance 
+		   grab-yuv422-into-yuv422
+		   grab-rgb24-into-rgbx 
+		   yuv422-to-rgb)
+)
+
+

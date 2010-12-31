@@ -1,0 +1,67 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (do-items (<i> [<from> [<to>]]) . <body>)
+;; Iterate over items in set (to be used within set methods).
+;; When <from> is specified, iterate over items greater or equal <from>.
+;; When <to> is specified, iterate over items in range [<from>..<to>].
+;;
+;; Iteration terminates prematurely when <continue> is set to
+;; false in <body>.
+(defmacro do-items (args . body)
+  (when (not (listp args))
+    (error "syntax error") )
+  (when (or (> (length args) 3) (< (length args) 1))
+    (error "syntax error (1 to 3 arguments expected)") )
+  (when (not (symbolp (car args)))
+    (error "syntax error (not a symbol)" (car args)) )
+  (selectq (length args)
+    (1 (let (((i) args))
+         (assert (<> i 'n))
+         `(do ((,i this)) ,@body)
+         ))
+    (2 (let (((i i-from) args) (from (gensym)))
+         (assert (<> i 'n))
+         `(when (> n 0)
+            (let ((,from ,i-from))
+              (when (not (emptyp stack))
+                (error "stack not empty (nested 'do-items'?)") )
+              (==> root find ,from stack t)
+              (do ((,i (==> this -iterate-with-stack stack))) ,@body) ))
+         ))
+    (3 (let (((i i-from i-to) args) ((from to) (gensyms 2)))
+         (assert (<> i 'n))
+         `(when (> n 0)
+            (let ((,from ,i-from) (,to ,i-to))
+              (when (not (emptyp stack))
+                (error "stack not empty (nested 'do-items'?)") )
+              (==> root find ,from stack t)
+              (do ((,i (==> this -iterate-with-stack stack)))
+                (if (gt ,i ,to) (setq continue ()) ,@body) )))
+         ))
+    (t (error "internal error")) ))
