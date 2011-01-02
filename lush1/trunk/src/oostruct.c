@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: oostruct.c,v 1.24 2011-01-02 00:16:53 leonb Exp $
+ * $Id: oostruct.c,v 1.25 2011-01-02 18:17:25 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -1433,28 +1433,6 @@ DX(xis_of_class)
 }
 
 
-DX(xinstances_of_class)
-{
-  at *q;
-  at *r = NIL;
-  class *cl;
-  ARG_NUMBER(1);
-  ARG_EVAL(1);
-  q = APOINTER(1);
-  if (! EXTERNP(q, &class_class))
-    error(NIL,"Class expected", q);
-  cl = q->Object;
-  begin_iter_at(x) 
-  {
-    if (is_of_class(x, cl))
-      {
-        LOCK(x);
-        r = cons(x, r);
-      }
-  }
-  end_iter_at(x);
-  return r;
-}
 
 
 /* --------- INITIALISATION CODE --------- */
@@ -1489,7 +1467,6 @@ init_oostruct(void)
   dy_define("==>",ysend);
   dx_define("apply==>",xapplysend);
   dx_define("sender",xsender);
-  dx_define("instances-of-class",xinstances_of_class);
   
   at_this = var_define("this");
   at_progn = var_define("progn");
