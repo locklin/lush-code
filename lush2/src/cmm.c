@@ -308,8 +308,8 @@ mmstack_t *const _mm_transients;
 /* NOTE: the real address is 'managed[i]', which is not */
 /* a cleared address (use CLRPTR to clear)             */ 
 #define DO_MANAGED(i) { \
-  int __lasti = collect_in_progress ? man_k : man_last; \
-  for (int i = 0; i <= __lasti; i++) { \
+  size_t __lasti = collect_in_progress ? man_k : man_last; \
+  for (size_t i = 0; i <= __lasti; i++) { \
 
 #define DO_MANAGED_END }}
 
@@ -591,7 +591,7 @@ static void sift(int p, int q)
 
       if (x != q) {
          SWAP(x,q);
-	 if (x == q-1) sift(m, x); else sift(p, x);
+         if (x == q-1) sift(m, x); else sift(p, x);
       }
    }
 }
@@ -634,18 +634,18 @@ static void sort_poplar(int n)
       /* move maximum element to the right */
       int m = t;
       for (int j=1; j<t; j++)
-	 if (A(r[m]) < A(r[j])) m = j;
+         if (A(r[m]) < A(r[j])) m = j;
       
       if (m != t) {
-	 SWAP(r[m], r[t]);
-	 sift(r[m-1], r[m]);
+         SWAP(r[m], r[t]);
+         sift(r[m-1], r[m]);
       }
       
       if (r[t-1] == k-1) {
-	 t--;
+         t--;
       } else {
-	 r[t] = M(r[t-1],k);
-	 r[++t] = k-1;
+         r[t] = M(r[t-1],k);
+         r[++t] = k-1;
       }
    }
    poplar_sorted[n] = true;
@@ -834,9 +834,9 @@ static void collect_epilogue(void)
 
    if (stack_overflowed2) {
       if (stack_size < MAX_STACK) {
-	 /* only effective with synchronous collect */
-	 stack_size *= 2;
-	 debug("enlarging marking stack to %d\n", stack_size);
+         /* only effective with synchronous collect */
+         stack_size *= 2;
+         debug("enlarging marking stack to %d\n", stack_size);
       }
       stack_overflowed2 = false;
 
@@ -1037,7 +1037,7 @@ static void reclaim_inheap(void *q)
 }
 
 
-static void reclaim_offheap(int i)
+static void reclaim_offheap(size_t i)
 {
    assert(!OBSOLETE(managed[i]));
 
@@ -1119,8 +1119,8 @@ struct stack {
 #define CURRENT_N(st) (ELT_N((st)->current))
 
 #define STACK_VALID(st)  ((!(st)->sp && !(st)->current) || \
-			  (CURRENT_0(st) <= (st)->sp && \
-			   (st)->sp <= CURRENT_N(st)))
+                          (CURRENT_0(st) <= (st)->sp && \
+                           (st)->sp <= CURRENT_N(st)))
 
 static void mark_stack(mmstack_t *st)
 {
@@ -1731,6 +1731,39 @@ static void mark(void)
 
 static int pfd_garbage[2];  /* garbage pipe for async. collect */
 
+static int write_buf(int fd, const void *buf_, size_t n)
+{
+   const char *buf = buf_;
+   size_t pos = 0;
+   while (pos < n) {
+      errno = 0;
+      ssize_t w = write(fd, &(buf[pos]), n-pos);
+      if (w == -1) {
+         if (errno != EAGAIN)
+            return errno;
+      } else
+         pos += w;
+   }
+   return 0;
+}
+
+static void abort_with_message_file(const char *msg)
+{
+   pid_t pid = getpid();
+   pid_t ppid = getppid();
+   char buf[1024];
+   sprintf(buf, "libcmm.%d.msg", (int)ppid);
+
+   int fd = open(buf, O_WRONLY | O_CREAT | O_SYNC, S_IRUSR | S_IWUSR | S_IRGRP);
+   if (fd != -1) {
+      sprintf(buf, "libcmm: GC child (pid = %d) aborted for the following reason:\n%s\n",
+              pid, msg);
+      ssize_t w = write(fd, buf, strlen(buf));
+      if (w) close(fd);
+   }
+   abort();
+}
+
 static void sweep(void)
 {
    void *buf[NUM_TRANSFER];
@@ -1745,7 +1778,9 @@ static void sweep(void)
             continue;
          buf[n++] = (void *)(heap + a);
          if (n == NUM_TRANSFER) {
-            write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
+            int errno_ = write_buf(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
+            if (errno_)
+               abort_with_message_file(strerror(errno_));
             n = 0;
          }
       }
@@ -1753,7 +1788,9 @@ static void sweep(void)
 
    buf[n++] = NULL;
    if (n == NUM_TRANSFER) {
-      write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
+      int errno_ = write_buf(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
+      if (errno_)
+         abort_with_message_file(strerror(errno_));
       n = 0;
    }
 
@@ -1762,14 +1799,19 @@ static void sweep(void)
       if (!LIVE(managed[i])) {
          buf[n++] = (void *)i;
          if (n == NUM_TRANSFER) {
-            write(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
+            int errno_ = write_buf(pfd_garbage[1], &buf, NUM_TRANSFER*sizeof(void *));
+            if (errno_)
+               abort_with_message_file(strerror(errno_));
             n = 0;
          }
       }
    } DO_MANAGED_END;
    
-   if (n)
-      write(pfd_garbage[1], &buf, n*sizeof(void *));
+   if (n) {
+      int errno_ = write_buf(pfd_garbage[1], &buf, n*sizeof(void *));
+      if (errno_)
+         abort_with_message_file(strerror(errno_));
+   }
 }
 
 
@@ -1781,9 +1823,8 @@ static int _fetch_unreachables(void *buf)
 
    if (n == -1) {
       if (errno != EAGAIN) {
-         char *errmsg = strerror(errno);
-         warn("error reading from garbage pipe\n");
-         warn(errmsg);
+         int errno_ = errno;
+         warn("error reading from garbage pipe:\n%s\n", strerror(errno_));
          abort();
       }
       
@@ -1834,12 +1875,12 @@ static int fetch_unreachables(void)
          }
 
       } else {
-         reclaim_offheap((int)buf[j++]);
+         reclaim_offheap((size_t)buf[j++]);
          if (j == n) {
             n = 0;
             return 1;
          }
-         reclaim_offheap((int)buf[j++]);
+         reclaim_offheap((size_t)buf[j++]);
          if (j == n) {
             n = 0;
          }
