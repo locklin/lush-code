@@ -120,7 +120,10 @@ static bool finalize_object(object_t *obj)
    if (ZOMBIEP(obj->backptr))
       return true;
    
-   /* enqueue object to be destructed later */
+   /* Since destructor code may fail, we don't want cmm to call  */
+   /* destructors directly (i.e., we can't call oostruct_dispose */
+   /* here.) Instead we save unreachable objects and call their  */
+   /* destructor later.                                          */
    obj->next_unreachable = unreachables;
    unreachables = obj;
    return false;
@@ -129,6 +132,16 @@ static bool finalize_object(object_t *obj)
 static mt_t mt_object = mt_undefined;
 static mt_t mt_object2 = mt_undefined;
 
+bool oostruct_idle(void)
+{
+   int n = 0;
+   while (unreachables && n++<40) { 
+      object_t *obj = unreachables;
+      unreachables = obj->next_unreachable;
+      object_class->dispose(obj);
+   }
+   return n>0;
+}
 
 static object_t *oostruct_dispose(object_t *obj)
 {
@@ -742,7 +755,7 @@ static object_t *_new_object(class_t *cl, struct CClass_object *cobj)
 object_t *new_object(class_t *cl)
 {
    int n = 0;
-   while (unreachables && n++<10) {
+   while (unreachables && n++<2) {
       object_t *obj = unreachables;
       unreachables = obj->next_unreachable;
       object_class->dispose(obj);
