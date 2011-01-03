@@ -759,7 +759,7 @@ LUSHAPI static inline class_t *classof(const at *p)
    else
       return nil_class;
 }
-
+LUSHAPI bool oostruct_idle(void);
 
 /* MODULE.H --------------------------------------------------- */
 

@@ -36,9 +36,16 @@ char **lush_argv;
 
 extern void api_init_tables(void);  /* defined in misc.c */
 
+// deferred work can be done here as long as it comes
+// in small enough chunks
+static bool lush_idle(void)
+{
+   return oostruct_idle() || mm_idle();
+}
+
 static int mm_spoll(void)
 {
-   if (mm_idle())
+   if (lush_idle())
       return 50;  /* msec */
    else
       return 500; /* msec */
