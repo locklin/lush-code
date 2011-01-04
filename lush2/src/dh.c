@@ -796,9 +796,10 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
          ifn (index_contiguousp(ind))
             error(NIL, "invalid index for storage argument (not contiguous)", at_obj);
          st = new_storage(ind->st->type);
-         st->flags = ind->st->flags;
          st->data = ind->st->data;
          st->size = index_nelems(ind); /* ! */
+         st->kind = ind->st->kind;
+         st->isreadonly = ind->st->isreadonly;
       }
       if (st) {
          if (st->type != (drec+1)->op)
@@ -818,7 +819,7 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
            error(NIL, "invalid index argument (wrong number of dimensions)", at_obj);
         if (ind->st->type != (drec+2)->op)
            error(NIL, "invalid index argument (wrong storage type)", at_obj);
-        if ((ind->st->flags & STF_RDONLY) && (drec->access == DHT_WRITE))
+        if ((ind->st->isreadonly) && (drec->access == DHT_WRITE))
            error(NIL, "invalid index argument (read-only storage)", at_obj);
 
         arg->dh_idx_ptr = Mptr(at_obj);

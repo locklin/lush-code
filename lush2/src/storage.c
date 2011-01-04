@@ -58,7 +58,7 @@ static void clear_storage(storage_t *st, size_t _)
 static void mark_storage(storage_t *st)
 {
    MM_MARK(st->backptr);
-   if ((st->flags&STS_MASK) == STS_MANAGED)
+   if (st->kind == STS_MANAGED)
       MM_MARK(st->data);
 }
 
@@ -271,8 +271,8 @@ at *(*storage_getat[ST_LAST])(storage_t *, size_t) = {
 
 void get_write_permit(storage_t *st)
 {
-   if (st->flags & STF_RDONLY)
-      error(NIL, "read only storage", NIL);
+   if (st->isreadonly)
+      error(NIL, "read-only storage", NIL);
 }
 
 static void Number_setat(storage_t *st, size_t off, at *x)
@@ -329,7 +329,7 @@ static const char *storage_name(at *p)
 {
    storage_t *st = (storage_t *)Mptr(p);
    char *kind = "";
-   switch (st->flags & STS_MASK) {
+   switch (st->kind) {
    case STS_NULL:    kind = "unallocated"; break;
    case STS_MANAGED: kind = "managed"; break;
    case STS_FOREIGN: kind = "foreign"; break;
@@ -384,18 +384,18 @@ static void swap_buffer(char *b, int n, int m)
 static void storage_serialize(at **pp, int code)
 {
    storage_t *st;
-   int type ,flags;
+   int type, kind;
    size_t size;
 
    if (code != SRZ_READ) {
       st = Mptr(*pp);
-      type = st->type;
-      flags = st->flags;
+      type = (int)st->type;
+      kind = (int)st->kind;
       size = st->size;
    }
    // Read/write basic info
    serialize_int(&type, code);
-   serialize_int(&flags, code);
+   serialize_int(&kind, code);
    serialize_size(&size, code);
 
    // Create storage if needed
@@ -433,10 +433,11 @@ static void storage_serialize(at **pp, int code)
 storage_t *new_storage(storage_type_t t)
 {
    storage_t *st = mm_alloc(mt_storage);
-   st->type = t;
-   st->flags = STS_NULL;
-   st->size = 0;
    st->data = NULL;
+   st->size = 0;
+   st->type = t;
+   st->kind = STS_NULL;
+   st->isreadonly = false;
    st->backptr = new_at(storage_class[st->type], st);
    return st;
 }
@@ -481,8 +482,8 @@ storage_t *new_storage_foreign(storage_type_t t, size_t n, void *p, bool readonl
 {
    storage_t *st = mm_alloc(mt_storage);
    st->type = t;
-   st->flags = STS_FOREIGN;
-   if (readonly) st->flags |= STF_RDONLY;
+   st->kind = STS_FOREIGN;
+   st->isreadonly = readonly;
    st->size = n;
    st->data = (void *)p;
    st->backptr = new_at(storage_class[st->type], st);
@@ -510,7 +511,8 @@ storage_t *new_storage_static(storage_type_t t, size_t n, const void *p)
 {
    storage_t *st = mm_alloc(mt_storage);
    st->type = t;
-   st->flags = STS_STATIC | STF_RDONLY;
+   st->kind = STS_STATIC;
+   st->isreadonly = true;
    st->size = n;
    st->data = (void *)p;
    st->backptr = new_at(storage_class[st->type], st);
@@ -521,9 +523,7 @@ storage_t *new_storage_static(storage_type_t t, size_t n, const void *p)
 
 static void storage_notify(storage_t *st, void *_)
 {
-   short kind = st->flags & STS_MASK;
-
-   if (kind == STS_MMAP) {
+   if (st->kind == STS_MMAP) {
       if (st->mmap_addr) {
 #ifdef UNIX
          munmap(st->mmap_addr, st->mmap_len);
@@ -575,9 +575,8 @@ storage_t *new_storage_mmap(storage_type_t t, FILE *f, size_t offs, bool ro)
    st->mmap_xtra = xtra;
 #endif
    st->type = t;
-   st->flags = STS_MMAP;
-   if (ro)
-      st->flags |= STF_RDONLY;
+   st->kind = STS_MMAP;
+   st->isreadonly = ro;
    st->mmap_len = len;
    st->mmap_addr = addr;
    st->size = (len - offs) / storage_sizeof[st->type];
@@ -634,7 +633,7 @@ void storage_alloc(storage_t *st, size_t n, at *init)
       RAISEF(errmsg, NIL);
    }
    st->data = data;
-   st->flags = STS_MANAGED;
+   st->kind = STS_MANAGED;
    st->size  = n;
    
    /* clear gptr storage data (ATs and MPTRs are cleared by mm) */
@@ -663,12 +662,11 @@ void storage_realloc(storage_t *st, size_t size, at *init)
    if (size < st->size)
       RAISEF("storage size cannot be reduced", st->backptr);
    
-   short kind = st->flags & STS_MASK;
    size_t s = size*storage_sizeof[st->type];
    size_t olds = st->size*storage_sizeof[st->type];
    gptr olddata = st->data;
 
-   if (kind == 0) {
+   if (st->kind == STS_NULL) {
       /* empty storage */
       assert(st->data == NULL);
       storage_alloc(st, size, init);
@@ -676,7 +674,7 @@ void storage_realloc(storage_t *st, size_t size, at *init)
 
    } else {
       /* reallocate memory and update srg */
-      if (kind == STS_MANAGED)
+      if (st->kind == STS_MANAGED)
          MM_ANCHOR(olddata);
       if (st->type==ST_AT || st->type==ST_MPTR)
          st->data = mm_allocv(mt_refs, s);
@@ -685,8 +683,7 @@ void storage_realloc(storage_t *st, size_t size, at *init)
       
       if (st->data) {
          memcpy(st->data, olddata, olds);
-         st->flags &= ~STS_MASK;
-         st->flags |= STS_MANAGED;
+         st->kind = STS_MANAGED;
       }
    }
    
@@ -700,10 +697,9 @@ void storage_realloc(storage_t *st, size_t size, at *init)
    
    if (init) {
       /* temporarily clear read only flag to allow initialization */
-      enum storage_kind flags = st->flags;
-      st->flags &= ~STF_RDONLY;
+      bool isreadonly = st->isreadonly;
       storage_clear(st, init, oldsize);
-      st->flags = flags;
+      st->isreadonly = isreadonly;
    }
 }
 
@@ -770,21 +766,21 @@ DX(xstoragep)
 
 bool storage_readonlyp(const storage_t *st) 
 {
-   return (st->flags & STF_RDONLY);
+   return st->isreadonly;
 }
 
 DX(xstorage_readonlyp)
 {
    ARG_NUMBER(1);
    storage_t *st = ASTORAGE(1);;
-   return (st->flags & STF_RDONLY) ? t() : NIL;
+   return st->isreadonly ? t() : NIL;
 }
 
 DX(xstorage_set_readonly)
 {
    ARG_NUMBER(1);
    storage_t *st = ASTORAGE(1);
-   st->flags |= STF_RDONLY;
+   st->isreadonly = true;
    return NIL;
 }
 

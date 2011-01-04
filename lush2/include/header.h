@@ -47,7 +47,7 @@ extern "C" {
 /* VERSION.H --------------------------------------------------- */
 
 #define LUSH_MAJOR  50
-#define LUSH_MINOR  00
+#define LUSH_MINOR  01
 #define TLOPEN_MAJOR  LUSH_MAJOR
 #define TLOPEN_MINOR  LUSH_MINOR
 
@@ -873,21 +873,19 @@ enum storage_kind {
    STS_STATIC,             /* memory in data segment */
 };
 
-#define STS_MASK      255
-#define STF_RDONLY  (1<<15)  // FIXME
-
 struct storage {
    at    *backptr;
-   enum storage_kind flags:16;
-   storage_type_t    type:16;
-   size_t size;
    gptr   data;
+   size_t size;
+   bool  isreadonly;
+   enum storage_kind kind:16;
+   storage_type_t    type:16;
 #ifdef HAVE_MMAP
    gptr   mmap_addr;
    size_t mmap_len;
-#ifdef WIN32
+# ifdef WIN32
    gptr   mmap_xtra;
-#endif
+# endif
 #endif
 };
 

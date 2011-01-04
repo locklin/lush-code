@@ -251,11 +251,12 @@ max = (idx)->offset; \
   storage_t *newi = &name2(_st_,newi)
 
 #define Msrg_init(newi, st_type)  \
-        (newi)->size = 0;         \
-        (newi)->data = NULL;      \
-        (newi)->type = st_type;   \
-        (newi)->flags = 0
-
+        (newi)->data = NULL;              \
+        (newi)->size = 0;                 \
+        (newi)->isreadonly = false;       \
+        (newi)->kind = STS_NULL;          \
+        (newi)->type = st_type
+              
 #define Msrg_free(newi)   /* nothing */
 
 
