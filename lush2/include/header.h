@@ -1300,9 +1300,8 @@ LUSHAPI void  enqueue_eventdesc(at*, int event, int, int, int, int, char*);
 
 /* -------------------------------------------------------------
    Local Variables:
-   c-font-lock-extra-types: (
-     "FILE" "\\sw+_t" "at" "gptr" "real" "flt" "intg" )
-   c-file-style: k&r
+   c-font-lock-extra-types: ("FILE" "\\sw+_t" "at" "gptr" "real" "flt" "intg")
+   c-file-style: "k&r"
    c-basic-offset: 3
    End:
    ------------------------------------------------------------- */
