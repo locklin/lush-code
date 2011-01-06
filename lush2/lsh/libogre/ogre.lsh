@@ -1345,7 +1345,7 @@
 
 ;; close all Ogre windows
 (defun ogre-close-all ()
-  (length (mapc delete (htable-keys *ogre-windows*))) )
+  (length (mapcar delete (htable-keys *ogre-windows*))) )
 
 ;; function that processes events until its argument is nil
 (de wait (s) (while s (waitevent) (process-pending-events)))
@@ -1925,7 +1925,7 @@
 	(incr x 8)
 	(incr cl -1) 
 	(setq s (str-mid s offset)) )
-      (when (> (len s) cl)
+      (when (> (str-len s) cl)
 	(gsave
 	  (when ~activated (color color-gray))
 	  (fill-polygon xr (- y 4) (- xr 4) y (- xr 4) (- y 8)) )
@@ -1965,7 +1965,7 @@
 	(incr x 8)
 	(incr cl -1) 
 	(setq s (str-mid s offset)) )
-      (when (> (len s) cl)
+      (when (> (str-len s) cl)
 	(fill-polygon xr (- y 4) (- xr 4) y (- xr 4) (- y 8)) 
 	(incr cl -1)
 	(setq s (str-left s cl)) )
@@ -1994,7 +1994,7 @@
 (defmethod EditString setdata(d)
   (==> this (Control . setdata) d) 
   (setq offset 0)
-  (setq caret (len data))
+  (setq caret (str-len data))
   (==> this record-history) )
 
 (defmethod EditString getdata()
@@ -2053,7 +2053,7 @@
     (when (point-in-rect x1 y1 rect)
       (let (((x y w h) rect))
 	(incr x 1)
-	(let* ((lendata (len data))
+	(let* ((lendata (str-len data))
 	       (pos (div (* charlength (- x1 x)) textw)) )
 	  (if (> offset 0)
 	      (if (< x1 (+ x 4))
@@ -2075,7 +2075,7 @@
 (defmethod EditString arrow-right args
   (if (or disabled ~activated)
       'ignored
-    (when (< caret (len data))
+    (when (< caret (str-len data))
       (incr caret 1) )
     (==> this expose rect) ) )
 
@@ -2101,19 +2101,19 @@
 
 (defmethod EditString backspace args
   (when (> caret 0)
-    (setq data (strdel data caret 1)) 
-    (incr caret -1)  ) )
+    (decr caret)
+    (setq data (str-del data caret 1)) ) )
 
 (defmethod EditString delete-char args
-  (when (< caret (len data))
-    (setq data (strdel data (1+ caret) 1)) ) )
+  (when (< caret (str-len data))
+    (setq data (str-del data caret 1)) ) )
 
 (defmethod EditString begin-of-line args
   (setq caret 0)
   (==> this expose rect) )
 
 (defmethod EditString end-of-line args
-  (setq caret (len data))
+  (setq caret (str-len data))
   (==> this expose rect) )
 
 (defmethod EditString kill args
@@ -2130,8 +2130,8 @@
     (while (setq m (str-find "\n" EditStringKillBuffer i))
       (setq i m) )
     (setq  EditStringKillBuffer (str-mid EditStringKillBuffer i)) )
-  (setq data (strins data caret EditStringKillBuffer))
-  (incr caret (len EditStringKillBuffer))
+  (setq data (str-insert data caret EditStringKillBuffer))
+  (incr caret (str-len EditStringKillBuffer))
   (==> this expose rect) )
 
 (defmethod EditString activate-next()
@@ -2160,8 +2160,8 @@
       (when event
 	(setq ans (send this event))
 	(setq c ()) )
-      (when (and c (isprint c) (= (len c) 1))
-	(setq data (strins data caret c))
+      (when (and c (isprint c) (= (str-len c) 1))
+	(setq data (str-insert data caret c))
 	(incr caret 1) 
 	(setq ans c) )
       (when (<> ans 'ignored)
@@ -2214,7 +2214,7 @@
 
 (defmethod EditSecretString repaint()
   (let ((olddata data))
-    (setq data (apply concat (makelist (len data) "x")))
+    (setq data (apply concat (makelist (str-len data) "x")))
     (==> this (EditString . repaint))
     (setq data olddata) 
     () ) )
@@ -4904,7 +4904,7 @@
       (setq l (car d))
       (while (setq pos (+ (str-find "\t" l) 1))
 	(let ((nextpos (1+ (* 8 (div (+ pos 7) 8)))))
-	  (setq l (strins (strdel l pos 1) (1- pos) 
+	  (setq l (str-insert (str-del l (- pos 1) 1) (1- pos) 
 			  (str-left "         " (- nextpos pos)) ) ) ) )
       (rplaca d l)
       (setq d (cdr d)) ) )
@@ -4956,7 +4956,7 @@
 
 (defmethod TextPane join-line(cl)
   (let* ((p (nthcdr cl data))
-	 (h (len (car p)))
+	 (h (str-len (car p)))
 	 (l (concat (car p) (cadr p))) )
     (rplaca p l)
     (rplacd p (cddr p))
@@ -4975,7 +4975,7 @@
 
 (defmethod TextPane advertize()
   (setq tlines (length data))
-  (setq tcols (apply max (domapcar ((i data)) (len i))))
+  (setq tcols (apply max (domapcar ((i data)) (str-len i))))
   (when vscroller 
     (==> vscroller setrange 0 tlines height)
     (==> vscroller setdata cline) )
@@ -5006,7 +5006,7 @@
 (defmethod TextPane gotoxy(pos &optional (line 0))
   (let ((d (nthcdr line data))
 	(m 0))
-    (while (and d (> pos (setq m (len (car d)))))
+    (while (and d (> pos (setq m (str-len (car d)))))
       (incr line)
       (setq d (cdr d))
       (setq pos (- pos (1+ m))) )
@@ -5032,9 +5032,9 @@
 	    (setq metakey ())
 	    (if keymap
 		(send this (cadr keymap))) )
-	(if (and c (= (len c) 1) (isprint c))
+	(if (and c (= (str-len c) 1) (isprint c))
 	    (==> this insert c) ) ) )
-    (when (> (len (nth cline data)) tcols)
+    (when (> (str-len (nth cline data)) tcols)
       (==> this advertize) ) ) )
 
 (defmethod TextPane fkey(x y)
@@ -5053,7 +5053,7 @@
 	
 	(setq cline (min (1- tlines)
 			 (+ sline (div y1 lh)) ))
-	(setq cpos (min (len (nth cline data))
+	(setq cpos (min (str-len (nth cline data))
 			(+ spos (div x1 cw)) )) )
       (==> this expose)
       (==> this activate t) ) ) )
@@ -5089,7 +5089,7 @@
     (setq gatherkill ())
     (when (> cline 0) 
       (setq cline (1- cline))
-      (setq cpos (min cpos (len (nth cline data)))) 
+      (setq cpos (min cpos (str-len (nth cline data)))) 
       (==> this check) ) ) )
 
 (defmethod TextPane arrow-right args
@@ -5097,7 +5097,7 @@
       'ignored
     (setq gatherkill ())
     (cond
-      ((< cpos (len (nth cline data)))
+      ((< cpos (str-len (nth cline data)))
        (setq cpos (1+ cpos))
        (==> this fastcheck) )
       ((< cline (1- tlines))
@@ -5110,19 +5110,19 @@
     (setq gatherkill ())
     (when (< cline (1- tlines ))
       (setq cline (1+ cline))
-      (setq cpos (min cpos (len (nth cline data))))
+      (setq cpos (min cpos (str-len (nth cline data))))
       (==> this check) ) ) )
 
 (defmethod TextPane page-up args
   (setq gatherkill ())
   (setq cline (max 0 (- cline height)))
-  (setq cpos (min cpos (len (nth cline data))))
+  (setq cpos (min cpos (str-len (nth cline data))))
   (==> this check) )
 
 (defmethod TextPane page-down args
   (setq gatherkill ())
   (setq cline (min (1- tlines) (+ cline height)))
-  (setq cpos (min cpos (len (nth cline data))))
+  (setq cpos (min cpos (str-len (nth cline data))))
   (==> this check) )
 
 
@@ -5133,8 +5133,8 @@
       ((> cpos 0)
        (let ((p (nthcdr cline data)))
 	 (setq modified t)
-	 (rplaca p (strdel (car p) cpos 1))
 	 (setq cpos (1- cpos))
+	 (rplaca p (str-del (car p) cpos 1))
 	 (==> this fastcheck) ) )
       ((> cline 0)
        (setq cline (1- cline))
@@ -5144,10 +5144,10 @@
   (when editable
     (setq gatherkill ())
     (cond
-      ((< cpos (len (nth cline data)))
+      ((< cpos (str-len (nth cline data)))
        (let ((p (nthcdr cline data)))
 	 (setq modified t)
-	 (rplaca p (strdel (car p) (1+ cpos) 1))
+	 (rplaca p (str-del (car p) cpos 1))
 	 (==> this fastcheck) ) )
       ((< cline (1- tlines))
        (setq cpos (==> this join-line cline)) ) ) ) )
@@ -5168,7 +5168,7 @@
 
 (defmethod TextPane end-of-line args
   (setq gatherkill ())
-  (setq cpos (len (nth cline data)))
+  (setq cpos (str-len (nth cline data)))
   (==> this check) )
 
 (defmethod TextPane kill args
@@ -5181,7 +5181,7 @@
 	(setq EditStringKillBuffer "")
 	(setq gatherkill t) )
       (cond
-	((> (len (car p)) cpos)
+	((> (str-len (car p)) cpos)
 	 (setq EditStringKillBuffer 
 	       (concat EditStringKillBuffer (str-mid (car p) cpos)))
 	 (when ogre-text-to-clip
@@ -5212,10 +5212,10 @@
       (setq d lst)
       (while d
 	(setq l (car d))
-	(while (setq pos (+ (str-find "\t" l) 1))
-	  (let ((nextpos (1+ (* 8 (div (+ pos 7) 8)))))
-	    (setq l (strins (strdel l pos 1) (1- pos) 
-			    (str-left "         " (- nextpos pos)) ) ) ) )
+	(while (setq pos (str-find "\t" l))
+	  (let ((nextpos (1+ (* 8 (div (+ pos 6) 8)))))
+	    (setq l (str-insert (str-del l pos 1) pos 
+			    (str-left "         " (- nextpos pos 1)) ) ) ) )
 	(rplaca d l)
 	(setq d (cdr d)) )
       (setq d lst)
@@ -5233,8 +5233,8 @@
     (setq gatherkill ())
     (setq modified t)
     (let* ((p (nthcdr cline data)))
-      (rplaca p (strins (car p) cpos c))
-      (incr cpos (len c))
+      (rplaca p (str-insert (car p) cpos c))
+      (incr cpos (str-len c))
       (if ~nocheck
 	  (==> this fastcheck) ) ) ) )
 
