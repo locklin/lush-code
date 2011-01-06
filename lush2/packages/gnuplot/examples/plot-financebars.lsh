@@ -1,0 +1,112 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gnuplot/examples/common")
+(libload "gnuplot/plot")
+
+(defparameter *dtd2000*     (date-to-day (string-to-date "2000-1-1" 'year 'day)))
+(defparameter *spd*         (* 24 3600))
+(defparameter *finance.dat* (concat-fname lushdir "demos/gnuplot/finance.dat"))
+
+;; read data in finance.dat
+(defun read-finance-data ()
+  (let ((m (double-array 500 12))
+        (n 0) )
+    (do ((line (lines *finance.dat*)))
+      (let* ((ds (str-split line "\t"))
+             ((mon day yr) (str-split (car ds) "/"))
+             (date (string-to-date (sprintf "%s-%s-%s" yr mon day) 'year 'day))
+             (row (idx-select m 0 n))
+             (d0 (* (- (date-to-day date) *dtd2000*) *spd*)) )
+        (row () (cons n (cons d0 (mapcar val (cdr ds)))))
+        (incr n)))
+    (idx-trim! m 0 0 n)
+    m))
+
+;; partial translation of gnuplot/demo/finance.dem
+(defun plot-financebars ()
+  (let* ((gp (new Gnuplot 'interactive ()))
+         (m  (read-finance-data))
+         (c05 (array-take m 1 [i 0 5]))
+         (c02345 (array-take m 1 [i 0 2 3 4 5]))
+         (c08  (array-take m 1 [i 0 8]))
+         (c09  (array-take m 1 [i 0 9]))
+         (c010 (array-take m 1 [i 0 10]))
+         (c011 (array-take m 1 [i 0 11]))
+         (g ()) )
+
+    (setq g (plot* (title "Demo for plotting financial data")
+                   (xrange 50 253)
+                   (yrange 75 105)
+                   (ytics [105 100 95 90 85 80])
+                   (margin 'left 0.15  'right 0.95)
+                   (lines c05)
+                   ))
+    (==> gp do-graph g)
+
+    (pause "Turn on grid")
+    (==> g add-preamble "set grid")
+    (==> g add-preamble "set title 'Turn on grid'")
+    (==> gp do-graph g)
+    
+    (pause "Finance Bars")
+    (setq g (plot* (title "Finance bars")
+                   (xrange 50 253)
+                   (yrange 75 105)
+                   (ytics [105 100 95 90 85 80])
+                   (margin 'left 0.15  'right 0.95)
+                   (grid)
+                   "set logscale y"
+                   (financebars c02345 (lt 8))
+                   ))
+    (gp "reset")
+    (==> gp do-graph g)
+    
+    (pause "Bolling Bands")
+    (setq g (plot* (title "Bollinger Bands")
+                   (xrange 50 253)
+                   (yrange 75 105)
+                   (ytics [105 100 95 90 85 80])
+                   (margin 'left 0.15  'right 0.95)
+                   (grid)
+                   "set logscale y"
+                   (linewidth 2)
+                   (financebars c02345 (lc "black") (lw 1))
+                   (lines c09  (lc "orange"))
+                   (lines c010 (lc "blue"))
+                   (lines c011 (lc "red"))
+                   ))
+    (gp "reset")
+    (==> gp do-graph g)
+    
+    (pause "With indicator on separate scale")
+    (==> g add-preamble "set title 'Indicator on separate scale'")
+    (==> g add-line "lines" "lc rgb \"purple\" axes x1y2" c08)
+    (gp "reset")
+    (==> gp do-graph g)
+    gp))
+

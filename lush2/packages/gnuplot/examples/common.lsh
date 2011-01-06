@@ -1,0 +1,63 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; generic function
+(defun read-xyz-data (filename)
+  (let ((v ()) (m ()) (ms ()) 
+	(lastline ()) (line ()) )
+    (reading (open-read filename)
+      ;; read lines
+      (while (<> (skip-char "") "\e")
+        (setq line (str-strip (read-string)))
+        (read-string 1) ;; read newline character
+        (cond 
+         ;; ignore comment line
+         ((str-startswith line "#") 
+          ()) 
+         
+         ;; turn list of columns into a matrix
+         ((and (= line "") (= lastline ""))
+          (mapc idx-lift! m 1s)
+          (setq ms (cons (apply mat-catcols (reverse m)) ms))
+          (setq m ()) )
+         
+         ;; add another column-vector to m
+         ((= line "")
+          (mapc idx-lift! v 1s)
+          (setq m (cons (apply mat-catcols (reverse v)) m))
+          (setq v ()) )
+	 
+         ;; read line with xyz data
+         (t
+          (let ((i (str-find "#" line)))
+            (when i (setq line (str-left line i)) ))
+          (setq v (cons (reading-string (concat "[" line "]") (read)) v)) ))
+        (setq lastline line)) )
+    (if ms (reverse ms)
+      (if m (reverse m)
+        (mapc idx-lift! v 1s)
+        (apply mat-catcols (reverse v)) ))))

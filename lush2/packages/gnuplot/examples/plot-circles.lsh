@@ -1,0 +1,106 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gnuplot/examples/common")
+(libload "gnuplot/plot")
+
+(defparameter *world.dat*   (concat-fname lushdir "demos/gnuplot/world.dat"))
+(defparameter *world.cor*   (concat-fname lushdir "demos/gnuplot/world.cor"))
+(defparameter *optimize.dat* (concat-fname lushdir "demos/gnuplot/optimize.dat"))
+
+;; partial translation of gnuplot/demo/circles.dem
+(defun plot-circles ()
+  (let* ((world (read-xyz-data *world.dat*))
+         (coord (read-xyz-data *world.cor*))
+         (optim (car (read-xyz-data *optimize.dat*)))
+         (optcs (idx-extend optim 1 -1))
+         (plotter (new Gnuplot 'interactive ())) )
+    (let ((rs (double-array (length coord))))
+      (idx-bloop ((r rs)) (r (+ 2 (* 3 (rand)))))
+      (setq coord (mat-catrows coord ($> rs))) )
+
+    (when (> *gnuplot-version* 4.2)
+      (plot (title "")
+            (xlabel "Note that overlapping transparent circles produce a darker area")
+            "set style fill solid 1.0 border -1"
+            "set obj 20 rect from graph 0,0 to graph 1,1 behind fc rgb \"cyan\" fs solid 0.2"
+            "set border"
+            notics
+            (yrange -70 *)
+            (add-arc   0  20  -140 -40 30  (fc 'red))
+            (add-arc  20  50  -140 -40 30  (fc 'orange))
+            (add-arc  50  90  -140 -40 30  (fc 'yellow))
+            (add-arc  90 120  -140 -40 30  (fc 'forest-green))
+            (add-arc 120 190  -140 -40 30  (fc 'dark-turquoise))
+            (add-arc 190 360  -140 -40 30  (fc 'dark-magenta))
+            (filledcurves world (lc 'light-green))
+            (circles coord (fill 0.5) (bc ())) )
+      (pause)
+      (plotter "reset")
+    
+      (plot (title "Trace of unconstrained optimization with trust-region method")
+            "set size ratio -1"
+            (xrange -2.5 1.5)
+            (yrange -1.0 2.5)
+            (circles optim (lc 'blue) (fill 0.14) (bc ()))
+            (linespoints optcs (lw 2) (lc 'black)) )
+      (pause)
+      (plotter "reset") 
+      ) ; gnuplot version > 4.2
+
+    ;; this part requires OpenCV
+    (libload "libimage/image-io")
+    (libload "opencv/color")
+    (libload "opencv/keypoints")
+    (let* ((img (image-read "lena.jpg"))
+           (gimg (cv-rgb2gray img))
+           (xys (cv-keypoints gimg 20 0.05)) )
+
+      ;; points instead of circles, 'cause circles need a 3rd column
+      (plot (title "Lena's key points")
+            "set yrange [*:*] reverse"
+            notics
+            (xy-aspect 1)
+            (image img)
+            (points xys (lc 'yellow) (pt 6) (ps 2))
+            )
+      (pause)
+      (plotter "reset")
+
+      ;; scale y-axis differently 
+      (plot (title "Different sampling intervals for X and Y-directions")
+            "set palette gray"
+            "unset colorbox"
+            "set tics out"
+            (xrange -0.5 (* ($ img 1) 2))
+            (yrange ($ img 0) -0.5)     ; y range reversed
+            (xy-aspect 1)
+            (image gimg (dx 2) (dy 1))
+            (points (* xys [2 1]) (lc 'yellow) (pt 6) (ps 2))
+            )
+      )
+    ))
