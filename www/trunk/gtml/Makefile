@@ -1,4 +1,4 @@
-perl=perl
+perl=./perl561
 gtml=./gtml
 outdir=../html
 
@@ -30,6 +30,8 @@ clean: FORCE
 ${HTML}:
 	${perl} $(gtml) $<
 
+${HTML}: ${INC}
+
 ${outdir}/index.html: index.gtml latest-news frontpage-faq
 ${outdir}/news.html: news.gtml latest-news older-news
 ${outdir}/credits.html: credits.gtml
@@ -40,6 +42,5 @@ ${outdir}/doc.html: doc.gtml
 ${outdir}/screenshots.html: screenshots.gtml
 
 
-${HTML}: ${INC}
 
 FORCE:
