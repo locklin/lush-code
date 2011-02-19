@@ -1,0 +1,205 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gnuplot/graph")  ; for chk-graph
+
+(defvar *gnuplot-linetypes*   (.cl -1))
+(defvar *gnuplot-linecolors*  (.cl 'blue 'red 'green 'orange 'cyan 'brown 'black))
+(defvar *gnuplot-linewidths*  (.cl 1))
+(defvar *gnuplot-pointtypes*  (.cl 1     2    3      4       5     6      7))
+(defvar *gnuplot-pointsizes*  (.cl 2))
+
+(defclass GnuplotLinestyles iterator
+  lt  lc  lw  pt  ps 
+  lts lcs lws pts pss)
+
+(defmethod GnuplotLinestyles -make-next ()
+  (setq lt (car lts)  lts (cdr lts))
+  (setq lc (car lcs)  lcs (cdr lcs))
+  (setq lw (car lws)  lws (cdr lws))
+  (setq pt (car pts)  pts (cdr pts))
+  (setq ps (car pss)  pss (cdr pss))
+  () )
+
+(defmethod GnuplotLinestyles GnuplotLinestyles ()
+  (setq lts *gnuplot-linetypes*)
+  (setq lcs *gnuplot-linecolors*)
+  (setq lws *gnuplot-linewidths*)
+  (setq pts *gnuplot-pointtypes*)
+  (setq pss *gnuplot-pointsizes*)
+  (==> this -make-next) )
+
+(defmethod GnuplotLinestyles peeknext ()
+  (sprintf "lt %d lc rgb \"%l\" lw %f pt %d ps %f" lt lc lw pt ps) )
+
+(defmethod GnuplotLinestyles next ()
+  (prog1 (==> this peeknext)
+    (==> this -make-next) ))
+
+(defmethod GnuplotLinestyles -emptyp ()
+  ())
+
+(defmethod GnuplotLinestyles selfcheck ()
+  (when (not (integerp lt))
+    (error "invalid line type" lt) )
+  (when (not (*gnuplot-colors* lc))
+    (error "invalid line color" lc) )
+  (when (not (integerp pt))
+    (error "invalid point type" pt) )
+  (when (not (numberp ps))
+    (error "invalid point size" ps) )
+  ())
+
+(defmacro chk-linestyles ()
+  `(progn
+     (chk-graph)
+     (when (not :graph:linestyles)
+       (setq :graph:linestyles (new GnuplotLinestyles)) ))
+  )
+
+
+;; (defvar *gnuplot-filldensities* (.cl 0))
+;; (defvar *gnuplot-fillbordercolors*  *gnuplot-fillcolors*) ; (.cl ()) for no borders
+
+;; ;; fillpatterns currently not supported (need filltype)
+;; ; (defvar *gnuplot-fillpatterns* (.cl 1))
+
+;; (defclass GnuplotFillstyles object
+;;   filldensity   fillbordercolor
+;;   filldensities fillbordercolors)
+
+;; (defmethod GnuplotFillstyles -make-next ()
+;;   (setq filldensity (car filldensities) filldensities (cdr filldensities))
+;;   (setq fillbordercolor (car fillbordercolors)  fillbordercolors (cdr fillbordercolors))
+;;   () )
+
+;; (defmethod GnuplotFillstyles GnuplotFillstyles ()
+;;   (setq filldensities    *gnuplot-filldensities*)
+;;   (setq fillbordercolors *gnuplot-fillbordercolors*)
+;;   (==> this -make-next) )
+
+;; (defmethod GnuplotFillstyles peeknext ()
+;;   (if fillbordercolor
+;;       (sprintf "transparent solid %f border rgb %s" filldensity fillbordercolor)
+;;     (sprintf "transparent solid %f %s noborder" filldensity) ))
+
+;; (defmethod GnuplotFillstyles next ()
+;;   (prog1 (==> this peeknext)
+;;     (==> this -make-next) ))
+
+;; (defmethod GnuplotFillstyles -emptyp ()
+;;   ())
+
+;; (defmethod GnuplotFillstyles selfcheck ()
+;;   (when (not (numberp filldensity))
+;;     (error "invalid fill density" filldensity) )
+;;   (when (or (< filldensity 0) (> filldensity 1))
+;;     (error "invalid fill density" filldensity) )
+;;   (when fillbordercolor
+;;     (when (not (*gnuplot-colors* fillbordercolor))
+;;       (error "invalid fill-border color" fillbordercolor) ))
+;;   ())
+
+;; (defmacro chk-fillstyles ()
+;;   `(when (not (isa fillstyles GnuplotFillstyles))
+;;      (error "fillstyles undefined") )
+;;   )
+
+
+
+(in-namespace gnuplot-other- 
+
+#? (linecolor [<color> <color2> <color3> ...])
+;; Set/query line color(s).
+;;
+;; With no arguments return color for next plot-line. With
+;; arguments set line colors for the following lines.
+(defun linecolor colors
+  (chk-linestyles)
+  (with-object graph
+    (when colors
+      (setq :linestyles:lcs (apply .cl colors))
+      (setq :linestyles:lc (car :linestyles:lcs)) )
+    :linestyles:lc))
+
+
+#? (linewidth [<width> <width2> <width3> ...])
+;; Set/query line width(s).
+;;
+;; With no arguments return line width for next plot-line. With
+;; arguments set line widths for the following lines.
+(defun linewidth widths
+  (chk-linestyles)
+  (with-object graph
+    (when widths
+      (setq :linestyles:lws (apply .cl widths))
+      (setq :linestyles:lw (car :linestyles:lws)) )
+    :linestyles:lw))
+
+
+#? (linetype [<type> <type2> <type3> ...])
+;; Set/query line type(s).
+;;
+;; With no arguments return line type for next plot-line. With
+;; arguments set line types for the following lines.
+(defun linetype types
+  (chk-linestyles)
+  (with-object graph
+    (when types
+      (setq :linestyles:lts (apply .cl types))
+      (setq :linestyles:lt (car :linestyles:lts)) )
+    :linestyles:lt))
+
+
+#? (pointtype [<pt> <pt2> <pt3> ...])
+;; Set/query point type(s).
+;;
+;; With no arguments return point type for next plot-line. With
+;; arguments set point types for the following lines.
+(defun pointtype pts
+  (chk-linestyles)
+  (with-object graph
+    (when pts
+      (setq :linestyles:pts (apply .cl pts))
+      (setq :linestyles:pt (car :linestyles:pts)) )
+    :linestyles:pt))
+
+
+#? (pointsize [<ps> <ps2> <ps3> ...])
+;; Set/query point size(s).
+;;
+;; With no arguments return point size for next plot-line. With
+;; arguments set point size for the following lines.
+(defun pointsize pss
+  (chk-linestyles)
+  (with-object graph
+    (when pss
+      (setq :linestyles:pss (apply .cl pss))
+      (setq :linestyles:ps (car :linestyles:pts)) )
+    :linestyles:ps))
+
+) ; namespace gnuplot-other-

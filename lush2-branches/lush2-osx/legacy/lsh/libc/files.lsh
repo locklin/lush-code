@@ -1,0 +1,201 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Unix File Descriptor Handling
+;; Functions in this section provide an interface to the
+;; Unix low-level file descriptor functions, such as 
+;; <open>, <close>, <read>, <write>, <fcntl>, and <ioctl>.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; constants
+
+(defcconst "O_ACCMODE" 3)
+(defcconst "O_RDONLY" 0)
+(defcconst "O_WRONLY" 1)
+(defcconst "O_RDWR" 2)
+(defcconst "O_CREAT" 64)
+(defcconst "O_EXCL" 128)
+(defcconst "O_NOCTTY" 256)
+(defcconst "O_TRUNC" 512)
+(defcconst "O_APPEND" 1024)
+(defcconst "O_NONBLOCK" 2048)
+(defcconst "O_NDELAY" 2048)
+(defcconst "O_SYNC" 4096)
+(defcconst "O_FSYNC" 4096)
+(defcconst "O_ASYNC" 8192)
+(defcconst "O_DIRECT" 16384)
+(defcconst "O_DIRECTORY" 65536)
+(defcconst "O_NOFOLLOW" 131072)
+(defcconst "O_NOATIME" 262144)
+(defcconst "O_DSYNC" 4096)
+(defcconst "O_RSYNC" 4096)
+(defcconst "O_LARGEFILE" 32768)
+(defcconst "F_DUPFD" 0)
+(defcconst "F_GETFD" 1)
+(defcconst "F_SETFD" 2)
+(defcconst "F_GETFL" 3)
+(defcconst "F_SETFL" 4)
+(defcconst "F_GETLK" 5)
+(defcconst "F_SETLK" 6)
+(defcconst "F_SETLKW" 7)
+(defcconst "F_GETLK64" 12)
+(defcconst "F_SETLK64" 13)
+(defcconst "F_SETLKW64" 14)
+(defcconst "F_SETOWN" 8)
+(defcconst "F_GETOWN" 9)
+(defcconst "F_SETSIG" 10)
+(defcconst "F_GETSIG" 11)
+(defcconst "F_SETLEASE" 1024)
+(defcconst "F_GETLEASE" 1025)
+(defcconst "F_NOTIFY" 1026)
+(defcconst "FD_CLOEXEC" 1)
+(defcconst "F_RDLCK" 0)
+(defcconst "F_WRLCK" 1)
+(defcconst "F_UNLCK" 2)
+(defcconst "F_EXLCK" 4)
+(defcconst "F_SHLCK" 8)
+(defcconst "LOCK_SH" 1)
+(defcconst "LOCK_EX" 2)
+(defcconst "LOCK_NB" 4)
+(defcconst "LOCK_UN" 8)
+(defcconst "LOCK_MAND" 32)
+(defcconst "LOCK_READ" 64)
+(defcconst "LOCK_WRITE" 128)
+(defcconst "LOCK_RW" 192)
+(defcconst "DN_ACCESS" 1)
+(defcconst "DN_MODIFY" 2)
+(defcconst "DN_CREATE" 4)
+(defcconst "DN_DELETE" 8)
+(defcconst "DN_RENAME" 16)
+(defcconst "DN_ATTRIB" 32)
+(defcconst "DN_MULTISHOT" -2147483648)
+(defcconst "FAPPEND" 1024)
+(defcconst "FFSYNC" 4096)
+(defcconst "FASYNC" 8192)
+(defcconst "FNONBLOCK" 2048)
+(defcconst "FNDELAY" 2048)
+(defcconst "POSIX_FADV_NORMAL" 0)
+(defcconst "POSIX_FADV_RANDOM" 1)
+(defcconst "POSIX_FADV_SEQUENTIAL" 2)
+(defcconst "POSIX_FADV_WILLNEED" 3)
+(defcconst "POSIX_FADV_DONTNEED" 4)
+(defcconst "POSIX_FADV_NOREUSE" 5)
+(defcconst "SYNC_FILE_RANGE_WAIT_BEFORE" 1)
+(defcconst "SYNC_FILE_RANGE_WRITE" 2)
+(defcconst "SYNC_FILE_RANGE_WAIT_AFTER" 4)
+(defcconst "SPLICE_F_MOVE" 1)
+(defcconst "SPLICE_F_NONBLOCK" 2)
+(defcconst "SPLICE_F_MORE" 4)
+(defcconst "SPLICE_F_GIFT" 8)
+
+
+#? * file-desc
+;; Unix file descriptor
+(defclass file-desc object
+  ((-int-) fd))
+
+#? (new file-desc <filename> <flags>)
+;; Open a new file descriptor object on file <filename>
+;; (a string), with flags <flags>.
+;; The <flags> variable can be any additive combination of 
+;; the constants:
+;; <O_RDONLY>, <O_WRONLY>, <O_RDWR>, <O_ACCMODE>,
+;; <O_CREAT>, <O_EXCL>, <O_NOCTTY>, <O_TRUNC>,
+;; <O_APPEND>, <O_NONBLOCK>, <O_NDELAY>, <O_SYNC>,
+;; <O_FSYNC>, <O_ASYNC>, <O_DIRECT>, <O_DIRECTORY>,
+;; <O_NOFOLLOW>, <O_NOATIME>.
+;; The <fd> slot contains the integer Unix filed descriptor.
+;; The file is automatically closed when the object is destroyed.
+;; Examples:
+;; {{<code>
+;;  (setq f (new file-desc "blah" (+ @O_RDWR @O_NOCTTY @O_NONBLOCK)))
+;;  (setq f ()) ;; close file descriptor
+;; </code>}
+(defmethod file-desc file-desc (s flags)
+  ((-str-) s)
+  ((-int-) flags)
+  (setq fd (fd-open s flags))
+  (when (< fd 0) (error "could not open file"))
+  ())
+
+(defmethod file-desc -destructor ()
+  (when (>= fd 0) (fd-close fd)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? * low-level Unix file descriptor functions
+
+#? (fd-open <s> <flags>)
+;; open file <s> using Unix function <open>.
+;; returns an integer file descriptor, or a negative
+;; number if the operation failed. <flags> 
+;; can be any combination of the constants
+;; <O_RDONLY>, <O_WRONLY>, <O_RDWR>, <O_ACCMODE>,
+;; <O_CREAT>, <O_EXCL>, <O_NOCTTY>, <O_TRUNC>,
+;; <O_APPEND>, <O_NONBLOCK>, <O_NDELAY>, <O_SYNC>,
+;; <O_FSYNC>, <O_ASYNC>, <O_DIRECT>, <O_DIRECTORY>,
+;; <O_NOFOLLOW>, <O_NOATIME>.
+;; example:
+;; {<code>
+;;  (setq fd (open "blah" (+ @O_RDWR @O_NOCTTY @O_NONBLOCK)))
+;; </code>}
+(de fd-open (s flags)
+  ((-str-) s)
+  ((-int-) flags)
+  (to-int #{ open($s, $flags) #}))
+
+#? (fd-close <fd>)
+;; close file descriptor <fd>.
+(de fd-close (fd)
+  ((-int-) fd)
+  (to-int #{ close($fd) #}))
+
+#? (fd-fcntl <fd> <cmd> <arg>)
+;; file control.
+(de fd-fcntl (fd cmd arg)
+  ((-int-) fd cmd arg)
+  (to-int #{ fcntl($fd,$cmd,(long)$arg) #}))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make-sf 
+ ()
+ #{
+   #include <sys/types.h>
+   #include <sys/stat.h>
+   #include <sys/ioctl.h>
+   #include <fcntl.h>
+   #include <unistd.h>
+ #}
+ fd-open
+ fd-close
+ fd-fcntl
+ ;; need to implement this
+ ;; fd-read
+ ;; fd-write
+ ;; fd-ioctl
+)

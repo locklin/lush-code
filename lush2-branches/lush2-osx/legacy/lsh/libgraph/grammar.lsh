@@ -1,0 +1,1479 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Building and Manipulating Grammars
+;; functions for easily building grammars.  The basic
+;; process consists in first building a grammar graph with null transitions
+;; (transitions matching no symbols) and then creating a graph without null
+;; transitions.
+
+(libload "graph.lsh")
+(libload "gsearch.lsh")
+
+
+#? (NULL-PTR s)
+;;
+;; RETURNS: t if s is ().
+;; CREATED: P.Haffner
+
+(dm NULL-PTR(f p)
+  `(let ((c (= (gptr ()) (gptr ,p))))
+       (when c (printf ,(pname p)) 
+             (error "This symbol cannot be (): ") )
+       c))
+
+
+;;; ========================================
+;;; MACRO FOR TYPING LABELS
+;;; ========================================
+
+#? * Macros for Typing Labels
+
+
+#? (LAB-ASCII <str>)
+;; Label for an ASCII character
+
+(dm LAB-ASCII(f str) 
+    (when (<> 1 (len str))
+      (error "one character string expected") )
+    (asc str) )
+
+
+#? (LAB-NULL)
+;; Label for the null transition
+
+(dm LAB-NULL(f) -1)
+
+#? (LAB-MARKER <string>)
+;; Label for marker links (e.g. field markers, junk markers, etc..) 
+;; Argument <str> must be a <2> character string.
+
+(dm LAB-MARKER(f str)
+    (let ((z (len str)) (v 0))
+      (when (<> z 2)
+	(error "2 character string expected") )
+      (for (i 1 z)
+	(setq v (+ (* 256 v) (asc (mid str i 1)))) )
+      v ) )
+
+
+#? (LAB-WILD)
+;; Label for matching any data with a reasonable score
+;; This is a "wildcard" label used for matching meaningful
+;; punctuations.
+
+(dm LAB-WILD(f) (LAB-MARKER "WI"))
+
+
+#? (LAB-JUNK)
+;; Label for matching any data with a quite poor score
+;; This is a "junk" label for matching meaningless
+;; subimages before or after the interesting point.
+
+(dm LAB-JUNK(f) (LAB-MARKER "JU"))
+
+
+
+#? (LAB-SKIP)
+;; Label for matching any character, without calling the recognizer
+;; The default score will be 0
+
+(dm LAB-SKIP(f) (LAB-MARKER "SK"))
+
+
+
+;;; ========================================
+;;; GSET (MULTIPLE SETS OF INTEGERS)
+;;; ========================================
+
+#? * Gset: Multiple Sets of Integers
+
+#? GMultiIntSet
+;; This class represents efficiently a collection of sets of integers.
+;; This is used by the new version of <gram-cleanup>. Extra documentation
+;; will be added later...
+
+(defclass GMultiIntSet object
+  ((-obj- (MemoryPool)) apool)
+  ((-idx1- (-gptr-)) base) )
+
+(defmethod GMultiIntSet GMultiIntSet(nset)
+  ((-int-) nset)
+  (setq apool (new MemoryPool))
+  (setq base (gptr-array nset))
+  () )
+
+(defmethod GMultiIntSet add(nset id)
+  ;; adds integer <id> to set number <nset>
+  ((-int-) nset id)
+  (cheader "struct GSetElt { struct GSetElt *next; int data; };")
+  (let ((pp (base nset)))
+    #{ { struct GSetElt **p = (struct GSetElt **)& $pp;
+         while ((*p) && (*p)->data < $id)
+           p = &(*p)->next;
+         if ( (*p)==0 || (*p)->data!=$id ) {
+           struct GSetElt *n = (struct GSetElt *)C_alloc_C_memorypool($apool, sizeof(struct GSetElt));
+           n->data = $id; n->next = *p; *p = n;
+       } }
+    #}
+    (base nset pp) )
+  id )
+
+(defmethod GMultiIntSet union(nset1 nset2)
+  ;; merge set number <nset2> into set <nset1>
+  ((-int-) nset1 nset2)
+  (let ((p1 (base nset1))
+        (p2 (base nset2)) )
+    #{ { struct GSetElt **pp1 = (struct GSetElt **)& $p1;
+         struct GSetElt *p2 = (struct GSetElt *)$p2;
+         while (p2) {
+           while ((*pp1) && ((*pp1)->data < p2->data))
+             pp1 = &( (*pp1)->next );
+           if (!(*pp1) || ((*pp1)->data!=p2->data)) {
+             struct GSetElt *n = (struct GSetElt *)C_alloc_C_memorypool($apool, sizeof(struct GSetElt));
+             n->data = p2->data; 
+             n->next = *pp1; 
+             *pp1 = n;
+           }
+           p2 = p2->next;
+       } }
+    #} 
+    (base nset1 p1) )
+  () )
+  
+(defmethod GMultiIntSet check(nset id)
+  ;; checks if integer <id> belongs to set number <nset>
+  ((-int-) nset id)
+  (let ((ans t))
+    #{ { struct GSetElt *p = $(base nset);
+         while (p && p->data<$id)
+           p = p->next;
+         $ans = (p && p->data==$id);
+       }
+    #}
+    ans ) )
+
+(defmethod GMultiIntSet compare(nset1 nset2)
+  ;; compare sets number <nset1> and <nset2>
+  ((-int-) nset1 nset2)
+  (let ((ans t))
+    #{ { struct GSetElt *p1 = (struct GSetElt *)$(base nset1), 
+                        *p2 = (struct GSetElt *)$(base nset2);
+         while (p1 && p2 && p1->data==p2->data) {
+           p1 = p1->next; p2 = p2->next;
+         }
+         $ans = !(p1 || p2);
+       }
+    #}
+    ans ) )
+
+(de gsetelt-peek-data(p)
+    ((-gptr- "struct GSetElt *") p)
+    (int #{ $p->data #}) )
+
+(de gsetelt-peek-next(p)
+    ((-gptr- "struct GSetElt *") p)
+    (gptr #{ $p->next #}) )
+
+(dm all-miset(fn (var set nset) . prog)
+    ;; iterate over set <nset> in multiset <set>.
+    (ifcompiled
+     `(let ((_tmp (:,set:base ,nset))
+            (,var (int 0)))
+        ((-gptr- "struct GSetElt *") _tmp)
+        (while _tmp
+          (cinline "(%s)=((struct GSetElt *)%s)->data;" ,var _tmp)
+          (cinline "(%s)=((struct GSetElt *)%s)->next;" _tmp _tmp)
+          ,@prog ) )
+     `(let ((_tmp (:,set:base ,nset))
+            (,var (int 0)))
+        ((-gptr- "struct GSetElt *") _tmp)
+        (while _tmp
+          (setq ,var (gsetelt-peek-data _tmp)
+                _tmp (gsetelt-peek-next _tmp) )
+          ,@prog) ) ) )
+
+(defmethod GMultiIntSet pretty()
+  (print this)
+  (for (i 0 (- (rank base 0) 1))
+    (printf ";; %d: {" i)
+    (all-miset (n this i)
+               (printf " %d" n) )
+    (printf " }\n") ) )
+            
+
+
+
+
+
+;;; ========================================
+;;; EQUIVALENT GRAPH WITHOUT NULL TRANSITIONS
+;;; ========================================
+
+#? * Grammar Cleanup and Optimization
+
+#? (gram-cleanup <graph>)
+;; Returns a new graph containing no null transition
+;; and implementing the same grammar than <graph>.
+
+
+(de gram-cleanup-boundary(node bstatus miset)
+    ((-obj- (GNode)) node)
+    ((-idx1- (-int-)) bstatus)
+    ((-obj- (GMultiIntSet)) miset)
+    (when (= (bstatus :node:id) 0)
+      (bstatus :node:id 1)
+      (let ((ok 0))
+	(all-downlink (link node)
+	  (if (<> :link:label (LAB-NULL))
+	      (setq ok 1)
+	    (let ((downnode :link:downnode))
+	      #{ C_gram_cleanup_boundary($downnode, $bstatus, $miset); #}
+	      (==> miset union :node:id :downnode:id) ) ) )
+	(when (<> ok 0)
+	  (==> miset add :node:id :node:id) ) ) )
+    :node:id )
+
+(de gram-cleanup-horse(graph)
+    ((-obj- (GGraph)) graph)
+    (let* ((n :graph:nnodes)
+	   (miset   (new GMultiIntSet n))
+	   (bstatus (int-array n))
+	   (onodes  (gptr-array n))
+	   (nnodes  (gptr-array n))
+	   (ngraph  (new GGraph)) 
+	   (nk      (int 0)) )
+      ;; Fill the e-boundary table
+      (==> miset add :graph:endnode:id :graph:endnode:id)
+      (all-nodes (node graph)
+	(onodes :node:id (gptr node))
+	(gram-cleanup-boundary node bstatus miset) )
+      (when (==> miset check :graph:startnode:id :graph:endnode:id)
+	(error "This grammar allows a null path between start and end nodes") )
+      ;; Identify common boundary sets
+      (for (i 0 (1- n))
+	(let ((j 0))
+	  ((-int-) i j)
+	  (while (< j i)
+	    (if (not (==> miset compare i j))
+		(incr j)
+	      (bstatus i (bstatus j))
+	      (setq j n) ) )
+	  (when (< j n)
+	    (bstatus i nk)
+	    (incr nk) ) ) )
+      ;; Create nodes in new graph (care for startnode and endnode)
+      (for (k 0 (1- nk))
+	((-int-) k)
+	(nnodes k (gptr (if (= k (bstatus :graph:startnode:id))
+			    :ngraph:startnode
+			  (if (= k (bstatus :graph:endnode:id))
+			      :ngraph:endnode
+			    (==> ngraph newnode (gptr ())))) ) ) )
+      ;; Create links in new graphs
+      (let ((k -1))
+	((-int-) k)
+	(for (i 0 (1- n))
+	  (when (> (bstatus i) k)
+	    (setq k (bstatus i))
+	    (all-miset (m miset i)
+              (all-downlink (link (obj GNode (onodes m)))
+                (when (<> :link:label (LAB-NULL))
+                  (let* ((downi :link:downnode:id)
+                         (downk (bstatus downi)) )
+                    (==> ngraph linkm 
+                         (obj GNode (nnodes k)) (obj GNode (nnodes downk))
+                         :link:cost :link:label :link:meaning :link:data )
+                    (when (and (==> miset check downi :graph:endnode:id)
+                               (<> downk (bstatus :graph:endnode:id)) )
+                      (==> ngraph linkm
+                           (obj GNode (nnodes k))
+                           :ngraph:endnode :link:cost 
+                           :link:label :link:meaning :link:data ) ) ) ) ) ) ) ) )
+      ;; Copy removes unneedded links & nodes
+      (let ((mgraph (new GGraph)))
+	(g-copy ngraph mgraph :mgraph:startnode :mgraph:endnode) 
+	mgraph ) ) )
+
+(de gram-cleanup(graph)
+    ((-obj- (GGraph)) graph)
+    (let ((clean t))
+      (all-nodes (node graph)
+        (when clean
+          (all-downlink (link node)
+            (when (= :link:label (LAB-NULL))
+              (setq clean ()) ) ) ) )
+      (if (not clean)
+          (setq graph (gram-cleanup-horse graph)) ) )
+    graph )
+
+
+
+
+
+
+
+;;; ========================================
+;;; FUNCTIONS FOR BUILDING GRAMMARS
+;;; ========================================
+
+#? * Functions for Building Grammars
+
+#? gram-or, gram-cat, gram-some, gram-many, gram-maybe
+;;
+;; These functions allow for easily building grammars from
+;; regular expression style operators.
+;;
+;; All these function take an arbitrary number of arguments
+;; which may be integer labels (using LAB macros), one character strings
+;; or complete grammars.
+;;.IP
+;; <gram-or> returns a grammar which matches any of the alternatives
+;; represented by the labels or the grammars.
+;;.IP
+;; <gram-cat> returns a grammar which matches the concatenation
+;; of the strings of labels represented by the labels or the grammars.
+;;.IP
+;; <gram-some> returns a grammar which matches one or more occurence of the
+;; concatenation of the strings of labels represented by its arguments.
+;;.IP
+;; <gram-many> returns a grammar which matches zero or more occurence of the
+;; concatenation of the strings of labels represented by its arguments.
+;;.IP
+;; <gram-maybe> returns a grammar which matches zero or one occurence of the
+;; concatenation of the strings of labels represented by its arguments.
+;;.PP
+;; The resulting grammar may contain null transitions whose label
+;; is provided by macro <LAB-NULL>. These transitions must be removed
+;; using function <gram-cleanup>.
+;;.VP 
+;;
+;; (setq gr-digstring 
+;;    (gram-some (gram-or (LAB-ASCII "0") 
+;;	                  (LAB-ASCII "1") )))
+;; 
+;; (setq gr-number 
+;;    (gram-cat gr-digstring 
+;;	        (gram-maybe  "." gr-digstring) ) )
+;; 
+;; (setq grammar-for-numbers
+;;    (gram-cleanup gr-number) )
+
+
+(de gram-or args
+    (let* ((gram (new GGraph))
+	   (gs :gram:startnode)
+	   (ge :gram:endnode) )
+      (when (not args)
+	(error 'gram-cat "Nothing to alternate" args) )
+      (each ((arg args))
+        (cond 
+         ((numberp arg)
+          (==> gram linkm gs ge 0 arg (LAB-NULL) (gptr ())) )
+         ((and (stringp arg) (= 1 (len arg)))
+          (==> gram link gs ge 0 (asc arg) (gptr ())) )
+         ((isa arg GGraph)
+          (let ((gn gs))
+            (when (> :arg:startnode:uplink:size 0)
+              (setq gn (==> gram newnode (gptr ())))
+              (==> gram link gs gn 0 (LAB-NULL) (gptr ())) )
+            (g-copy arg gram gn ge) ) )
+         (t
+          (error 'gram-or "neither a label nor a graph" arg) ) ) )
+      gram ) )
+
+(de gram-cat args
+    (let* ((gram (new GGraph))
+	   (gs :gram:startnode)
+	   (ge ()) )
+      (when (not args)
+	(error 'gram-cat "Nothing to catenate" args) )
+      (while args
+	(let ((arg (car args)))
+	  (if (setq args (cdr args))
+	      (setq ge (==> gram newnode (gptr ())))
+	    (setq ge :gram:endnode) )
+	  (cond 
+	   ((numberp arg)
+	    (==> gram linkm gs ge 0 arg (LAB-NULL) (gptr ())) )
+	   ((and (stringp arg) (= 1 (len arg)))
+	    (==> gram link gs ge 0 (asc arg) (gptr ())) )
+	   ((isa arg GGraph)
+	    (g-copy arg gram gs ge) )
+	   (t
+	    (error 'gram-cat "neither a label nor a graph" arg) ) ) )
+	(setq gs ge)
+	(setq ge ()) )
+      gram ) )
+
+(de gram-maybe args
+    (let ((gram (apply gram-cat args)))
+      (==> gram link :gram:startnode :gram:endnode 0 (LAB-NULL) (gptr ()))
+      gram ) )
+
+(de gram-some args
+    (let* ((gram (apply gram-cat args))
+	   (ngram (new GGraph))
+	   (nd (==> ngram newnode (gptr ()))) )
+      (g-copy gram ngram :ngram:startnode :ngram:endnode)
+      (all-uplink (link :ngram:endnode)
+        (==> ngram linkm :link:upnode :ngram:startnode
+             :link:cost :link:label :link:meaning :link:data ) )
+      ngram ) )
+
+(de gram-many args
+    (let* ((gram (apply gram-cat args))
+	   (ngram (new GGraph))
+	   (nd (==> ngram newnode (gptr ()))) )
+      (g-copy gram ngram nd :ngram:startnode)
+      (==> ngram link nd :ngram:endnode 0 (LAB-NULL) (gptr ()))
+      (==> ngram link :ngram:startnode nd 0 (LAB-NULL) (gptr ()))
+      ngram ) )
+
+
+
+#? gram2-or, gram2-some
+;; These are optimizations of <gram-or> and <gram-some>
+;; devised by Patrick. Do not use before inquiring PH about
+;; limitations and potential headaches.
+
+(de gram2-some args
+    (let* ((gram (apply gram-cat args))
+           (ngram (new GGraph)))
+      (g-copy gram ngram :ngram:startnode :ngram:endnode)
+      (g-copy gram ngram :ngram:startnode :ngram:startnode)
+      ngram ) )
+
+(de gram2-or args
+    (let* ((gram (new GGraph))
+	   (gs :gram:startnode)
+	   (ge :gram:endnode) )
+      (when (not args)
+	(error 'gram-cat "Nothing to alternate" args) )
+      (each ((arg args))
+        (cond 
+         ((and (stringp arg) (= 1 (len arg)))
+            (==> gram link gs ge 0 (asc arg) (gptr ())) )
+         ((isa arg GGraph)
+          (g-copy arg gram gs ge) )
+         (t
+          (error 'gram2-or "neither a label nor a graph" arg) ) ) )
+      gram ) )
+
+
+;;; ========================================
+;;; PENALTIES
+;;; ========================================
+
+
+#? * Setting the Penalties/Cost of Edges
+
+#? (gram-penalty <cost> <grammar>)
+;; Sets a cost penalty to all paths traversing a particular grammar.
+;; The cost will be added to the costs of all links arrving on the endnode.
+;; We assume that grammar <grammar> contains no null paths (i.e. paths
+;; between the startnode and the endnode with null transitions only).
+
+(de gram-penalty-sub(cost grammar)
+    ((-flt-) cost)
+    ((-obj- (GGraph)) grammar)
+    (all-uplink(link :grammar:endnode)
+      (setq :link:cost (+ :link:cost cost)) )
+    grammar )
+
+(de gram-penalty(cost . args)
+    (let ((grammar (gram-cleanup (apply gram-cat args))))
+      (gram-penalty-sub cost grammar)
+      grammar ) )
+
+
+
+;;; ========================================
+;;; STRING CONVERSIONS
+;;; ========================================
+
+#? * Converting Grammar Paths to Strings
+
+#? (gram-meaning <meaning> <grammar>)
+;; Override the meaning fields in grammar <grammar>.  Only one link in every
+;; path in grammar <grammar> will have a meaning equal to <meaning>. All other
+;; links will have a null meaning.
+;;
+;; Note: The resulting grammar may be cleaned up using <gram-cleanup>.
+
+(de gram-meaning-sub(meaning grammar)
+    ((-int-) meaning)
+    ((-obj- (GGraph)) grammar)
+    (all-nodes (node grammar)
+      (all-downlink (link node)
+	(setq :link:meaning (LAB-NULL)) ) )
+    (all-uplink(link :grammar:endnode)
+      (setq :link:meaning meaning) ) 
+    grammar )
+
+
+(de gram-meaning-old(meaning . args)
+    ;; prepare meaning
+    (cond
+     ((not meaning) 
+      (setq meaning (LAB-NULL)))
+     ((stringp meaning) 
+      (when (<> 1 (len meaning))
+	(error "One character string expected") ) 
+      (setq meaning (asc meaning)) )
+     ((numberp meaning)
+      (setq meaning (int meaning)) )
+     (t
+      (error 'gram-meaning "Illegal meaning" meaning) ) )
+    ;; prepare grammar
+    (let ((grammar (apply gram-cat args)))
+      (when (<> meaning (LAB-NULL))
+	(setq grammar (gram-cleanup grammar)) )
+      ;; patch meaning
+      (gram-meaning-sub meaning grammar)
+      grammar ) )
+
+
+
+
+
+
+
+;;; ========================================
+;;; STATIC GRAMMAR
+;;; ========================================
+
+#? * Conversion from Regular Grammar to Matrix Representation
+
+#? (grammar-to-matrix <mat>)
+;; This function encodes a grammar into a matrix.
+
+(de grammar-to-matrix(grammar)
+    ((-obj- (GGraph)) grammar)
+    ;; Count links
+    (let ((lcount 1))
+      (all-nodes (node grammar)
+	(all-downlink (link node)
+	  (incr lcount) ) )
+      (let ((mat (float-array lcount 5)))
+	;; Save misc info
+	(mat 0 0 :grammar:startnode:id)
+	(mat 0 1 :grammar:endnode:id)	
+	(mat 0 2 :grammar:nnodes)
+	;; Save link info
+	(setq lcount 1)
+	(all-nodes (node grammar)
+	  (all-downlink (link node)
+	    (mat lcount 0 :link:upnode:id)
+	    (mat lcount 1 :link:downnode:id)
+	    (mat lcount 2 :link:cost)
+	    (mat lcount 3 :link:label)
+	    (mat lcount 4 :link:meaning)
+	    (incr lcount) ) )
+	;; Return matrix
+	mat ) ) )
+
+
+#? (matrix-to-grammar <mat>)
+;; This function decodes a grammar encoded with <grammar-to-matrix>.
+
+(de matrix-to-grammar(mat)
+    ((-idx2- (-flt-)) mat)
+    (let* ((grammar (new GGraph))
+	   (nnodes  (mat 0 2))
+	   (nnodm   (gptr-array nnodes)) )
+      (nnodm (mat 0 0) (gptr :grammar:startnode))
+      (nnodm (mat 0 1) (gptr :grammar:endnode))
+      ;; Build the nodes
+      (for (i 0 (1- nnodes))
+	(when (not (nnodm i))
+	  (nnodm i (gptr (==> grammar newnode (gptr ())))) ) )
+      ;; Build the links
+      (for (i 1 (1- (idx-dim mat 0)))
+	(let ((n1 (obj GNode (nnodm (mat i 0))))
+	      (n2 (obj GNode (nnodm (mat i 1)))) )
+	  (==> grammar linkm n1 n2 
+	       (mat i 2) 
+	       (int (mat i 3)) (int (mat i 4)) 
+	       (gptr ())) ) )
+      ;; Return newly created grammar
+      grammar ) )
+	
+
+#? (gram-static <lispgrammar>)
+;; Use this macro in compiled code to refer to a grammar defined by a lisp
+;; expression <lispgrammar> evaluated at compile time. This macro expand into
+;; a call to <matrix-to-grammar> on a static matrix.
+
+(dm gram-static(f lname)
+    (list 'matrix-to-grammar (grammar-to-matrix (eval lname))) )
+
+
+
+
+
+
+;;; ========================================
+;;; STRING CONVERSIONS
+;;; ========================================
+
+#? * Converting Strings to Label Sequences
+
+#? (string-to-labels <s>)
+;; Returns a matrix of integers containing the ascii codes
+;; of string <s>.
+
+(de string-to-labels(s)
+    ((-str-) s)
+    (let* ((n (len s))
+           (im (int-array (max n 1))))
+      (when (<> n 0)
+        (for (i 1 n)
+          ((-int-) i)
+          (im (- i 1) (asc (mid s i 1))) ))
+      im ) )
+
+
+#? (labels-to-string <im>)
+;; Returns a string made with characters whose ascii codes are in matrix <im>.
+;; Illegal ascii codes are marked with string "[?]".
+
+(de labels-to-string(im)
+    ((-idx1- (-int-)) im)
+    (let* ((n (idx-dim im 0))
+	   (s "") )
+      (for (i 0 (1- n))
+	(let ((x (im i)))
+	  (if (and (>= x (LAB-ASCII " ")) (<= x (LAB-ASCII "~")))
+	      (setq s (concat s (chr x)))
+	    (setq s (concat s "[?]")) ) ) )
+      s ) )
+
+
+
+
+
+
+;;; ========================================
+;;; TESTING A GRAMMAR
+;;; ========================================
+
+#? * Testing Label Sequences Against a Grammar
+
+#? (gram-match <grammar> <labels>)
+;; Returns <t> if labels in idx1 <labels> match grammar <grammar>.
+
+(de gram-match-sub(gram node im ix)
+    ((-obj- (GGraph)) gram)
+    ((-obj- (GNode)) node)    
+    ((-idx1- (-int-)) im)
+    ((-int-) ix)
+    
+    (if (>= ix (idx-dim im 0))
+	;; If end of string is reached
+	(<> node :gram:endnode) 
+      ;; End of string not reached
+      ;;DBG;; (printf "%d %d\n" ix (im ix))
+      (let ((again t))
+	(all-downlink (link node)
+	  (when (and again (= (im ix) :link:label))
+	    (let ((downnode :link:downnode))
+	      #{ $again = C_gram_match_sub($gram,$downnode,$im,$ix+1);
+	      #} ) ) )
+	again ) ) )
+	      
+(de gram-match(gram im)
+    ((-obj- (GGraph)) gram)
+    ((-idx1- (-int-)) im)
+    (not (gram-match-sub gram :gram:startnode im 0)) )
+
+
+
+
+
+;;; ========================================
+;;; HANDLING TRIVGRAPHS
+;;; ========================================
+
+#? * Handling Trivgraphs
+
+#? (count-labels <graphin>)
+;; count the number of links with labels in a trivial graph
+
+(de count-labels(graphin)
+    ((-obj- (GGraph)) graphin)
+
+    (if (NULL-PTR graphin)
+        0
+      (let ((node :graphin:startnode)
+            (ok t)
+            (k 0) )
+        (while (and ok (<> node :graphin:endnode))
+          (setq ok ())
+          (all-downlink (link node)
+            (if ok (error "Not a trivial graph"))
+            (setq ok t)
+            (setq node :link:downnode)
+            (setq k (1+ k)) ) )
+        k)))
+
+
+#? (count-meanings <graphin>)
+;; count the number of links with meanings in a trivial graph
+
+(de count-meanings(graphin)
+    ((-obj- (GGraph)) graphin)
+
+    (if (NULL-PTR graphin)
+        0
+      (let ((node :graphin:startnode)
+            (ok t)
+            (k 0) )
+        (while (and ok (<> node :graphin:endnode))
+          (setq ok ())
+          (all-downlink (link node)
+            (if ok (error "Not a trivial graph"))
+            (setq ok t)
+            (setq node :link:downnode)
+            (when (<> :link:meaning (LAB-NULL))
+              (setq k (1+ k)) ) ))
+        k)))
+
+
+
+#? (trivgraph-to-labels <graphin>)
+;; This function returns an integer vector containing value of slots <label>
+;; for each link in the single path of trivial graph <graphin>.  This function
+;; returns a matrix with a single element equal to -1 when the graph contains
+;; no path.
+
+(de trivgraph-to-labels(graphin)
+    ((-obj- (GGraph)) graphin)
+
+    (if (NULL-PTR graphin)
+        (int-array 1)
+    (let ((labout (int-array :graphin:nnodes)))
+      ;; Gather labels
+      (let ((node :graphin:startnode)
+	    (ok t)
+	    (k 0) )
+	(while (and ok (<> node :graphin:endnode))
+	  (setq ok ())
+	  (all-downlink (link node)
+	    (if ok (error "Not a trivial graph"))
+	    (setq ok t)
+	    (setq node :link:downnode)
+	    (labout k :link:label)
+	    (setq k (1+ k)) ) )
+	;; Adjust answer
+	(if (and ok (> k 0))
+	    (idx-set-dim labout 0 k) 
+	  (idx-set-dim labout 0 1)
+	  (labout 0 0) )
+	labout ) ) ))
+
+
+
+
+#? (trivgraph-to-meanings <graphin>)
+;; This function returns an integer vector containing value of slots <meaning>
+;; for each link in the single path of trivial graph <graphin>.  Links whose
+;; slot <meaning> contains (LAB-NULL) are discarded. This function returns a
+;; matrix with a single element equal to -1 when the graph contains no
+;; meaningful path.
+
+
+(de trivgraph-to-meanings(graphin)
+    ((-obj- (GGraph)) graphin)
+
+    (if (NULL-PTR graphin)
+        (int-array 1)
+    (let ((labout (int-array :graphin:nnodes)))
+      ;; Gather meaning
+      (let ((node :graphin:startnode)
+	    (ok t)
+	    (k 0) )
+	(while (and ok (<> node :graphin:endnode))
+	  (setq ok ())
+	  (all-downlink (link node)
+	    (if ok (error "Not a trivial graph"))
+	    (setq ok t)
+	    (setq node :link:downnode)
+	    (when (<> :link:meaning (LAB-NULL))
+	      (labout k :link:meaning)
+	      (incr k) ) ) )
+	;; Adjust answer
+	(if (and ok (> k 0))
+	    (idx-set-dim labout 0 k) 
+	  (idx-set-dim labout 0 1)
+	  (labout 0 0) )
+	labout ) ) ))
+
+
+#? (trivgraph-to-data <graphin>)
+;; This function returns a gptr vector containing value of slots <data>
+;; for each link in the single path of trivial graph <graphin>.
+
+(de trivgraph-to-data(graphin)
+    ((-obj- (GGraph)) graphin)
+    (if (NULL-PTR graphin)
+        (gptr-array 1)
+    (let ((labout (gptr-array :graphin:nnodes)))
+      ;; Gather 
+      (let ((node :graphin:startnode)
+	    (ok t)
+	    (k 0) )
+	(while (and ok (<> node :graphin:endnode))
+	  (setq ok ())
+	  (all-downlink (link node)
+	    (if ok (error "Not a trivial graph"))
+	    (setq ok t)
+	    (setq node :link:downnode)
+	    (labout k :link:data)
+	    (incr k) ) )
+	;; Adjust answer
+	(if (and ok (> k 0))
+	    (idx-set-dim labout 0 k) 
+	  (idx-set-dim labout 0 1)
+	  (labout 0 (gptr ())) )
+	labout ) ) ))
+
+
+
+
+
+
+
+#? (trivgraph-to-costs <graphin> <scores>)
+;;.VP
+;; ((-obj- (GGraph)) graphin):
+;; ((-idx1- (-flt-)) scores):
+;;
+;; CREATED: P.Haffner
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: This function just copies the scores of the meaningful links
+;; of trivial graph <graph> into matrix <scores>. It does not apply the
+;; squashing function applied by <trivgraph-to-scores>.
+
+(de trivgraph-to-costs(graphin costs)
+    ((-obj- (GGraph)) graphin)
+    ((-idx1- (-flt-)) costs)
+
+    (if (or (NULL-PTR graphin) (NULL-PTR costs))
+        costs
+    ;; Gather meaning
+    (let ((node :graphin:startnode)
+	  (ok t)
+	  (k 0) )
+      (while (and ok (<> node :graphin:endnode))
+	(setq ok ())
+	(all-downlink (link node)
+	  (if ok (error "Not a trivial graph"))
+	  (setq ok t)
+	  (setq node :link:downnode)
+	  (costs k :link:cost)
+	  (incr k) ) ) 
+    costs )))
+
+
+
+#? (trivgraph-to-meaningful-costs <graph> <scores>)
+;; This function just copies the scores of the meaningful links
+;; of trivial graph <graph> into matrix <scores>. It does not
+;; apply the squashing function applied by <trivgraph-to-meaningful-costs>.
+
+(de trivgraph-to-meaningful-costs(graphin costs)
+    ((-obj- (GGraph)) graphin)
+    ((-idx1- (-flt-)) costs)
+    ;; Gather meaning
+    (if (or (NULL-PTR graphin) (NULL-PTR costs))
+        costs
+    (let ((node :graphin:startnode)
+	  (ok t)
+	  (k 0) )
+      (while (and ok (<> node :graphin:endnode))
+	(setq ok ())
+	(all-downlink (link node)
+	  (if ok (error "Not a trivial graph"))
+	  (setq ok t)
+	  (setq node :link:downnode)
+	  (when (<> :link:meaning (LAB-NULL))
+        (costs k :link:cost)
+	    (incr k) ) ) ) 
+    costs )))
+
+
+#? (trivgraph-to-scores <graph> <scores>)
+;; This function copies the squashed scores of the links
+;; of trivial graph <graph> into matrix <scores>.
+
+(de trivgraph-to-scores(graphin scores)
+    ((-obj- (GGraph)) graphin)
+    ((-idx1- (-flt-)) scores)
+    ;; Gather meaning
+    (if (or (NULL-PTR graphin) (NULL-PTR scores))
+        scores
+    (let ((node :graphin:startnode)
+	  (ok t)
+	  (k 0) )
+      (while (and ok (<> node :graphin:endnode))
+	(setq ok ())
+	(all-downlink (link node)
+	  (if ok (error "Not a trivial graph"))
+	  (setq ok t)
+	  (setq node :link:downnode)
+	  (scores k (- 0.5 (2/ (tanh :link:cost))))
+	  (incr k) ) ) 
+    scores )))
+
+
+#? (trivgraph-to-meaningful-scores <graph> <scores>)
+;; This function copies the squashed scores of the meaningful links
+;; of trivial graph <graph> into matrix <scores>.
+
+(de trivgraph-to-meaningful-scores(graphin scores)
+    ((-obj- (GGraph)) graphin)
+    ((-idx1- (-flt-)) scores)
+    ;; Gather meaning
+    (if (or (NULL-PTR graphin) (NULL-PTR scores))
+        scores
+    (let ((node :graphin:startnode)
+	  (ok t)
+	  (k 0) )
+      (while (and ok (<> node :graphin:endnode))
+	(setq ok ())
+	(all-downlink (link node)
+	  (if ok (error "Not a trivial graph"))
+	  (setq ok t)
+	  (setq node :link:downnode)
+	  (when (<> :link:meaning (LAB-NULL))
+	    (scores k (- 0.5 (2/ (tanh :link:cost))))
+	    (incr k) ) ) ) 
+    scores )))
+
+
+
+
+
+;;; ========================================
+;;; RESTRICTING A GRAPH TO A SPECIFIC MEANING
+;;; ========================================
+
+#? * Selecting Path that Produce a Particular Label Sequence
+
+#? (g-restrict-to-meanings <graph> <meanings>)
+;; Creates a new graph which implements the subset of paths of graph <graph>
+;; whose links with non null meanings implement the meanings given in the
+;; integer matrix <meaning>.  The links of the new graph have the same cost,
+;; label, meaning and data than the original links.
+;;
+;; (This code is derived from <g-compose>)
+
+(de g-restrict-to-meanings(graph1 meaning)
+    ((-obj- (GGraph)) graph1)
+    ((-idx1- (-int-)) meaning)
+    
+    (if (or (NULL-PTR graph1) (NULL-PTR meaning))
+        (new GGraph)
+    (let ((ngraph (new GGraph))
+	  (cgraph (new GGraph))
+	  (nnodm (gptr-array :graph1:nnodes (1+ (idx-dim meaning 0))))
+	  (nnodf (byte-array :graph1:nnodes (1+ (idx-dim meaning 0)))) )
+      ;; Initialize node tables
+      (nnodm :graph1:startnode:id 0 (gptr :ngraph:startnode))
+      (nnodm :graph1:endnode:id (idx-dim meaning 0) (gptr :ngraph:endnode))
+      ;; Call recursive subroutine
+      (g-restrict-msub :graph1:startnode 0 ngraph meaning nnodm nnodf ())
+      ;; Return clean copy of restricted graph
+      (g-copy ngraph cgraph :cgraph:startnode :cgraph:endnode) )))
+
+#? (g-restrict-to-meanings-2 <graph> <labels>)
+;;.SEE (g-restrict-to-meanings <graph> <labels>)
+;; This function is similat to <g-restrict-to-meanings>.
+;; However the data fields of the restricted graph point to 
+;; the original link instead of to the data pointed to by the original link.
+
+(de g-restrict-to-meanings-2(graph1 meaning)
+    ((-obj- (GGraph)) graph1)
+    ((-idx1- (-int-)) meaning)
+    
+    (if (or (NULL-PTR graph1) (NULL-PTR meaning))
+        (new GGraph)
+    (let ((ngraph (new GGraph))
+	  (cgraph (new GGraph))
+	  (nnodm (gptr-array :graph1:nnodes (1+ (idx-dim meaning 0))))
+	  (nnodf (byte-array :graph1:nnodes (1+ (idx-dim meaning 0)))) )
+      ;; Initialize node tables
+      (nnodm :graph1:startnode:id 0 (gptr :ngraph:startnode))
+      (nnodm :graph1:endnode:id (idx-dim meaning 0) (gptr :ngraph:endnode))
+      ;; Call recursive subroutine
+      (g-restrict-msub :graph1:startnode 0 ngraph meaning nnodm nnodf t)
+      ;; Return clean copy of restricted graph
+      (g-copy ngraph cgraph :cgraph:startnode :cgraph:endnode) )))
+
+(de g-restrict-msub(node1 idm ngraph meaning nnodm nnodf flag)
+    ((-obj- (GNode)) node1)
+    ((-int-) idm)
+    ((-obj- (GGraph)) ngraph)
+    ((-idx1- (-int-)) meaning)
+    ((-idx2- (-gptr-)) nnodm)
+    ((-idx2- (-byte-)) nnodf)
+    ((-bool-) flag)
+
+    ;;DBG;; (printf "(%d %d)\n" :node1:id idm)
+    (let ((reachable 0) 
+	  (meancode 0)
+	  (again t) )
+      ((-int-) reachable)
+      ((-int-) meancode)
+      
+      (if (< idm (idx-dim meaning 0))
+	  (setq meancode (meaning idm)) 
+	(setq meancode (LAB-NULL)) )
+      ;; This loop takes meancode value (meaning idm) then (LAB-NULL)
+      (while again
+	;; Loop on all links
+	(all-downlink (link1 node1)
+	  (when (= :link1:meaning meancode)
+	    (let* ((tnode1 :link1:downnode)
+		   (tidm (if (= meancode (LAB-NULL)) idm (1+ idm)))
+		   (gnd (nnodm :tnode1:id tidm)) 
+		   (gndf (nnodf :tnode1:id tidm)) )
+	      ((-int-) tidm)
+	      ;;DBG;; (printf "(%d %d) -> (%d %d) [%d,%d] ?\n" 
+	      ;;DBG;;         :node1:id idm :tnode1:id tidm
+	      ;;DBG;;         (int (if gnd 1 0)) (int gndf) )
+	      (when (= 2 gndf) 
+		;; Create node when a cycle is detected. 
+		(when (not gnd)
+		  (setq gnd (gptr (==> ngraph newnode (gptr ())))) 
+		  (nnodm :tnode1:id tidm gnd) )
+		(nnodf :tnode1:id tidm 0) )
+	      (when (and (not gnd) (= gndf 0))
+		;; This node does not exist yet...
+		(nnodf :tnode1:id tidm 2)
+		;; Recursive call (no temporaries)
+		(if (= 0 (int #{ C_g_restrict_msub($tnode1,$tidm,$ngraph,
+						  $meaning,$nnodm,$nnodf,$flag ) #}))
+		    (nnodf :tnode1:id tidm 1)
+		  (nnodf :tnode1:id tidm 0)
+		  (setq gnd (nnodm :tnode1:id tidm)) ) )
+	      ;; If this node is worth creating
+	      (when gnd
+		(let ((gnu (nnodm :node1:id idm)))
+		  (when (not gnu)
+		    (setq gnu (gptr (==> ngraph newnode (gptr ()))))
+		    (nnodm :node1:id idm gnu) )
+		  (let ((nu (obj GNode gnu))
+			(nd (obj Gnode gnd)) )
+		    ;;DBG;; (printf "(%d %d) -> (%d %d) [%d->%d]\n" 
+		    ;;DBG;;         :node1:id idm :tnode1:id tidm :nu:id :nd:id )
+		    (==> ngraph linkm nu nd 
+			 :link1:cost :link1:label :link1:meaning 
+                         (if flag (gptr link1) :link1:data))
+		    (setq reachable 1) ) ) ) ) ) )
+	;; Take next meancode
+	(if (<> meancode (LAB-NULL))
+	    (setq meancode (LAB-NULL))
+	  (setq again ()) ) ) 
+      ;;DBG;; (printf "(%d %d) returns %d\n" :node1:id idm reachable)
+      reachable ) )
+
+
+
+
+
+
+
+
+#? (g-restrict-to-labels <graph> <labels>)
+;; Creates a new graph which implements the subset of paths of graph <graph>
+;; whose links implement the labels given in the integer matrix <meaning>.
+;; The links of the new graph have the same cost, label, meaning and data than
+;; the original links.
+;;
+;; (This code is derived from <g-compose>)
+
+(de g-restrict-to-labels(graph1 label)
+    ((-obj- (GGraph)) graph1)
+    ((-idx1- (-int-)) label)
+    (if (or (NULL-PTR graph1) (NULL-PTR label))
+        (new GGraph)
+      (let ((ngraph (new GGraph))
+            (nnodm (gptr-array :graph1:nnodes (1+ (idx-dim label 0))))
+            (nnodf (byte-array :graph1:nnodes (1+ (idx-dim label 0)))) )
+        ;; Initialize node tables
+      (nnodm :graph1:startnode:id 0 (gptr :ngraph:startnode))
+      (nnodm :graph1:endnode:id (idx-dim label 0) (gptr :ngraph:endnode))
+      ;; Call recursive subroutine
+      (g-restrict-lsub :graph1:startnode 0 ngraph label nnodm nnodf ())
+      ;; Return restricted graph
+      ngraph ) ))
+
+#? (g-restrict-to-labels-2 <graph> <labels>)
+;;.SEE (g-restrict-to-labels <graph> <labels>)
+;; This function is similat to <g-restrict-to-labels>.
+;; However the data fields of the restricted graph point to 
+;; the original link instead of to the data pointed to by the original link.
+
+(de g-restrict-to-labels-2(graph1 label)
+    ((-obj- (GGraph)) graph1)
+    ((-idx1- (-int-)) label)
+    (if (or (NULL-PTR graph1) (NULL-PTR label))
+        (new GGraph)
+      (let ((ngraph (new GGraph))
+            (nnodm (gptr-array :graph1:nnodes (1+ (idx-dim label 0))))
+            (nnodf (byte-array :graph1:nnodes (1+ (idx-dim label 0)))) )
+        ;; Initialize node tables
+      (nnodm :graph1:startnode:id 0 (gptr :ngraph:startnode))
+      (nnodm :graph1:endnode:id (idx-dim label 0) (gptr :ngraph:endnode))
+      ;; Call recursive subroutine
+      (g-restrict-lsub :graph1:startnode 0 ngraph label nnodm nnodf t)
+      ;; Return restricted graph
+      ngraph ) ))
+
+(de g-restrict-lsub(node1 idm ngraph label nnodm nnodf flag)
+    ((-obj- (GNode)) node1)
+    ((-int-) idm)
+    ((-obj- (GGraph)) ngraph)
+    ((-idx1- (-int-)) label)
+    ((-idx2- (-gptr-)) nnodm)
+    ((-idx2- (-byte-)) nnodf)
+    ((-bool-) flag)
+
+    ;;DBG;; (printf "(%d %d)\n" :node1:id idm)
+    (let ((reachable 0) 
+	  (labcode 0))
+      ((-int-) labcode)
+      ;; When labels remaining
+      (when (< idm (idx-dim label 0))
+	;; Loop on all links
+	(setq labcode (label idm))
+	(all-downlink (link1 node1)
+	  (when (= :link1:label labcode)
+	    (let* ((tnode1 :link1:downnode)
+		   (tidm (1+ idm))
+		   (gnd (nnodm :tnode1:id tidm)) 
+		   (gndf (nnodf :tnode1:id tidm)) )
+	      ((-int-) tidm)
+	      ;;DBG;; (printf "(%d %d) -> (%d %d) [%d,%d] ?\n" 
+	      ;;DBG;;         :node1:id idm :tnode1:id tidm
+	      ;;DBG;;         (int (if gnd 1 0)) (int gndf) )
+	      (when (= 2 gndf) 
+		;; Create node when a cycle is detected. 
+		(when (not gnd)
+		  (setq gnd (gptr (==> ngraph newnode (gptr ())))) 
+		  (nnodm :tnode1:id tidm gnd) )
+		(nnodf :tnode1:id tidm 0) )
+	      (when (and (not gnd) (= gndf 0))
+		;; This node does not exist yet...
+		(nnodf :tnode1:id tidm 2)
+		;; Recursive call (no temporaries)
+		(if (= 0 (int #{ C_g_restrict_lsub($tnode1,$tidm,$ngraph,
+						   $label,$nnodm,$nnodf,$flag ) #}))
+		    (nnodf :tnode1:id tidm 1)
+		  (nnodf :tnode1:id tidm 0)
+		  (setq gnd (nnodm :tnode1:id tidm)) ) )
+	      ;; If this node is worth creating
+	      (when gnd
+		(let ((gnu (nnodm :node1:id idm)))
+		  (when (not gnu)
+		    (setq gnu (gptr (==> ngraph newnode (gptr ()))))
+		    (nnodm :node1:id idm gnu) )
+		  (let ((nu (obj GNode gnu))
+			(nd (obj Gnode gnd)) )
+		    ;;DBG;; (printf "(%d %d) -> (%d %d) [%d->%d]\n" 
+		    ;;DBG;;         :node1:id idm :tnode1:id tidm :nu:id :nd:id )
+		    (==> ngraph linkm nu nd 
+			 :link1:cost :link1:label :link1:meaning 
+                         (if flag (gptr link1) :link1:data) )
+		    (setq reachable 1) ) ) ) ) ) ) )
+      ;;DBG;; (printf "(%d %d) returns %d\n" :node1:id idm reachable)
+      reachable ) )
+
+
+
+
+;===============================================
+; grammar stuff added by Patrick Haffner, Feb 96
+;===============================================
+
+#? * Additional Grammar Functions
+
+(de gram-meaning(meaning . args)
+    ;; prepare meaning
+    (cond
+     ((not meaning) 
+      (setq meaning (LAB-NULL)))
+     ((stringp meaning)
+      (setq meaning (str-to-lab  meaning)))
+     
+     ((numberp meaning)
+      (setq meaning (int meaning)) )
+     (t
+      (error 'gram-meaning "Illegal meaning" meaning) ) )
+    ;; prepare grammar
+    (let ((grammar (apply gram-cat args)))
+      (when (<> meaning (LAB-NULL))
+	(setq grammar (gram-cleanup grammar)) )
+      ;; patch meaning
+      (gram-meaning-sub meaning grammar)
+      grammar ) )
+
+
+#? (lab-to-str <lab>)
+;;.VP
+;; ((-int-) lab):
+;;
+;; RETURNS: a string of 1 or 4 characters
+;; CREATED: P.Haffner
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: transcodes an integer into a string of one or 2 characters.
+;; (2 characters are returned between brackets)
+;;
+;;.SEE (str-to-lab <s>)
+(de lab-to-str (lab)
+((-int-) lab)
+
+(cond
+ ((>= lab 256)
+  (concat
+   "["
+   (chr (div lab 256))
+   (chr (mod lab 256))
+   "]"
+   ))
+ ((>= lab 0)
+  (chr lab))
+ (t "[?]")))
+ 
+
+
+#? (str-to-lab <s>)
+;;.VP
+;; ((-str-) s):
+;;
+;; RETURNS: integer
+;; CREATED: P.Haffner
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: Transcodes a 1 or 2 character string into an integer
+;;
+;;.SEE (lab-to-str <lab>)
+(de str-to-lab (s)
+    ((-str-) s)
+(cond
+ ((= 1 (len s))
+  (asc s)) 
+ 
+ ((= 2 (len s))
+  (+ (* 256 (asc (mid s 1 1)))
+     (asc (mid s 2 1))))
+ (t
+  (error "string too long")
+  0)))
+
+
+#? (gram-match-meaning <grammar> <meanings>)
+;; Returns <t> if meanings in idx1 <meanings> match grammar <grammar>.
+
+(de gram-match-meaning-sub(gram node im ix)
+    ((-obj- (GGraph)) gram)
+    ((-obj- (GNode)) node)    
+    ((-idx1- (-int-)) im)
+    ((-int-) ix)
+    
+    (if (>= ix (idx-dim im 0))
+	;; If end of string is reached
+	(<> node :gram:endnode) 
+      ;; End of string not reached
+      ;;DBG;; (printf "%d %d\n" ix (im ix))
+      (let ((again t))
+	(all-downlink (link node)
+	  (when (and again (= (im ix) :link:meaning))
+	    (let ((downnode :link:downnode))
+	      #{ $again = C_gram_match_meaning_sub($gram,$downnode,$im,$ix+1);
+	      #} ) ) )
+	again ) ) )
+	      
+(de gram-match-meaning(gram im)
+    ((-obj- (GGraph)) gram)
+    ((-idx1- (-int-)) im)
+    (not (gram-match-meaning-sub gram :gram:startnode im 0)) )
+
+
+#? (gram-match-string <grammar> <list of strings>)
+;; for each string in the list, check it it can be generated as meanings
+;; of the graph <grammar>
+(dm gram-match-string(f gram . args)
+  `(if (not ,gram)
+       (error "gram-match-string: () grammar")
+     (each ((s (quote `args)))
+       (if (not (gram-match-meaning `gram (string-to-labels s)))
+           (printf "grammar %s does not accept [%s]\n" `(pname gram) s)))) )
+
+#? (string-to-labels2 <s>)
+;; Returns a matrix of integers containing the ascii codes
+;; of string <s>.
+;; Unlike straing-to-labels, brackets [xx] means double ascii codes.
+;;.SEE (string-to-labels <s>)
+
+(de string-to-labels2(s)
+    ((-str-) s)
+    (let* ((n (len s))
+           (im (int-array (max n 1)))
+           (count-im 0)
+           (count-s 1))
+      ((-int-) count-im)
+      ((-int-) count-s)
+
+      (when (<> n 0)
+        (while (<= count-s n)
+          (let ((c (mid s count-s 1)))
+            (if (= c "[")
+                (progn
+                  (im count-im (str-to-lab (mid s (1+ count-s) 2)))
+                  (incr count-s 4)
+                  )                  
+              (im count-im (asc c))
+              (incr count-s 1)
+              )
+            (incr count-im 1)
+            ))
+        (idx-trim! im 0 0 count-im))
+      im ))
+
+
+#? (labels-to-string2 <im>)
+;; Returns a string made with characters whose ascii codes are in matrix <im>.
+;; Unlike labels-to-string, double ascii codes are quoted in brackets [xx].
+;;.SEE (labels-to-string <im>)
+
+(de labels-to-string2(im)
+    ((-idx1- (-int-)) im)
+    (let* ((n (idx-dim im 0))
+           (s "") )
+      (for (i 0 (1- n))
+	    (setq s (concat s (lab-to-str (im i)) ) ) )
+    s ) )
+
+
+;;; ========================================
+;;; graph analysis
+;;; ========================================
+
+#? * Graph Analysis
+
+#? (g-complexity <graph>)
+;;.VP
+;; ((-obj- (GGraph)) graph):
+;;
+;; CREATED: P.Haffner
+;; COMPILABLE: Yes
+;;
+;; DESCRIPTION: display useful information about a graph
+;; - number of nodes
+;; - number of links
+;; - number of links for different labels
+;; - perpexity.
+;;
+(de g-complexity (graph)
+    ((-obj- (GGraph)) graph)
+
+    (let ((Nnodes :graph:Nnodes)
+          (Nup-links 0)
+          (Nskip-links 0)
+          (Nloop-links 0)
+          (Nloop-nodes 0)
+          (Nnull-links 0)
+          (Ndown-links 0)
+          (count (float-array 128))
+          (finite t))
+    (printf "# of nodes %d\n" (int Nnodes))
+    (all-nodes (node graph)
+      (let ((loop ()))
+        (all-downlink (link node)
+          (cond
+           ((= :link:downnode node) (incr Nloop-links) (setq loop t))
+           ((= :link:label (LAB-SKIP)) (incr Nskip-links))
+           ((= :link:label (LAB-NULL)) (incr Nnull-links))
+           ((and (>= :link:label 32) (< :link:label 128))
+            (count :link:label (1+ (count :link:label))))
+           ))
+        (incr Nup-links :node:uplink:size)
+        (incr Ndown-links :node:downlink:size)
+        (when loop (incr Nloop-nodes))
+        )
+      )
+    (printf "# of nodes with a loogin link %d\n" (int Nloop-nodes))
+    (printf "# of links %d\n" (int Ndown-links))
+    (printf "# of links looping over a node %d\n" (int Nloop-links))
+    (if (> Nskip-links 0) (printf "# of skip links %d\n" (int Nskip-links)))
+    (printf "# of null links %d\n" (int Nnull-links))
+    (printf "\n# of links per ASCII characaters")
+    (for (i 32 127)
+        (when (= 0 (mod i 8)) (printf "\n"))
+      (when (> (count i) 0)
+        (printf "%s:%d\t" (chr i) (int (count i)))))
+    (printf "\nperplexity = # of down-links per node %f\n" (/ Ndown-links Nnodes))
+    ))
+
+
+
+
+;;; ========================================
+;;; MAKE
+;;; ========================================
+    
+
+(dhc-make-sf "grammar"
+          (GMultiIntSet GMultiIntSet add union check compare)
+          gsetelt-peek-data gsetelt-peek-next
+	  gram-cleanup-boundary gram-cleanup-horse gram-cleanup 
+	  gram-meaning-sub gram-penalty-sub
+	  grammar-to-matrix matrix-to-grammar
+	  string-to-labels labels-to-string 
+	  gram-match-sub gram-match
+      count-labels
+      count-meanings
+	  trivgraph-to-labels trivgraph-to-meanings trivgraph-to-data
+	  trivgraph-to-costs trivgraph-to-meaningful-costs
+          trivgraph-to-scores trivgraph-to-meaningful-scores
+	  g-restrict-msub g-restrict-to-meanings g-restrict-to-meanings-2
+	  g-restrict-lsub g-restrict-to-labels g-restrict-to-labels-2
+      g-complexity
+      str-to-lab
+      lab-to-str
+      labels-to-string2 
+      string-to-labels2
+      gram-match-meaning-sub
+      gram-match-meaning
+	  )
+
+

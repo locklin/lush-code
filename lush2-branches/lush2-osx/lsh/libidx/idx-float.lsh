@@ -1,0 +1,725 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** IDX of Single Precision Floating Point Numbers
+;; Basic operations on vectors, matrices, and tensors of floats
+
+(libload "idx-macros")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; matrix multiplication macro
+
+#? (idx-f2timesf2 <A> <B> <C>)
+;; 2d x 2d matrix multiply: C = A * B
+(de idx-f2timesf2 (a b c)
+  ((-idx2- (-float-)) a b c)
+  (idx-m2timesm2 a b c))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; reverse order of elements
+
+#? (idx-f1reverse <vector>)
+;; Reverses in-place the order of the elements of a <vector>.
+;; not very efficient, but I didn't have time to re-write a faster 
+;; one.
+(de idx-f1reverse (vec) ((-idx1- (-float-)) vec)
+    (let*((n-el (idx-dim vec 0))
+	  (n-elf1 (- n-el 1))
+	  (half-n-el (/ n-el 2))
+	  (half-f1 (- half-n-el 1)))
+      (for (i 0 half-f1)
+	(let*((buffer (vec i))
+	      (j (- n-elf1 i)))
+	  (vec i (vec j))
+	  (vec j buffer))) ()))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; fills
+
+#? (idx-f1fill <m> <f>)
+;; fill idx1 <m> with value <f>
+(de idx-f1fill  (m c) ((-idx1- (-float-)) m) ((-float-) c)
+    (cinline-idx1loop m "flt" "mp" "i" 
+      (cinline "*mp = (%s)" c)) ())
+	 
+#? (idx-f2fill <m> <f>)
+;; fill idx2 <m> with value <f>
+(de idx-f2fill (m v) ((-idx2- (-float-)) m) ((-float-) v) (idx-bloop ((lm m)) (idx-f1fill lm v)))
+
+#? (idx-f3fill <m> <f>)
+;; fill idx3 <m> with value <f>
+(de idx-f3fill (m v) ((-idx3- (-float-)) m) ((-float-) v) 
+    (idx-bloop ((lm m)) (idx-bloop ((llm lm)) (idx-f1fill llm v))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; dotc
+
+#? (idx-f1dotc <m> <f> <q>)
+;; multiply elements of <m> by float <f>, put result in <q>
+(de idx-f1dotc  (m c o) ((-idx1- (-float-)) m o) ((-float-) c)
+    (cinline "Msame_size1(%s,%s); " m o)
+    (cinline-idx1loop2 m "flt" o "flt" "mp" "op" "i" 
+      (cinline "*op = *mp * (%s)" c)) ())
+
+#? (idx-f2dotc <m> <f> <q>)
+;; multiply elements of <m> by float <f>, put result in <q>
+(de idx-f2dotc (m f q) ((-idx2- (-float-)) m q) ((-float-) f)
+    (idx-bloop ((lm m) (lq q)) (idx-f1dotc lm f lq)))
+
+#? (idx-f3dotc <m> <f> <q>)
+;; multiply elements of <m> by float <f>, put result in <q>
+(de idx-f3dotc (m f q) ((-idx3- (-float-)) m q) ((-float-) f)
+    (idx-bloop ((lm m) (lq q)) 
+      (idx-bloop ((llm lm) (llq lq)) 
+	(idx-f1dotc llm f llq))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; dotcacc
+
+#? (idx-f1dotcacc <m> <f> <q>)
+;; multiply elements of <m> by float <f>, accumulate result in <q>
+(de idx-f1dotcacc  (m c o) ((-idx1- (-float-)) m o) ((-float-) c)
+    (cinline "Msame_size1(%s,%s); " m o)
+    (cinline-idx1loop2 m "flt" o "flt" "mp" "op" "i" 
+      (cinline "*op += *mp * (%s)" c)) ())
+
+#? (idx-f2dotcacc <m> <f> <q>)
+;; multiply elements of <m> by float <f>, accumulate result in <q>
+(de idx-f2dotcacc (m f q) ((-idx2- (-float-)) m q) ((-float-) f)
+    (idx-bloop ((lm m) (lq q)) (idx-f1dotcacc lm f lq)))
+
+#? (idx-f3dotcacc <m> <f> <q>)
+;; multiply elements of <m> by float <f>, accumulate result in <q>
+(de idx-f3dotcacc (m f q) ((-idx3- (-float-)) m q) ((-float-) f)
+    (idx-bloop ((lm m) (lq q)) 
+      (idx-bloop ((llm lm) (llq lq)) 
+	(idx-f1dotcacc llm f llq))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; addc
+
+#? (idx-f1addc <m> <f> <q>)
+;; add elements of <m> to float <f>, put result in <q>
+(de idx-f1addc  (m c o) ((-idx1- (-float-)) m o) ((-float-) c)
+    (cinline "Msame_size1(%s,%s); " m o)
+    (cinline-idx1loop2 m "flt" o "flt" "mp" "op" "i" 
+      (cinline "*op = *mp + (%s)" c)) ())
+
+#? (idx-f2addc <m> <f> <q>)
+;; add elements of <m> by float <f>, put result in <q>
+(de idx-f2addc (m f q) ((-idx2- (-float-)) m q) ((-float-) f)
+    (idx-bloop ((lm m) (lq q)) (idx-f1addc lm f lq)))
+
+#? (idx-f3addc <m> <f> <q>)
+;; add elements of <m> by float <f>, put result in <q>
+(de idx-f3addc (m f q) ((-idx3- (-float-)) m q) ((-float-) f)
+    (idx-bloop ((lm m) (lq q)) 
+      (idx-bloop ((llm lm) (llq lq)) 
+	(idx-f1addc llm f llq))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (idx-f1lincomb <x> <cx> <y> <cy> <z>)
+;; performs a linear combination of vectors <x> and <y> using coefficients
+;; <cx> and <cy>. Put result in <z>.
+(de idx-f1lincomb (x cx y cy z) ((-idx1- (-float-)) x y z) ((-float-) cx cy)
+    (cinline "Msame_size1(%s,%s); " x y)
+    (cinline "Msame_size1(%s,%s); " x z)
+    (cinline-idx1loop3 x "flt" y "flt" z "flt" "xp" "yp" "zp" "i" 
+		       (cinline "*zp = %s*(*xp) + %s*(*yp)" cx cy)) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; various scalar functions on idx1
+
+#? (idx-f1tanh <x1> <y1>)
+;; Computes the regular tanh of <x1> element by element, result in <y1>.
+(de idx-f1tanh (x y) ((-idx1- (-float-)) x y) 
+    (cinline "Msame_size1(%s,%s); " x y)
+    (cinline-idx1loop2 x "flt" y "flt" "xp" "yp" "i" 
+      (cinline "*yp = Ftanh(*xp)")) ())
+
+#? (idx-f1inv <x1> <y1>)
+;; puts inverse of each element of <x1> into corresponding elements in <y1>
+(de idx-f1inv (x y) ((-idx1- (-float-)) x y) 
+    (cinline "Msame_size1(%s,%s); " x y)
+    (cinline-idx1loop2 x "flt" y "flt" "xp" "yp" "i" 
+      (cinline "*yp = 1.0/(*xp)")) ())
+
+#? (idx-f1sign <x> <y>)
+;; Elements of <y> are set to the sgn function of elements of <x>.
+(de idx-f1sign (m o) ((-idx1- (-float-)) m o) 
+    (cinline "Msame_size1(%s,%s); " m o)
+    (cinline-idx1loop2 m "flt" o "flt" "mp" "op" "i" 
+      (cinline "*op = ((*mp>0) ? 1 : -1)")) ())
+
+#? (idx-f1clip <x> <y>)
+; clip negative values in vector <x> and put result in vector <y>.
+(de idx-f1clip (m o)
+    ((-idx1- (-float-)) m o) 
+    (cinline "Msame_size1(%s,%s); " m o)
+    (cinline-idx1loop2 m "flt" o "flt" "mp" "op" "i" 
+      (cinline "*op = ((*mp>0) ? *mp : 0)")) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; min and max of idx1
+
+#? (idx-f1sup <m>)
+;; returns largest element in <m>
+(de idx-f1sup (m)
+    ((-idx1- (-float-)) m)
+    (let ((v (m 0)))
+      ((-float-) v)
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "if ((*mp)>(%s)) { %s = *mp; }" v v))
+      v))
+
+#? (idx-f1max <m> [<r>])
+;; if <r> is present, put largest element of idx1 <m> into idx0 <r>
+;; otherwise returns largest element.
+(dmd idx-f1max (m . r)  
+     (if r
+	 `(progn (,(car r) (idx-f1sup ,m)) ())
+       `(idx-f1sup ,m)))
+
+#? (idx-f2max <m> [<r>])
+;; if <r> is present, put largest element of idx1 <m> into idx0 <r>
+;; otherwise returns largest element.
+(dmd idx-f2max (m . r)  
+     (if r
+	 `(let ((a (,m 0 0)))
+	    (idx-bloop ((lm ,m))
+	      (let ((z (idx-f1max lm))) (when (> z a) (setq a z)))) (,(car r) a) ())
+       `(let ((a (,m 0 0)))
+	  (idx-bloop ((lm ,m))
+	    (let ((z (idx-f1max lm))) (when (> z a) (setq a z)))) a)))
+
+#? (idx-f1inf <m>)
+;; returns smallest element in <m>
+(de idx-f1inf (m)  
+    ((-idx1- (-float-)) m)
+    (let ((v (m 0)))
+      ((-float-) v)
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" v v))
+      v))
+
+#? (idx-f1min <m> [<r>])
+;; if <r> is present, put smallest element of idx1 <m> into idx0 <r>
+;; otherwise returns smallest element.
+(dmd idx-f1min (m . r)  
+     (if r
+	 `(progn (,(car r) (idx-f1inf ,m)) ())
+       `(idx-f1inf ,m)))
+
+
+#? (idx-f2min <m> [<r>])
+;; if <r> is present, put smallest element of idx1 <m> into idx0 <r>
+;; otherwise returns smallest element.
+(dmd idx-f2min (m . r)  
+     (if r
+	 `(let ((a (,m 0 0)))
+	    (idx-bloop ((lm ,m))
+	      (let ((z (idx-f1min lm))) (when (< z a) (setq a z)))) (,(car r) a) ())
+       `(let ((a (,m 0 0)))
+	  (idx-bloop ((lm ,m))
+	    (let ((z (idx-f1min lm))) (when (< z a) (setq a z)))) a)))
+
+#? (idx-f1indexmax <m>)
+;; returns index (int) of largest element in <m>
+(de idx-f1indexmax (m)  ((-idx1- (-float-)) m)
+    (let ((n 0) (v (m 0)))
+      ((-int-) n)
+      ((-float-) v)
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "if ((*mp)>(%s)) { %s = *mp; %s = i; }" v v n))
+      n))
+
+#? (idx-f1indexmin <m>)
+;; returns index (int) of smallest element in <m>
+(de idx-f1indexmin (m)  ((-idx1- (-float-)) m)
+    (let ((n 0) (v (m 0)))
+      ((-int-) n)
+      ((-float-) v)
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; %s = i; }" v v n))
+      n))
+
+#? (index-of-max <m>)
+;; return index of largest element in idx1 <m>
+(dmd index-of-max (m) `(idx-f1indexmax ,m))
+
+#? (idx-f1fill-with-index <m>)
+;; fill the elements of idx1 <m> with their index.
+(de idx-f1fill-with-index (m)  ((-idx1- (-float-)) m) 
+    (cinline-idx1loop m "flt" "mp" "i" (cinline "*mp = (flt)i")) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; some really specialized functions, someone needed these ones.
+
+#? (idx-f1avg <vector>)
+;; Returns the average of the numbers in the input <vector>.
+(de idx-f1avg (m) ((-idx1- (-float-)) m)
+    (let ((v 0) (n (idx-dim m 0)))
+      ((-float-) v)
+      (cinline-idx1loop m "flt" "mp" "i" (cinline "%s += (*mp)" v))
+      (/ v n)))
+
+#? (idx-f1prod <vec>)
+;; returns the product of the elements of the input vector <vec>,
+(de idx-f1prod (m) ((-idx1- (-float-)) m)
+    (let ((v 1))
+      ((-float-) v)
+      (cinline-idx1loop m "flt" "mp" "i" (cinline "%s = %s*(*mp)" v v))
+      v))
+
+#? (idx-f1logsum <m>)
+;; computes a "log-add" of the elements in <m>, i.e. 
+;; -log( 1/n Sum_i ( exp( - m_i ) ))
+;; where n is the dimension of <m>.
+;; This is the wrong logsum advocated by Yann.
+;; Use idx-f1logadd instead.
+(de idx-f1logsum (m)
+    ((-idx1- (-float-)) m)
+    (let ((exp-offset (m 0))
+	  (n (idx-dim m 0))
+	  (r 0))
+      ((-float-) exp-offset r n)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "%s += Fexp( %s - *mp)" r exp-offset))
+      (- exp-offset (log (/ r n)))))
+
+#? (idx-f2logsum <m>)
+;; same as idx-f1logsum, but in 2 dimensions
+;; -log( 1/n Sum_ij ( exp( - m_ij ) ))
+;; where n is the number of elements in <m>
+;; This is the wrong logsum advocated by Yann.
+;; Use idx-f2logadd instead.
+(de idx-f2logsum (m)
+    ((-idx2- (-float-)) m)
+    (let ((exp-offset (m 0 0))
+	  (n (* (idx-dim m 1) (idx-dim m 0)))
+	  (r 0))
+      ((-float-) exp-offset r n)
+      ;; first compute smallest element of m
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "flt" "mp" "i"
+	  (cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset)))
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "flt" "mp" "i"
+	  (cinline "%s += Fexp( %s - *mp)" r exp-offset)))
+      (- exp-offset (log (/ r n)))))
+
+#? (idx-f1logadd <m>)
+;; computes a "log-add" of the elements in <m>, i.e. 
+;; -log( Sum_i ( exp( - m_i ) ))
+(de idx-f1logadd (m)
+    ((-idx1- (-float-)) m)
+    (let ((exp-offset (m 0))
+	  (r 0))
+      ((-float-) exp-offset r)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "%s += Fexp( %s - *mp)" r exp-offset))
+      (- exp-offset (log r))))
+
+#? (idx-f2logadd <m>)
+;; same as idx-f1logadd, but in 2 dimensions
+;; -log( Sum_ij ( exp( - m_ij ) ))
+(de idx-f2logadd (m)
+    ((-idx2- (-float-)) m)
+    (let ((exp-offset (m 0 0))
+	  (r 0))
+      ((-float-) exp-offset r)
+      ;; first compute smallest element of m
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "flt" "mp" "i"
+	  (cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset)))
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "flt" "mp" "i"
+	  (cinline "%s += Fexp( %s - *mp)" r exp-offset)))
+      (- exp-offset (log r)) ) )
+
+#? (idx-f1logaddb <m> <beta>)
+;; computes a "log-add" with inverse temperature <b>
+;; of the elements in <m>, i.e. 
+;; -1/beta log ( Sum_i ( exp( - beta*m_i ) ))
+(de idx-f1logaddb (m beta)
+    ((-idx1- (-float-)) m)
+    ((-float-) beta)
+    (let ((exp-offset (m 0))
+	  (r 0))
+      ((-float-) exp-offset r)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "%s += Fexp( %s*(%s - *mp))" r beta exp-offset))
+      (- exp-offset (/ (log r) beta))))
+
+#? (idx-f2logaddb <m> <beta>)
+;; same as idx-f1logaddb, but in 2 dimensions
+;; -1/beta log( Sum_ij ( exp( - beta*m_ij ) ))
+(de idx-f2logaddb (m beta)
+    ((-idx2- (-float-)) m)
+    ((-float-) beta)
+    (let ((exp-offset (m 0 0))
+	  (r 0))
+      ((-float-) exp-offset r)
+      ;; first compute smallest element of m
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "flt" "mp" "i"
+	  (cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset)))
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "flt" "mp" "i"
+	  (cinline "%s += Fexp( %s*(%s - *mp) )" r beta exp-offset)))
+      (- exp-offset (/ (log r) beta)) ) )
+
+#? (idx-f1logdotf1 <m> <p>)
+;; computes a "log-add" of term-by-termt products
+;; of elements in <m> and <p>, i.e. 
+;; -log( p_i Sum_i ( exp( - m_i ) ))
+;; <p> should be a normalized probability vector
+;; for this to be meaningful
+(de idx-f1logdotf1 (m p)
+    ((-idx1- (-float-)) m p)
+    (let ((exp-offset (m 0))
+	  (r 0))
+      ((-float-) exp-offset r)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      (cinline-idx1loop2 m "flt" p "flt" "mp" "pp" "i" 
+	(cinline "%s += *pp * Fexp( %s - *mp)" r exp-offset))
+      (- exp-offset (log r))))
+
+#? (idx-f2logdotf2 <m>)
+;; same as idx-f1logdotf1, but in 2 dimensions
+(de idx-f2logdotf2  (m p)
+    ((-idx2- (-float-)) m p)
+    (let ((exp-offset (m 0 0))
+	  (r 0))
+      ((-float-) exp-offset r)
+      ;; first compute smallest element of m
+      (idx-bloop ((m m))
+	(cinline-idx1loop m "flt" "mp" "i"
+	  (cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset)))
+      (idx-bloop ((m m) (p p))
+	(cinline-idx1loop2 m "flt" p "flt" "mp" "pp" "i" 
+	  (cinline "%s += *pp * Fexp( %s - *mp)" r exp-offset)))
+      (- exp-offset (log r))))
+
+#? (idx-f1blogdotf1 <m> <p> <out>)
+;; This is the "bprop" corresponding to idx-f1logdotf1
+;; <m> is the input (preferably positive costs), <p> is
+;; the prior vector, and on output <out> is the vector
+;; of partial derivatives of (idx1-f1logdotf1 <m> <p>) with
+;; respect to each element of <m>.
+(de idx-f1blogdotf1 (m p out)
+    ((-idx1- (-float-)) m p out)
+    (let ((exp-offset (m 0))
+	  (r 0))
+      ((-float-) exp-offset r)
+      ;; first compute smallest element of m
+      (cinline-idx1loop m "flt" "mp" "i"
+	(cinline "if ((*mp)<(%s)) { %s = *mp; }" exp-offset exp-offset))
+      ;; compute all shifted exponentials
+      (cinline-idx1loop3 m "flt" p "flt" out "flt" "mp" "pp" "op" "i" 
+	(cinline "*op = *pp * Fexp( %s - *mp)" exp-offset))
+      ;; now compute "soft-min"
+      (let ((sum-exp 0)) 
+	((-float-) sum-exp)
+	(cinline-idx1loop out "flt" "op" "i" (cinline "%s += *op;" sum-exp))
+	(setq sum-exp (/ 1 sum-exp))
+	(cinline-idx1loop out "flt" "op" "i" (cinline "*op = *op * %s;" sum-exp)))))
+
+
+#? (idx-f1subextf1 <x> <y> <z>)
+;; Computes the external subtraction
+;; z[i,j] = x[i] - y[j]
+(de idx-f1subextf1 (x y z) ((-idx1- (-float-)) x y) ((-idx2- (-float-)) z)
+    (idx-bloop ((xi x)(zi z))
+      (let ((x (xi)))
+	(cinline-idx1loop2 y "flt" zi "flt" "yi" "zij" "i" 
+	  (cinline "*zij = %s - *yi" x)))) ())
+
+;; for compatibility with an old version
+(dmd idx-extf1sub (x y z) `(idx-f1subextf1 ,x ,y ,z))
+
+#? (idx-f1subf0 <x1> <y0> <z1>)
+;; Substracts (<y0>) from elements of vector <x1>. Results in vector <z1>.
+(de idx-f1subf0 (m y o) ((-idx1- (-float-)) m o) ((-idx0- (-float-)) y)
+    ((-idx1- (-float-)) m o) 
+    (let ((v (y)))
+      (cinline "Msame_size1(%s,%s); " m o)
+      (cinline-idx1loop2 m "flt" o "flt" "mp" "op" "i" 
+	(cinline "*op = *mp - %s" v))) ())
+
+#? (idx-f1mulacc <x1> <y1> <z1>)
+;; z1[i] += x1[i] * y1[i].
+;; not efficient. Could be improved a lot.
+(de idx-f1mulacc (x y z) ((-idx1- (-float-)) x y z)
+    (idx-bloop ((xi x)(yi y)(zi z)) (zi (+ (zi)(* (xi)(yi))))))
+
+#? (idx-f1entropy <m> <c>)
+;; computes the entropy of a vector (- sum Pi log Pi )
+;; this does a normalization and adds a constant <c>
+;; to all the elements (so it does not crash of they are 0)
+(de idx-f1entropy (m c)
+    ((-idx1- (-float-)) m)
+    ((-float-) c)
+    (let ((s 0) (r 0))
+      ((-double-) s r)
+      (cinline-idx1loop m "flt" "p" "i" #{ 
+        $s += *p; 
+        #})
+      (setq s (/ 1 s))
+      (cinline-idx1loop m "flt" "p" "i" #{{
+        double z;
+        z = ((double)((*p) + $c)) * $s;
+        $r += z * log(z);
+        } #})
+      (- r)))
+
+#? (idx-f1subsample-fast <in> <nlin>)
+;; subsamples vector (considered as a signal)
+;; by integer factor <nlin>
+;; the returned output is a vector whose
+;; size is int(N/<nlin>) where N is the 
+;; size of <in>.
+;; there is a idx-f1subsample defined in libconvol.sn,
+;; it is a little slower and takes 3 parameters.
+(de idx-f1subsample-fast (in nlin)
+    ((-idx1- (-float-)) in)
+    ((-int-) nlin)
+    (let* ((h (idx-dim in 0))
+           (nh (int (/ h nlin)))
+           (inp (narrow in 0 (* nlin nh) 0))
+           (out (float-array  nh)))
+      #{{
+      flt *pin;
+      flt *pout;
+      int i, imax = ($out)->dim[0];
+      int inp_mod = ($inp)->mod[0];
+      int out_mod = ($out)->mod[0];
+      flt norm = 1.0/(double)($nlin);
+      register int k;
+      pin = IDX_PTR (($inp), flt);
+      pout = IDX_PTR (($out), flt);
+      for (i = 0; i < imax; i++) {
+        register flt acc0 = 0;
+        for (k=0; k<$nlin; k++) {
+             acc0 += *pin;
+             pin += inp_mod;
+             }
+        *pout = acc0*norm;
+        pout += out_mod;
+      }} #}
+  out))))
+
+
+#? (idx-f4dotf3 <x> <y> <z>)
+;; z[i] = sum_jkl x[i,j,k,l]*y[j,k,l]
+(de idx-f4dotf3 (x y z) 
+  ((-idx4- (-float-)) x)((-idx3- (-float-)) y)((-idx1- (-float-)) z)
+  (idx-bloop ((z-i z)(x-i x))
+    (let*((r 0))
+      (idx-bloop ((y-j y)(x-ij x-i))
+	(idx-bloop ((y-jk y-j)(x-ijk x-ij))
+	  (idx-bloop ((y-jkl y-jk)(x-ijkl x-ijk))
+	    (incr r (* (y-jkl)(x-ijkl))))))
+      (z-i r))))
+
+#? (idx-f3extf1 <x> <y> <z>)
+;; External (or cross-) product of 3d <x> with 1d <y> to yield 4d <z>.
+;; z[i,j,k,l] = x[i,j,k]*y[l]
+(de idx-f3extf1 (x y z) 
+  ((-idx3- (-float-)) x)((-idx1- (-float-)) y)((-idx4- (-float-)) z)
+  (idx-bloop ((xi x)(zi z))
+    (idx-bloop ((xij xi)(zij zi))
+      (idx-bloop ((xijk xij)(zijk zij))
+	(idx-bloop ((yl y)(zijkl zijk))
+	  (zijkl (* (xijk)(yl))))))))
+
+#? (idx-f1extf3 <x> <y> <z>)
+;; External (or cross-) product of 1d <x> with 3d <y> to yield 4d <z>.
+;; z[i,j,k,l] = x[i]*y[j,k,l]
+(de idx-f1extf3 (x y z) 
+  ((-idx1- (-float-)) x)((-idx3- (-float-)) y)((-idx4- (-float-)) z)
+  (idx-bloop ((xi x)(zi z))
+    (let*((x-i (xi)))
+      (idx-bloop ((yi y)(zij zi))
+	(idx-bloop ((yij yi)(zijk zij))
+	  (idx-bloop ((yijk yij)(zijkl zijk))
+	    (zijkl (* x-i (yijk)))))))))
+
+
+#? (idx-f3dotf3 <a> <b> <c>)
+;; <c> is an idx0 which will contain the sum of all the products
+;; of elements from <a> and <b>.
+;; (this redundant with idx-dot).
+(de idx-f3dotf3 (a b c) 
+  ((-idx3- (-float-)) a b)((-idx0- (-float-)) c)
+  (let*((r 0))
+    (idx-bloop ((ai a)(bi b))
+      (idx-bloop ((aij ai)(bij bi))
+	(idx-bloop ((aijk aij)(bijk bij))
+	  (incr r (* (aijk)(bijk))))))
+    (c r)
+    r))
+
+#? (idx-f3dotf2 <x> <y> <z>)
+;; z[i] = sum_jk x[i,j,k]*y[j,k]
+(de idx-f3dotf2 (x y z) 
+  ((-idx3- (-float-)) x)((-idx2- (-float-)) y)((-idx1- (-float-)) z)
+  (idx-bloop ((z-i z)(x-i x))
+    (let*((r 0))
+      (idx-bloop ((y-j y)(x-ij x-i))
+	(idx-bloop ((y-jk y-j)(x-ijk x-ij))
+	  (incr r (* (y-jk)(x-ijk)))))
+      (z-i r))))
+
+#? (idx-f4dotf1 <x> <y> <z>)
+;; z[j,k,l] = sum_i x[i,j,k,l]*y[i]
+(de idx-f4dotf1 (x y z) 
+  ((-idx4- (-float-)) x)((-idx1- (-float-)) y)((-idx3- (-float-)) z)
+  (idx-clear z)
+  (idx-bloop ((y-i y)(x-i x))
+    (let*((yi (y-i)))
+      (idx-bloop ((z-j z)(x-ij x-i))
+	(idx-bloop ((z-jk z-j)(x-ijk x-ij))
+	  (idx-bloop ((z-jkl z-jk)(x-ijkl x-ijk))
+	    (z-jkl (+ (z-jkl)(* yi (x-ijkl))))))))))
+
+#? (idx-f4dotf1acc <x> <y> <z>)
+;; z[j,k,l] += sum_i x[i,j,k,l]*y[i]
+(de idx-f4dotf1acc (x y z) 
+  ((-idx4- (-float-)) x)((-idx1- (-float-)) y)((-idx3- (-float-)) z)
+  (idx-bloop ((y-i y)(x-i x))
+    (let*((yi (y-i)))
+      (idx-bloop ((z-j z)(x-ij x-i))
+	(idx-bloop ((z-jk z-j)(x-ijk x-ij))
+	  (idx-bloop ((z-jkl z-jk)(x-ijkl x-ijk))
+	    (z-jkl (+ (z-jkl)(* yi (x-ijkl))))))))))
+
+#? (idx-f1extf2 <x> <y> <z>)
+;; External (or cross-) product of 1d <x> with 2d <y> to yield 3d <z>.
+;; z[i,j,k] = x[i]*y[j,k]
+(de idx-f1extf2 (x y z) 
+  ((-idx1- (-float-)) x)((-idx2- (-float-)) y)((-idx3- (-float-)) z)
+  (idx-bloop ((xi x)(zi z))
+    (let*((x-i (xi)))
+      (idx-bloop ((yj y)(zij zi))
+	(idx-bloop ((yjk yj)(zijk zij))
+	  (zijk (* x-i (yjk))))))))
+
+#? (idx-f3dotf1 <x> <y> <z>)
+;; z[j,k] = sum_i x[i,j,k]*y[i]
+(de idx-f3dotf1 (x y z) 
+  ((-idx3- (-float-)) x)((-idx1- (-float-)) y)((-idx2- (-float-)) z)
+  (idx-clear z)
+  (idx-bloop ((y-i y)(x-i x))
+    (let*((yi (y-i)))
+      (idx-bloop ((z-j z)(x-ij x-i))
+	(idx-bloop ((z-jk z-j)(x-ijk x-ij))
+	  (z-jk (+ (z-jk)(* yi (x-ijk)))))))))
+
+#? (idx-f3dotf1acc <x> <y> <z>)
+;; z[j,k] += sum_i x[i,j,k]*y[i]
+(de idx-f3dotf1acc (x y z) 
+  ((-idx3- (-float-)) x)((-idx1- (-float-)) y)((-idx2- (-float-)) z)
+  (idx-bloop ((y-i y)(x-i x))
+    (let*((yi (y-i)))
+      (idx-bloop ((z-j z)(x-ij x-i))
+	(idx-bloop ((z-jk z-j)(x-ijk x-ij))
+	  (z-jk (+ (z-jk)(* yi (x-ijk)))))))))
+
+
+;; make a place-code target matrix
+#? (make-f2-place-target <n>)
+;; return an <n>x<n> matrix with 1s on the diagonal and -1s everywhere else.
+(de make-f2-place-target (n)
+    ((-int-) n)
+    (let ((m (float-array n n)))
+      (idx-f2fill m -1)
+      (for (i 0 (1- n)) (m i i 1))
+      m))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (idx-f1range <v>)
+;; Return min and max of float-vector <v>.
+(de idx-f1range (m)
+  (declare (-idx1- (-float-)) m)
+  (let ((minm (m 0)) (maxm (m 0))
+	(res (float-array 2)) )
+    (declare (-float-) minm maxm)
+    (cinline-idx1loop m "double" "mp" "i"
+      (cinline "if ((*mp)<(%s)) { %s = *mp; }" minm minm)
+      (cinline "if ((*mp)>(%s)) { %s = *mp; }" maxm maxm) )
+    (res 0 minm)
+    (res 1 maxm)
+    res))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make-sf ()
+	  ;; idx-f2dotf2
+	  idx-f1reverse 
+	  idx-f1fill idx-f2fill idx-f3fill idx-f1dotc idx-f2dotc
+	  idx-f3dotc idx-f1dotcacc idx-f2dotcacc idx-f3dotcacc idx-f1addc
+	  idx-f2addc idx-f3addc 
+	  idx-f1lincomb
+	  idx-f1tanh idx-f1inv idx-f1sign idx-f1clip 
+	  idx-f1sup idx-f1inf
+	  idx-f1indexmax idx-f1indexmin idx-f1fill-with-index 
+	  idx-f1avg idx-f1prod 
+	  idx-f1logsum idx-f2logsum
+	  idx-f1logadd idx-f2logadd
+	  idx-f1logaddb idx-f2logaddb
+	  idx-f1logdotf1 idx-f1blogdotf1 idx-f2logdotf2
+	  idx-f1subextf1 idx-f1subf0 idx-f1mulacc
+          idx-f1entropy idx-f1subsample-fast
+          idx-f3dotf3
+          idx-f3dotf2
+          idx-f3dotf1
+          idx-f3dotf1acc
+          idx-f3extf1
+          idx-f1extf3
+          idx-f1extf2
+          idx-f4dotf3
+          idx-f4dotf1
+          idx-f4dotf1acc
+	  make-f2-place-target
+          idx-f1range
+)

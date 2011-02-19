@@ -1,0 +1,205 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Other Graph Search Functions
+;; algorithms for searching a graph.
+;; the difference with the g-viterbi and g-forward
+;; is that the seqrch is carried from the initial (upper) nodes.
+;; besides, a startnode must be specified.
+
+
+;;
+;; $Id: rsearch.lsh,v 1.4 2002/08/31 04:52:56 profshadoko Exp $
+;;
+;;.SEE (r-viterbi <graph> <startnode>)
+;;.SEE (r-forward <graph> <startnode>)
+
+
+(libload "dynamic.lsh")
+(libload "graph.lsh")
+(libload "gtransform.lsh")
+(libload "gsearch.lsh")
+(libload "grammar.lsh")
+
+
+(dm MAXFLOAT(f) (real 1e38))
+
+
+
+;;; ========================================
+;;; restricted VITERBI ON A SINGLE GRAPH
+;;; ========================================
+
+
+#? (r-viterbi <graph> <startnode>)
+;; Applies viterbi algorithm to compute a graph whose single path is a copy of
+;; the best path of graph <graph>.  Graph <graph> should not have cycles.
+;; different from g-viterbi in 2 respects
+;; - reverse order
+;; - a startnode can be specified
+		 
+(de r-viterbi-sub(node ndflag path)
+    ((-obj- (GNode)) node)
+    ((-idx1- (-ubyte-)) ndflag)
+    ((-idx1- (-gptr-)) path)
+    (let ((mincost (MAXFLOAT))
+          (minlink (gptr ())) )
+      (all-downlink (link node)
+        (let* ((downnode :link:downnode))
+          (when (= 0 (ndflag :downnode:id))
+            (ndflag :downnode:id 1)
+            ;; Recursive cinline: no temporaries please!
+            #{ C_r_viterbi_sub($downnode, $ndflag, $path);
+            #} )
+          (let ((downcost (+ :link:cost :downnode:acost)))
+            (when (< downcost mincost)
+              (setq mincost downcost)
+              (setq minlink (gptr link)) ) ) ) )
+      ;; Now store min path cost into node
+      (setq :node:acost mincost)
+      (path :node:id minlink) ) )
+		
+ 
+(de r-viterbi(graph startnode)
+    ((-obj- (GGraph)) graph)
+    ((-obj- (GNode)) startnode)
+    (if (NULL-PTR graph) (new GGraph)
+    (let ((ndflag (ubyte-array :graph:nnodes))
+	  (path (gptr-array :graph:nnodes)) )
+      ;; Perform a path in the graph
+      (ndflag :graph:endnode:id 1)
+      (ndflag :startnode:id 1)
+      (setq :graph:endnode:acost 0)
+      (r-viterbi-sub startnode ndflag path)
+      ;; Build the result graph
+      (let* ((ngraph (new GGraph))
+	     (nnode1 :ngraph:startnode)
+	     (node1 startnode) 
+	     (glnk (gptr ())) )
+        (while (setq glnk (path :node1:id))
+          (let ((link (obj GLink glnk)))
+            (let* ((node2 :link:downnode)
+                   (nnode2 (if (= node2 :graph:endnode)
+                               :ngraph:endnode
+                             (==> ngraph newnode :node2:data) )) )
+              (==> ngraph linkm nnode1 nnode2
+                   :link:cost :link:label :link:meaning :link:data )
+              (setq nnode1 nnode2)
+              (setq node1 node2) ) ) )
+	ngraph ) ) ) )
+
+
+
+
+      
+
+;;; ========================================
+;;; FORWARD ON A SINGLE GRAPH
+;;; ========================================
+
+
+#? (r-forward <graph> <startnode>)
+;; Returns the lor-added costs of all paths in lattice <graph>.
+;; different from g-forward in 2 respects
+;; - reverse order
+;; - a startnode can be specified
+;;
+;; REMARK: The graph should not have cycles.
+
+		
+
+(de r-forward-sub(node ndflag)
+    ((-obj- (GNode)) node)
+    ((-idx1- (-byte-)) ndflag)
+    (let ((mincost (MAXFLOAT))
+	  (expsum 0))
+      (all-downlink (link node)
+	(let* ((downnode :link:downnode))
+	  (when (= 0 (ndflag :downnode:id))
+	    (ndflag :downnode:id 1)
+	    ;; Recursive cinline: no temporaries please!
+	    #{ C_r_forward_sub($downnode, $ndflag);
+	    #} )
+	  (let ((downcost (+ :link:cost :downnode:acost)))
+	    (if (>= downcost mincost)
+		(setq expsum (+ expsum (exp (- mincost downcost)))) 
+	      (setq expsum (+ 1 (* expsum (exp (- downcost mincost)))))
+	      (setq mincost downcost) ) ) ) )
+      ;; Now store logadded cost into node
+      (setq :node:acost (- mincost (log (max 1 expsum)))) ) )
+		  
+(de r-forward(graph startnode)
+    ((-obj- (GGraph)) graph)
+    ((-obj- (GNode)) startnode)
+    (if (NULL-PTR graph) 0
+    (let ((ndflag (byte-array :graph:nnodes)))
+      (ndflag :graph:endnode:id 1)
+      (ndflag :startnode:id 1)
+      (setq :graph:endnode:acost 0)
+      (r-forward-sub startnode ndflag) ) ) )
+
+
+
+
+
+
+#? (r-restrict-to-meanings <graph> <meanings> <startnode>)
+;; Creates a new graph which implements the subset of paths of graph <graph>
+;; whose links with non null meanings implement the meanings given in the
+;; integer matrix <meaning>.  The links of the new graph have the same cost,
+;; label and meaning than the original links. The data field points to the
+;; original link.
+;;
+;; (This code is derived from <g-compose>)
+
+(de r-restrict-to-meanings(graph1 meaning startnode)
+    ((-obj- (GGraph)) graph1)
+    ((-idx1- (-int-)) meaning)
+    ((-obj- (GNode)) startnode)
+    
+    (if (or (NULL-PTR graph1) (NULL-PTR meaning))
+        (new GGraph)
+    (let ((ngraph (new GGraph))
+	  (cgraph (new GGraph))
+	  (nnodm (gptr-array :graph1:nnodes (1+ (idx-dim meaning 0))))
+	  (nnodf (byte-array :graph1:nnodes (1+ (idx-dim meaning 0)))) )
+      ;; Initialize node tables
+      (nnodm :startnode:id 0 (gptr :ngraph:startnode))
+      (nnodm :graph1:endnode:id (idx-dim meaning 0) (gptr :ngraph:endnode))
+      ;; Call recursive subroutine
+      (g-restrict-msub startnode 0 ngraph meaning nnodm nnodf ())
+      ;; Return clean copy of restricted graph
+      (g-copy ngraph cgraph :cgraph:startnode :cgraph:endnode) )))
+
+
+
+(dhc-make "rsearch" 
+          r-viterbi-sub r-viterbi
+          r-forward-sub r-forward
+          r-restrict-to-meanings
+          )
+

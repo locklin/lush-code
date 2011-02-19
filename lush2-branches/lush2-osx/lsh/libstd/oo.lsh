@@ -1,0 +1,557 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun classp (q)
+  (isa q :Class) )
+
+(defalias is-of-class isa)
+
+(defmacro ==> (obj method . args)
+  `(send ,obj ',method ,@args)
+  )
+
+(defun -proc-constructor-arglist (arglist)
+  (let ((rest ())
+	(filter (lambda (x)
+		  (selectq x 
+		    (&optional (setq filter opt-filter) ())
+		    (&rest (setq filter rest-filter) ())
+		    (t x))) )
+	(opt-filter (lambda (arg) (if (consp arg) (car arg) arg)))
+	(rest-filter (lambda (x) (setq rest x) ()))
+	(l ()) )
+    (dolist (arg arglist)
+      (let ((a (filter arg))) 
+	(when a (setq l (nconc1 l a)))))
+    (if l (prog1 l (rplacd (last l) rest)) rest) ))
+
+(defun evaluate-type-expr (texpr slots)
+  (cond
+   ((atom texpr) 
+    texpr)
+   ((= (car texpr) '-typeof-)
+    (let ((var (cadr texpr)))
+      (when (and (consp var) (= (car var) 'scope))
+	(let ((cl (eval (car (evaluate-type-expr `(-classof- ,(cadr var)) slots)))))
+	  (setq texpr `(-typeof- ,(caddr var)))
+	  (setq slots (let ((ht (htable 11 t t)))
+			(mapc (lambda ((te v)) (ht v te))
+			      (or (getp cl 'slots)
+				  (getp (getp cl 'saved) 'slots) ))
+			ht))
+	  (setq var (caddr var)) ))
+      (let ((type (slots var)))
+	(when (null type)
+	  (error "type of variable unknown" var) )
+	type)))
+   ((= (car texpr) '-classof-)
+    (let* ((var (cadr texpr))
+	   (type (slots var)) )
+      (when (null type)
+	(error "type of variable unknown" var) )
+      (when (<> (car type) '-obj-)
+	(error "not an object variable" var) )
+      (let (((_ clexpr) type))
+	clexpr)))
+   (t
+    (cons (evaluate-type-expr (car texpr) slots)
+          (evaluate-type-expr (cdr texpr) slots) )) ))
+
+
+(defun substitute-types (code slots)
+  (cond
+   ((atom code) 
+    code)
+   ((and (= (car code) 'declare))
+    (when (not (consp (cdr code)))
+      (error "syntax error in type declaration" code))
+    (cons 'declare (cons (evaluate-type-expr (cadr code) slots) (cddr code))) )
+   ((and (member (car code) '(to-obj new new-empty)) (consp (cadr code)))
+    (append (cons (car code) (evaluate-type-expr (cadr code) slots))
+            (cddr code) ))
+   (t
+    (cons (substitute-types (car code) slots) (substitute-types (cdr code) slots)) )))
+
+(dm defclass def
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((_ name __super__ . body) def)
+	(defaults (htable 11 t t))
+	(slots (htable 11 t t))
+        (slot-names ())
+        (specializations ())        ; declarations that specialize existing slots
+	(constructor-defined ())
+	(method-defs ())
+	(super-class ()) )
+    (setq super-class (eval __super__))
+    ;; see if we inherit any definitions textually
+    (when (or (getp super-class 'template-class)
+	      (getp (getp super-class 'saved) 'template-class) )
+      (let* ((super-slots (append (getp super-class 'slots)
+				  (getp (getp super-class 'saved) 'slots)))
+	     (template-slots (filter
+			      (lambda (slot) (and (consp slot) (= (caar slot) '-any-)))
+			      super-slots)) )
+	;; adopt slot definitions
+	(domapc (((decl . slot-names) template-slots))
+	  (dolist (slot-name slot-names)
+	    (slots slot-name decl)
+	    (defaults slot-name ()) ))
+
+	;; adopt method definitions
+	(domapc ((method (reverse (methods super-class))))
+          (let* ((method-def (getmethod super-class method))
+                 (method-text (funcdef method-def))
+                 (method (if (= method __super__) name method)) ) ; inheriting the constructor
+            (when (= method name)
+              (setq constructor-defined (not (isa method-def DH))) )
+            (cond
+             ((isa method-def DE)
+              (setq method-defs
+                    (cons `(defmethod ,name ,method ,@(cdr method-text)) method-defs) ))
+             ((isa method-def DF)
+              (setq method-defs
+                    (cons `(dfmethod ,name ,method ,@(cdr method-text)) method-defs) ))
+             ((isa method-def DM)
+              (setq method-defs
+                    (cons `(dmmethod ,name ,method ,@(cdr method-text)) method-defs) ))
+             ((isa method-def DH)
+                ; ignore
+              )
+             (t 
+              (error 'defclass "Cannot find definition of template method" (cons |__super__| method)) ))))
+        ))
+    
+    ;; parse the slot definitions
+    (dolist (slot body)
+      (cond
+       ;; a declaration, no new slot
+       ((and (consp slot) (= (car slot) 'specialize))
+        (verify-type-decl-format (cadr slot))
+        (setq specializations (cons slot specializations)) )
+       ;; slot with type declaration
+       ((and (consp slot) (consp (car slot))
+             (verify-type-decl-format (car slot)) )
+        (dolist (slot-name (cdr slot))
+          (when (not (symbolp slot-name))
+            (error 'defclass "Not a symbol" slot-name) )
+	  (slots slot-name (car slot))
+          (setq slot-names (cons slot-name slot-names))
+	  (defaults slot-name ()) ))
+       ;; just the slot name
+       ((symbolp slot)  
+	(slots slot ())
+        (setq slot-names (cons slot slot-names))
+        (defaults slot ()) )
+       ;; slot name with default
+       ((and (consp slot) (symbolp (car slot)) (null (cddr slot)))
+	(slots (car slot) ())
+        (setq slot-names (cons (car slot) slot-names))
+	(defaults (car slot) (eval (cadr slot))) )
+       (t
+        (error 'defclass "Illegal slot specification" slot) )))
+    
+    ;; create default constructor
+    (when (and (not constructor-defined) 
+               (getmethod super-class __super__) )
+      (let* ((supercc (or (funcdef (getmethod super-class __super__))
+                          (funcdef (getmethod (getp super-class 'saved) __super__)) ))
+	     (arglist (cadr supercc))
+	     (body (cddr supercc))
+	     (declrs ()) )
+	(when (not (listp arglist)) 
+	  (setq arglist (list '&rest arglist)))
+	(when (not (proper-list-p arglist))
+	  (let ((tail (last arglist)))
+	    (rplacd tail (list '&rest (cdr tail))) ))
+	(while (and body (consp (car body)) (= (caar body) 'declare))
+	  (setq declrs (cons (car body) declrs)  body (cdr body)) )
+	(setq method-defs
+              (cons `(defmethod ,name ,name ,arglist
+                       ,@(reverse declrs)
+                       (==> this ,|__super__| . ,(-proc-constructor-arglist arglist)))
+                    method-defs))
+        (setq constructor-defined t) ))
+
+    ;; re-create slot list
+    (let* ((slot-names (reverse slot-names))
+	   (slot-defaults (mapcar defaults slot-names))
+	   (slot-decls (filter consp (mapcar slots slot-names)))
+	   (body
+	    (domapcar ((name slot-names) (decl slot-decls) (def slot-defaults))
+	      (if decl
+		  (list decl name)
+		(if def
+		    (list name def)
+		  name)))))
+
+      ;; check compiled syntax
+      (when (and slot-decls (<> (length slot-decls) (length slot-names)))
+	(error 'defclass "Typed and untyped slots are mixed" ()) )
+    
+      ;; evaluate types in template methods
+      (slots 'this `(-obj- (,name)))
+      (dolist (specl specializations)
+        (dolist (name (cddr specl))
+          (slots name (cadr specl)) ))
+      (setq method-defs (domapcar ((md method-defs))
+                          (substitute-types md slots) ))
+
+      ;; make class and bind name globally
+      `(let ((|CLASS| (make-class ',name ,|__super__| ',slot-names ',slot-defaults)))
+	 ,(when slot-decls `(putp |CLASS| 'slots ',body))
+	 ,(when specializations `(putp |CLASS| 'specials ',specializations))
+	 (setq :,name :,name)
+	 (setq ,name |CLASS|)
+	 ;; inherit template methods and definitions in class namespace
+         (in-namespace (class ,name) ()) ; create class namespace
+         (let ((|NAMESPACE| (namespace '(class ,name)))
+               (|NAMESPACE2| (namespace '(class ,|__super__|))) )
+           (when |NAMESPACE| (clear-namespace '(class ,name)))
+           ;; import names into class namespace without using the import
+           ;; form (to avoid interaction with outer in-namespace forms)
+           (dolist (name (htable-keys |NAMESPACE2|))
+             (|NAMESPACE| name (|NAMESPACE2| name)) ))
+	 ,@method-defs
+	 ',name) )))
+
+(dm deftemplate def
+  `(putp (eval (defclass ,@(cdr def))) 'template-class t) )
+
+;; true when arg is a template class
+(defun template-class-p (obj)
+  (when (not (classp obj))
+    (error "not a class" obj) )
+  (or (getp obj 'template-class) 
+      (getp (getp obj 'saved) 'template-class)) )
+
+(defun defmethod.rename (nsdict body)
+  (let ((rename (lambda (expr &optional ret)
+                  (while (consp expr)
+                    (if (== (car expr) 'namespace-opaque)
+                        (setq ret (nconc ret (cadr expr))
+                              expr () )
+                      (setq ret  (nconc1 ret (rename (car expr)))
+                            expr (cdr expr) )))
+                  (when expr
+                    (setq expr (or (nsdict expr) expr)
+                          ret  (nconc ret expr) ))
+                  ret) ))
+    (rename body) ))
+
+(defun namespace args ())
+
+(dm defmethod def
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((f class name . body) def))
+    (let ((ns (namespace `(class ,class))))
+      (when ns
+        (setq body (defmethod.rename ns body)) )
+      (if (= class name)
+	  `(progn ; remove default constructor first
+	     (putmethod ,class ',name ())
+	     (putmethod ,class ',name (lambda ,@body)) )
+	`(putmethod ,class ',name (lambda ,@body)) 
+	))))
+
+(defalias demethod defmethod)
+
+(dm dfmethod def
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((f class name . body) def))
+    `(putmethod ,class ',name (flambda ,@body)) ))
+
+(dm dmmethod def
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((f class name . body) def))
+    `(putmethod ,class ',name (mlambda ,@body)) ))
+
+(defmacro hasmethod (obj m)
+  `(getmethod (classof ,obj) ,m)
+  )
+
+(defun allmethods (cl)
+  (let ((mthds ()))
+    (while cl
+      (setq mthds (append mthds (methods cl)) cl (super cl)) )
+    mthds))
+
+(defmacro copy-object (__src__ &optional __dest__)
+  (let ((cl (classof (eval __src__)))
+	(copy-slot (lambda (slot) `((scope clone ,slot) (scope obj ,slot)))) )
+    `(let ((obj ,__src__)
+	   (clone ,(if __dest__ __dest__ `(new-empty ,cl))) )
+       ,(cons 'setq (mapcan copy-slot (allslots cl)))
+       clone)
+    ))
+
+;; #? (deepcopy-object <obj>)
+;; Create a new instance with the instance variables being 
+;; deep copies of the instance variables of <obj>.
+(defmacro deepcopy-object (__obj__)
+  (let (((this clone) (gensyms 2))
+        (cls (classof (eval __obj__))) )
+    (if (member '-deepcopy (allmethods cls))
+        ;; if class has a -deepcopy method, use it ...
+        `(let ((,clone (new-empty ,cls)))
+           (==> ,__obj__ -deepcopy ,clone)
+           ,clone)
+      ;; otherwise deepcopy generically
+      (let ((dc-slots (domapcan ((slot (allslots cls)))
+                        `((scope ,clone ,slot) 
+                          (deepcopy (scope ,this ,slot))))) )
+        `(let ((,this ,__obj__) (,clone (new-empty ,cls)))
+           ,(cons 'setq dc-slots)
+           ,clone)
+        ))))
+
+#? (deepcopy <obj>)
+;; {<see> -deepcopy, special methods}
+;; Create a deep copy of <obj>.
+;;
+;; The argument <obj> may be any list object. By default,
+;; <deepcopy> recursively copies all components or data
+;; members of <obj>, assuming a tree structure. 
+;;
+;; If the object
+;; is an instance of a user-defined class, and the class provides
+;; a special method <-deepcopy>, then {<code> (deepcopy obj} is
+;; equivalent to:
+;; {<code>
+;; (let ((clone (new-empty (classof obj))))
+;;   (==> obj -deepcopy clone)
+;;   clone)
+;; </code>}
+(defun deepcopy (arg)
+  (if (isa arg object)
+      (deepcopy-object arg)
+
+    ;; builtin types
+    (selectq (classname (classof arg))
+      ((Number String Symbol Nil) arg) ;; immutable types
+      (Index (if (isa (idx-storage arg) AtomStorage)
+		   (array-map deepcopy arg)
+		 (copy-array arg) ))
+      (Cons  (cons (deepcopy (car arg)) (deepcopy (cdr arg))))
+      (t 
+       (error "don't know how to deepcopy" arg) ))))
+
+#? (compare-objects <obj> <other>)
+;; Compare all instance variables and list names of all 
+;; variables in which the two objects differ.
+(defun compare-objects (obj twin)
+  (when (<> (classof obj) (classof twin))
+    (error "object are not of the same class" (list obj twin)) )
+  (let ((slots (allslots (classof obj))))
+    (dolist (slot slots)
+      (when (<> (apply scope (list obj slot)) (apply scope (list twin slot)))
+	(printf "objects differ in slot %s\n" (pname slot)) ))))
+
+
+(lock-symbol ==> defclass deftemplate 
+             classp template-class-p
+	     defmethod demethod dfmethod dmmethod
+             slots allslots methods allmethods
+	     copy-object deepcopy-object deepcopy)
+
+
+;;; -------------- emptyp ----------------
+
+(defmethod object -emptyp ()
+  (error "emptyp not defined for object" this))
+
+(defmethod Number -emptyp ()
+  (error "emptyp not defined for object" this))
+
+(defmethod Index -emptyp () 
+  (idx-emptyp this) )
+
+(defmethod storage -emptyp ()
+  (= (storage-nelems this) 0))
+
+(defmethod Nil -emptyp ()
+  t)
+
+(defmethod Cons -emptyp ()
+  ())
+
+(defmethod String -emptyp ()
+  (= this "") )
+
+(defmethod HTable -emptyp ()
+  (= (htable-size this) 0) )
+
+
+;;; -------------- print ----------------
+
+(defmethod Index print()
+  (if (and (indexp this) (< (idx-nelems this) 200))
+      (print-array-literal this)
+    (printf "%s" (pname this)) ) )
+
+;;; -------------- pretty-print ----------------
+
+(defun -pretty-slots (this)
+    (let ((tb (tab))
+          (cl (classof this)))
+      (while cl
+        (tab tb)
+	(printf ";; from class %l:\n" (classname cl))
+	(dolist (i (slots cl))
+          (tab tb)
+          (printf ";;\t%l=%l\n" i (apply with-object (list cl this i))) )
+	(setq cl (super cl)) ) ) )
+
+(defun pretty-method (class method)
+  (let* ((j (getmethod class method))
+         (dj (funcdef j)) )
+    (pretty-print
+     (cond
+      ((isa j DE) 
+       `(demethod ,(classname class) ,method ,@(cdr dj)) )
+      ((isa j DF) 
+       `(dfmethod ,(classname class) ,method ,@(cdr dj)) )
+      ((isa j DM) 
+       `(dmmethod ,(classname class) ,method ,@(cdr dj)) ) 
+      ((and (isa j DH) 
+            (setq dj (getp class 'saved))
+            (member method (methods dj))
+            (setq dj (getmethod dj method))
+            (isa dj DE)
+            (setq dj (funcdef dj)) )
+       (printf ";; Source code for %l\n" j)
+       `(demethod ,(classname class) ,method ,@(cdr dj)) )
+      (t
+       (printf ";; hidden method %l" method) ()) ))))
+
+(lock-symbol -pretty-slots pretty-method)
+
+(demethod object pretty ()
+  ;; default pretty function
+  (printf "%l\n    " this)
+  (-pretty-slots this) )
+
+(demethod Class pretty ()
+  (let* ((saved (getp this 'saved))
+	 (slots (or (getp this 'slots) (getp saved 'slots)))
+	 (template (or (getp this 'template-class) (getp saved 'template-class)))
+         (specials (or (getp this 'specials) (getp saved 'specials))) )
+    (when saved
+      (printf ";; Source code for %l\n" this) )
+    (when (super this)
+      (printf "(def%s %l %l" (if template "template" "class")
+	      (classname this) (classname (super this)))
+      (dolist (i specials)
+        (printf "\n %l" i) )
+      (dolist (i (or slots (:slots this)))
+        (if (and (not slots) (listp i))
+            (printf "\n  (%l '%l)" (car i) (cadr i))
+          (printf "\n  %l" i) ) )
+      (printf " )\n") ) )
+  (dolist (i (methods this))
+    (print)
+    (pretty-method this i) ))
+
+(demethod Symbol pretty()
+  (if (== this 'this)
+      (printf "'%l\n" this)
+    (let* ((e (eval this))
+           (c (classof e))
+           (x (and e (getp e 'source))) )
+      (cond
+       ;; compiled from source
+       ((and c x (not (classp e)))
+        (printf ";; Source code for %l.\n" e)
+        (pretty-print x this) )
+       ;; custom funcdef
+       ((and c (getmethod c 'funcdef))
+        (pretty-print (==> e funcdef) this) )
+       ;; lisp function
+       ((and (functionp e) (setq x (funcdef e)))
+        (pretty-print x this) )
+       ;; custom pretty printer
+       ((and c (getmethod c 'pretty) (<> c (classof this)))
+        (==> e pretty) )
+       ;; default
+       (t
+        (pretty-print e) ) ) ) ) )
+
+(demethod Nil pretty()
+  (pretty-print ()) )
+
+(demethod Cons pretty()
+  (pretty-print this) )
+
+(demethod DE pretty()
+  (pretty-print (funcdef this)) )
+
+(demethod DF pretty()
+  (pretty-print (funcdef this)) )
+
+(demethod DM pretty()
+  (pretty-print (funcdef this)) )
+
+(demethod DX pretty()
+  (printf "%l ; DX-type intrinsic function\n" this) )
+
+(demethod DY pretty()
+  (printf "%l ; DY-type intrinsic function\n" this) )
+
+(demethod DH pretty()
+  (let ((src (getp this 'saved)))
+    (pretty-print (funcdef src)) ))
+
+(demethod Index pretty()
+  (print-array-literal this) 
+  (print)
+  t)
+
+(demethod HTable pretty()
+  (printf "\n")
+  (domapc (((key . val) (htable-alist this)))
+    (printf " %-17s --> %s\n" (pname key) (pname val)) )
+  t)
+
+(demethod Module pretty()
+  (printf "%l " this)
+  (let ((tb (tab)))
+    (printf ";; module %l\n" (module-filename this))
+    (tab tb)
+    (printf ";; %s" (if (module-unloadable-p this) "unloadable" "sticky"))
+    (if (not (module-initname this))
+        (printf ", not initializable")
+      (if (module-executable-p this) 
+          (printf ", executable")
+        (printf ", partially linked") )
+      (let ((l (length (module-defs this))))
+        (if (= l 0) 
+            (printf ", not initialized")
+          (printf ", defines %d primitive(s)" l) ) ) )
+    (printf "\n") ) )
+
+
+
+

@@ -1,0 +1,5372 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;  'ogre' graphics library for creating interactive interfaces.
+;;;     Jean Bourrely & Leon Bottou, Neuristique SA
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libstd/graphenv")
+
+;; Ogre global variables
+
+;; we keep all ogre windows in this hash table as keys to only
+;; keep weak references to them
+(defvar *ogre-windows* (htable 31 t)) 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Ogre strings
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar  ostring-ok 		"  Ok  ")
+(defvar  ostring-cancel		"Cancel")
+(defvar  ostring-freq-msg	"Choose a file")
+(defvar  ostring-freq-create	"Create file \"%s\"?")
+(defvar  ostring-freq-overwrite	"Overwrite file \"%s\"?" )
+(defvar  ostring-language       "english")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Ogre functions
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar ogre-new-window ())
+(defvar ogre-configure ())
+(defvar ogre-clip-to-text ())
+(defvar ogre-text-to-clip ())
+(defvar color-palette ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Palette selection functions
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar color-palette)
+
+(defvar palette-left 0)
+(defvar palette-right 1)
+(defvar palette-up 2)
+(defvar palette-down 3)
+(defvar palette-disabled 4)
+(defvar palette-selected 5 )
+
+(de new-palette(r g b)
+  (let ((p (atom-array 6))
+	(m1 1.3)
+	(m2 0.7)
+	(m3 0.95)
+	(m4 0.95) )
+    (p 0 (list (min 1 (* r m1)) (min 1 (* g m1)) (min 1 (* b m1))))
+    (p 1 (list (min 1 (* r m2)) (min 1 (* g m2)) (min 1 (* b m2))))
+    (p 2 (list r g b))
+    (p 3 (list (min 1 (* r m3)) (min 1 (* g m3)) (min 1 (* b m3))))
+    (p 4 (list m4 m4 m4))
+    (p 5 (list (2/ (+ g b)) (2/ (+ r b)) (2/ (+ r g)))) ) )
+
+(de getcolor(n)
+  (if (consp (color-palette n))
+      (color-palette n (apply alloccolor (color-palette n))) )
+  (color-palette n))
+
+(de setcolor(n)
+  (if (consp (color-palette n))
+      (color-palette n (apply alloccolor (color-palette n))) )
+  (color (color-palette n)) )
+
+;;; other palettes
+;; 0.65 0.80 0.90
+;; 0.93 0.80 0.68
+;; 0.76 0.88 0.60
+;; 0.80 0.80 0.80
+;; 0.65 0.80 0.90
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; 3D display functions
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(de fill-background(x y w h)
+  (gsave
+    (setcolor palette-up)
+    (fill-rect x y w h) ) )
+
+
+(de draw-up-rect(x y w h)
+  (gsave
+    (setcolor palette-left)
+    (draw-rect x y (1- w) (1- h))
+    (setcolor palette-right)
+    (draw-rect (1+ x) (1+ y) (1- w) (1- h))) )
+
+(de draw-up-round-rect(x y w h)
+  (gsave
+    (setcolor palette-left)
+    (draw-round-rect x y (1- w) (1- h))
+    (setcolor palette-right)
+    (draw-round-rect (1+ x) (1+ y) (1- w) (1- h))) )
+
+(de fill-up-rect(x y w h &optional c)
+  (gsave 
+    (setcolor palette-left)
+    (fill-rect x y (- w 2) (- h 2))
+    (setcolor palette-right)
+    (fill-rect (+ x 2) (+ y 2) (- w 2) (- h 2))
+    (if c (color c) (setcolor palette-up))
+    (fill-rect (+ x 2) (+ y 2) (- w 4) (- h 4)) ) )
+
+
+(de fill-down-rect(x y w h &optional c)
+  (gsave 
+    (setcolor palette-right)
+    (fill-rect x y (- w 2) (- h 2))
+    (setcolor palette-left)
+    (fill-rect (+ x 2) (+ y 2) (- w 2) (- h 2))
+    (if c (color c) (setcolor palette-down))
+    (fill-rect (+ x 2) (+ y 2) (- w 4) (- h 4)) ) )
+
+
+(de fill-up-round-rect(x y w h &optional c)
+  (gsave 
+    (setcolor palette-left)
+    (fill-round-rect x y (- w 2) (- h 2))
+    (setcolor palette-right)
+    (fill-round-rect (+ x 2) (+ y 2) (- w 2) (- h 2))
+    (if c (color c) (setcolor palette-up))
+    (fill-round-rect (+ x 2) (+ y 2) (- w 4) (- h 4)) ) )
+
+
+(de fill-down-round-rect(x y w h &optional c)
+  (gsave 
+    (setcolor palette-left)
+    (fill-round-rect (+ x 2) (+ y 2) (- w 2) (- h 2))
+    (setcolor palette-right)
+    (fill-round-rect x y (- w 2) (- h 2))
+    (if c (color c) (setcolor palette-down))
+    (fill-round-rect (+ x 2) (+ y 2) (- w 4) (- h 4)) ) )
+
+
+
+(de fill-down-circle (x y r &optional c)
+  (gsave 
+    (setcolor palette-left) 
+    (fill-circle (+ x 2) (+ y 2) (1- r))
+    (setcolor palette-right)
+    (fill-circle x y (1- r))
+    (if c (color c) (setcolor palette-down))
+    (fill-circle (+ x 1) (+ y 1) (- r 2)) ) )
+
+(de fill-up-circle (x y r &optional c)
+  (gsave 
+    (setcolor palette-right)
+    (fill-circle (+ x 2) (+ y 2) (1- r))
+    (setcolor palette-left) 
+    (fill-circle x y (1- r))
+    (if c (color c) (setcolor palette-up))
+    (fill-circle (+ x 1) (+ y 1) (- r 2)) ) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Font selection functions
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;; fonction pour selectionner des fontes
+
+(de ogre-font(size &optional serif mono bold italic)
+  (let ((fam1 (cond (mono  "Courier")
+                    (serif "Times")
+                    (t     "Helvetica")))
+        (fam2 (cond (mono  "Bitstream Vera Sans Mono,Mono")
+                    (serif "Bitstream Vera Serif,Serif")
+                    (t     "Bitstream Vera Sans,Sans"))) )
+    (if (= (gdriver) "X11")
+        (or (font 
+             (sprintf ":family=%s:pixelsize=%d%s%s" 
+                      fam2 size (if bold ":bold" "")(if italic ":italic" "")))
+            (font 
+             (sprintf "-adobe-%s-%s-%s-*-*-%d-*-*-*-*-*-iso8859-1"
+                      (downcase fam1) (if bold "bold" "medium")
+                      (if italic (if (or serif mono) "i" "o") "r")
+                      size ) )
+            (font 
+             "default") )
+      (if (= (gdriver) "WBM")
+          (setq fam1 (cond (mono  "Courier New")
+                           (serif "Time New Roman")
+                           (t     "Arial") ) ) )
+      (or (font (sprintf "%s-%s%s%s%d" fam1
+                         (if bold "Bold" "")
+                         (if italic (if (and serif mono) "Italic" "Oblique") "")
+                         (if (or bold italic) "-" "")
+                         size ) )
+          (font "default") ) ) ) )
+
+(de font-18 ()
+  (ogre-font 18 () () () ()) )
+
+(de font-12b ()
+  (ogre-font 12 () () t ()) )
+
+(de font-12 ()
+  (ogre-font 12 () () () ()) )
+
+(de font-8f ()	
+  (ogre-font 12 () t () ()) )
+
+(de font-8 ()
+  (ogre-font 8 () () () ()) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; 
+;;; VISUALOBJECT
+;;;       C'est la classe de tous les objets qui
+;;;       composent une interface.
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass VisualObject object 
+  (rect '(0 0 0 0))
+  oldrect
+  itscontainer
+  window )
+
+;; ATTRIBUTES
+;;
+;;   HASDATA
+;;      Renvoie 'this' s'il existe un slot 'data'
+;;      dans l'object. Ce champ contient le
+;;      resultat d'une action de l'utilisateur.
+;;
+
+(defmethod VisualObject hasdata()
+  () )
+
+;; DUMMY METHODS
+;;      Evitent aux containers de reflechir
+;;  
+;;   GETDATA SETDATA
+;;   GETTEXT SETTEXT
+;;   ENABLE DISABLE
+;;   ISACTIVATED 
+
+(defmethod VisualObject isactivated()
+  () )
+(defmethod VisualObject getdata()
+  (==> this gettext) )
+(defmethod VisualObject setdata(d)
+  (==> this settext d) )
+(defmethod VisualObject gettext()
+  () )
+(defmethod VisualObject settext(d)
+  () )
+(defmethod VisualObject enable()
+  () )
+(defmethod VisualObject disable()
+  () )
+
+
+;; SETCONTAINER
+
+(defmethod VisualObject setcontainer(c)
+  (setq itscontainer c) )
+
+(defmethod VisualObject setcontener(c) ;; old spelling mistake
+  (setq itscontainer c) )
+
+
+;; EVENEMENTS
+;;
+;;   Les fonctions EVENT sont propagees par PROPAGATE-EVENT
+;;   Elles sont initiees par MANAGE-EVENT de la racine.
+;;   
+
+(defmethod VisualObject mouse-down(x y)
+  `ignored )
+(defmethod VisualObject mouse-drag(x1 y1 x2 y2)
+  `ignored )
+(defmethod VisualObject mouse-up(x1 y1 x2 y2)
+  `ignored )
+(defmethod VisualObject arrow-up(x1 y1)
+  `ignored )
+(defmethod VisualObject arrow-right(x1 y1)
+  `ignored )
+(defmethod VisualObject arrow-down(x1 y1)
+  `ignored )
+(defmethod VisualObject arrow-left(x1 y1)
+  `ignored )
+(defmethod VisualObject help(x y)
+  `ignored )
+(defmethod VisualObject fkey(x y)
+  `ignored )
+(defmethod VisualObject sendevent(x y)
+  `ignored )
+(defmethod VisualObject keypress(c x y)
+  `ignored )
+(defmethod VisualObject size(w h)
+  'ignored )
+
+;; l'evenements DELETE n'est exploite que par les 'WindowObject'
+;; l'evenement RESIZE est reecrit en evenement SIZE
+
+;; GESTION DES EVENEMENTS
+;;
+;;   les fonctions manage-event et read-event
+;;   permettent d'efectuer une boucle
+;;   locale d'evenements.
+
+(defmethod VisualObject propagate-event(x y event)
+  (if (getmethod (classof this) (car event))
+      (apply ==> this event) 
+    'ignored ) )
+
+(defmethod VisualObject propagate-activated(event)
+  (if (getmethod (classof this) (car event))
+      (apply ==> this event) 
+    'ignored ) )
+
+(defmethod VisualObject manage-event(event)
+  (let ((type (car event)))
+    (cond
+      ;; Delete events are ignored if not a windowobject
+      ((or (= type 'resize) (= type 'size))
+       (if (not itscontainer)
+	   (==> this size (xsize) (ysize))
+	 (==> itscontainer manage-event event) )
+       () )
+      ;; Delete events are ignored if not a windowobject
+      ((= type 'delete)     
+       (if (not itscontainer)
+	   (if (and (isa this WindowObject) :this:modalobject)
+	       (beep)
+	     (==> this delete) ) )
+       () )
+      ;; Strings are changed into keypress events
+      ((stringp type)
+       (let (((c x y) event))
+	 (==> this propagate-event x y (list 'keypress c x y)) ) )
+      ;; Other events are handled directly
+      (t
+	(let (((c x y . rest) event))
+	  (==> this propagate-event x y event) ) ) ) ) )
+
+(defmethod VisualObject read-event()
+  (let ((ev (checkevent)))
+    (while (not ev)
+      (let ((handler (waitevent)))
+        (cond
+         ((setq ev (checkevent)) 
+          t )
+         ((and (not (isa handler WindowObject))
+               (getmethod (classof handler) 'handle) )
+          (while (= handler (checkevent ()))
+            (==> handler handle (checkevent handler)) ) )
+         (t
+          (while (= handler (checkevent ()))
+            (checkevent handler) ) ) ) ) )
+    ev ) )
+
+
+;; FONCTIONS DE DESSIN
+;;
+;;   EXPOSE 
+;;        Informe le container de la zone a redessinner.
+;;        Des qu'il y a du temps de libre, cela remonte avec des ...
+;;   REPAIR
+;;        qui appellent 
+;;   REPAINT 
+;;        pour redessiner l'objet.
+
+
+(defmethod VisualObject backpaint()
+  (if color-palette
+      (==> this backpaint-color)
+    (==> this backpaint-bw)))
+
+(defmethod VisualObject backpaint-bw()
+  (cls) )
+
+(defmethod VisualObject backpaint-color()
+  (apply fill-background rect))
+
+(defmethod VisualObject repaint()
+  (if color-palette
+      (==> this repaint-color)
+    (==> this repaint-bw)))
+
+(defmethod VisualObject repaint-bw()
+  () )
+
+(defmethod VisualObject repaint-color()
+  () )
+
+(defmethod VisualObject expose( &optional rec )
+  (when itscontainer
+    (when (not rec) (setq rec rect))
+    (==> itscontainer expose rec) ) )
+
+(defmethod VisualObject repair(area)
+  (when window
+    (gsave
+      (when (and (addclip area)
+		 (addclip rect))
+	(==> this backpaint)
+	(color color-fg)
+	(==> this repaint) ) ) ) )
+
+
+;;   REPAIR-DAMAGED
+;;     redessin immediat
+
+(defmethod VisualObject repair-damaged()
+  (when itscontainer
+    (==> itscontainer repair-damaged) ) )
+
+
+;; GEOMETRIE
+;;
+;;   MOVE
+;;   RESIZE
+;;   MOVEREL
+;;       appellent en fait la methode...
+;;   MOVERESIZE
+;;       qui change le slot RECT et positionne 
+;;       le slot OLDRECT. Cette method appelle
+;;       alors
+;;   CHANGE-GEOMETRY
+;;       qui finit par apeller 
+;;   GEOMETRY
+;;       qui fait tout.
+;;
+;;   COMPUTE-GEOMETRY
+;;      - calcule ta taille ideale, et appelle GEOMETRY
+;;      - renvoie rect ou () si pas de changement...
+
+
+
+(defmethod VisualObject resize(w h)
+  (let (((ox oy ow oh) rect))
+    (==> this moveresize ox oy w h) ) )
+
+(defmethod VisualObject move(x y)
+  (let (((ox oy ow oh) rect))
+    (==> this moveresize x y ow oh) ) )
+
+(defmethod VisualObject moverel(x y)
+  (let (((ox oy ow oh) rect))
+    (==> this moveresize (+ ox x) (+ oy y) ow oh) ) )
+
+(defmethod VisualObject front(&optional x y w h)
+  (when itscontainer
+    (==> itscontainer bringtofront this)
+    (if (and x (<> rect (list x y w h)))
+	(==> this geometry x y w h)
+      (==> itscontainer change-geometry)
+      (==> this expose) ) ) )
+
+(defmethod VisualObject back(&optional x y w h)
+  (when itscontainer
+    (==> itscontainer sendtoback this)
+    (if (and x (<> rect (list x y w h)))
+	(==> this geometry x y w h)
+      (==> itscontainer change-geometry)
+      (==> this expose) ) ) )
+
+(defmethod VisualObject moveresize newrect
+  (setq oldrect (or oldrect rect))
+  (when (<> rect newrect)
+    (setq rect newrect)
+    (when (and itscontainer window)
+      (==> itscontainer change-geometry) ) )
+  rect )
+
+(defmethod VisualObject geometry(x y w h)
+  (let ((newrect (list x y w h)))
+    (when (or oldrect (<> rect newrect))
+      (setq oldrect (or oldrect rect))
+      (setq rect newrect)
+      (when (and window (<> rect oldrect))
+	(when itscontainer
+	  (==> itscontainer expose oldrect) )
+	(==> this expose rect) )
+      (setq oldrect ())
+      (if (and itscontainer window)
+	  (==> itscontainer change-geometry) )
+      (==> this size w h)
+      rect ) ) )
+
+(defmethod VisualObject compute-geometry()
+  () )
+
+
+
+;; REALIZE(w)
+;;   Associe l'objet a la fenetre physique w, pour la premiere fois!
+
+(defmethod VisualObject realize(w)
+  (when (setq window w)
+    (==> this compute-geometry)
+    (==> itscontainer change-geometry))
+  (==> this expose rect) )
+
+
+;; CONSTRUCTEUR/DESTRUCTEUR
+
+(defmethod VisualObject VisualObject(w h)
+  (setq rect (list 0 0 w h)) )
+
+(defmethod VisualObject -destructor()
+  (when itscontainer
+    (==> itscontainer remove this) )
+  (when window 
+    (setq window ()) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; CONTROL:
+;;;     Un objet qui peut etre clique, active,
+;;;     disable, etc..., et equipe d'un callback.
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass Control VisualObject
+  text
+  data
+  call
+  activated
+  disabled )
+
+
+;; HASDATA GETDATA SETDATA
+;;      Controle le(s) slot(s) DATA de l'objet, qui
+;;      contient le resultat de l'interaction
+;;      utilisateur
+;; GETTEXT SETTEXT
+;;      Controle le(s) slot(s) TEXT de l'objet, qui
+;;      reglent l'apparence de l'objet.
+
+(defmethod Control hasdata()
+  this )
+
+(defmethod Control getdata()
+  data )
+
+(defmethod Control setdata(d)
+  (when (<> data d)
+    (setq data d)
+    (when window
+      (==> this expose rect) ) ) )
+
+
+(defmethod Control gettext()
+  text )
+
+(defmethod Control settext(d)
+  (setq text d)
+  (when window
+    (==> this compute-geometry)
+    (==> this expose rect) ) )
+
+
+;; ACTIVATE(t)
+;;    Active cet objet: il recevra 
+;;    les evenements KEYPRESS prioritairement
+;;    l'etat d'activation d'un objet est t ou ()
+;;    l'etat d'activation d'un container est l'objet 
+;;    actif si c'est un de ses fils.
+
+
+(defmethod Control isactivated()
+  (when activated
+    this ) )
+
+(defmethod Control activate(k)
+  (let ((oldactivated activated))
+    (setq activated (setq k (not (not k))))
+    (if k
+	(when (and itscontainer (not oldactivated))
+	  (==> itscontainer activate this) )
+      (when itscontainer
+	(==> itscontainer activate ()) ) )
+    (when (<> k oldactivated)
+      (setq activated k)
+      (when window
+	(==> this expose rect) ) ) ) )
+
+
+;; ENABLE, DISABLE
+;;   enable ou disable l'objet.
+;;   cela peut changer son apparence
+;;   cela peut etre empile.
+
+(defmethod Control disable()
+  (if disabled
+      (incr disabled)
+    (setq disabled 1)
+    (==> this expose rect) ) )
+
+(defmethod Control enable()
+  (when disabled
+    (incr disabled -1)
+    (when (0= disabled)
+      (setq disabled ())
+      (==> this expose rect) ) ) )
+
+
+;; DISABLELOCK
+;; un truc pour disabler temporairement un CONTROL.
+
+(defclass DisableLock object
+  tempdisabled )
+
+(defmethod DisableLock DisableLock args
+  (setq tempdisabled args)
+  (dolist (i tempdisabled)
+    (==> i disable) ) )
+
+(defmethod DisableLock -destructor()
+  (dolist (i tempdisabled)
+    (when i (==> i enable)) ) )
+
+
+
+;; CALLBACKS
+;;
+;; SETCALL
+;;
+;; EXECUTE
+;;   Appelle le callback..
+;;
+;; TRIGGER
+;;   Simulate user action (with echo for accelerators)
+;;   Default calls execute
+
+(defmethod Control setcall(callback)
+  (setq call callback) )
+
+(defmethod Control execute()
+  (when (and (not disabled) call)
+    (lete ((lock (new DisableLock this)))
+      (==> this repair-damaged)
+      (when call
+        (let ((thiswindowobject ())
+              (thisrequester ())
+              (thiscontrol ())
+              (thisform ())
+              (thismenu ()) )
+          (let ((p this))
+            (while p
+              (when (and (not thiswindowobject) (isa p WindowObject))
+                (setq thiswindowobject p) )
+              (when (and (not thisrequester) (isa p Requester))
+                (setq thisrequester p) )
+              (when (and (not thiscontrol) (isa p Control))
+                (setq thiscontrol p) )
+              (when (and (not thisform) (isa p Form))
+                (setq thisform p) )
+              (when (and (not thismenu) (isa p Menu))
+                (setq thismenu p) )
+              (setq p :p:itscontainer) ) )
+          (call this) ) )
+      (when this
+        (==> this repair-damaged) ) ) ) )
+
+(defmethod Control trigger()
+  (==> this execute) )
+
+;; CONSTRUCTEUR/DESTRUCTEUR
+
+(defmethod Control Control(w h f)
+  (==> this VisualObject w h)
+  (setq call f) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; CONTAINER
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass Container VisualObject
+  contents
+  activated
+  changing-geometry )
+
+;; DATA
+
+(defmethod Container hasdata()
+  (flatten (all ((i contents))
+	     (==> (car i) hasdata))) )
+
+(defmethod Container cleardata()
+  (dolist (i contents)
+    (==> (car i) setdata ()) ) )
+
+(defmethod Container getdata()
+  (all ((i (==> this hasdata)))
+    (==> i getdata) ) )
+
+(defmethod Container setdata(d)
+  (domapc ((i (==> this hasdata)) (j d))
+    (==> i setdata j) ))
+
+(defmethod Container disable()
+  (dolist (i contents)
+    (==> (car i) disable) ) )
+
+(defmethod Container enable()
+  (dolist (i contents)
+    (==> (car i) enable) ) )
+
+
+;; ACTIVATION
+
+(defmethod Container isactivated()
+  (cond
+   ((not activated) ())
+   ((isa activated VisualObject) (==> activated isactivated))
+   (t this) ) )
+
+(defmethod Container activate(k)
+  ;; normalize k
+  (when (or (not (isa k VisualObject))
+	    (<> this :k:itscontainer) )
+    (setq k (not (not k))) )
+  ;; deactivate activated child
+  (when (and (isa activated VisualObject) 
+	     (not (== k activated)) )
+    (let ((leaf (==> activated isactivated)))
+      (when leaf (==> leaf activate ())) ) )
+  ;; perform activation
+  (let ((oldactivated activated))
+    (if (setq activated k)
+        (when (and itscontainer (not oldactivated))
+          (==> itscontainer activate this) )
+      (when itscontainer
+        (==> itscontainer activate ()) ) ) ) )
+
+;; EVENEMENTS
+
+(defmethod Container manage-event(event)
+  (if (= 'ignored (==> this (VisualObject . manage-event) event))
+      (if (stringp (car event))
+	  (==> this propagate-activated (cons 'keypress event))
+	(==> this propagate-activated event) ) ) )
+
+(defmethod Container propagate-activated(event)
+  (cond
+   ((isa activated VisualObject)
+    (==> activated propagate-activated event) )
+   ((and activated (getmethod (classof this) (car event)))
+    (apply ==> this event) )
+   (t 'ignored) ) )
+
+(defmethod Container propagate-event(x y event)
+  (when (= (if (getmethod (classof this) (car event))
+               (apply ==> this event)
+             'ignored )
+           'ignored )
+    ;; Access object below the mouse
+    (let ((target ()))
+      (dolist (i contents)
+	(when (point-in-rect x y (cdr i))
+	  (setq target (car i)) ) )
+      (if target
+	  (==> target propagate-event x y event) 
+	'ignored ) ) ) )
+
+
+;; DISPLAY
+
+(defmethod Container expose(&optional rec)
+  (when itscontainer
+    (if rec
+	(setq rec (collide-rect rec rect))
+      (setq rec rect) )
+    (when rec
+      (==> itscontainer expose rec) ) ) )
+
+(defmethod Container repair(area)
+  (when window
+    (gsave
+      (when (and (addclip area)(addclip rect))
+	(let ((areparer (list ())))
+	  (dolist (i contents)
+	    (when (rect-in-rect area (cdr i))
+	      (setq areparer ()) )
+	    (let ((u (collide-rect area (cdr i))))
+	      (when u (setq areparer (nconc1 areparer (cons (car i) u)))) ) )
+	  (when (not (car areparer))
+	    (gsave (==> this backpaint))
+	    (setq areparer (cdr areparer)) )
+	  (dolist (i areparer)
+	    (==> (car i) repair (cdr i)) ) 
+	  (gsave (==> this repaint)) ) ) ) ) )
+
+
+;; GEOMETRYLOCK
+;; Accelere insert/delete
+;; NE DOIT PAS ETRE UTILISE DANS LA FONCTION GEOMETRY D'UN CONTAINER
+
+(defclass GeometryLock object
+  what )
+
+(defmethod GeometryLock GeometryLock (w)
+  (setq what w)
+  (let ((w :what:changing-geometry))
+    (setq :what:changing-geometry (if w (1+ w) 1)) ) )
+
+(defmethod GeometryLock -destructor()
+  (when (and what :what:changing-geometry)
+    (let ((w :what:changing-geometry))
+      (setq :what:changing-geometry (if (= w 1) () (1- w)))
+      (when (= w 1)
+	(==> what change-geometry) ) ) ) )
+
+
+
+;; GEOMETRIE
+
+(defmethod Container geometry(x y w h)
+  (let ((newrect (list x y w h)))
+    (when (or oldrect (<> rect newrect))
+      (setq oldrect (or oldrect rect))
+      (setq rect newrect)
+      (setq changing-geometry t)
+      (==> this manage-geometry)
+      (dolist (i contents)
+	(when :(car i):oldrect
+	  (let (((x y w h) :(car i):rect))
+	    (==> (car i) geometry x y w h) ) )
+	(rplacd i :(car i):rect) )
+      (setq changing-geometry ())
+      (when (and window (<> rect oldrect))
+	(when itscontainer
+	  (==> itscontainer expose oldrect) )
+	(==> this expose rect) )
+      (setq oldrect ()) 
+      ;; backward compatibility issue.
+      (if (and itscontainer window)
+	  (==> itscontainer change-geometry) ) 
+      rect ) ) )
+
+
+
+;; MANAGE GEOMETRY
+;; Actually positions the sons of a container.
+
+(defmethod Container manage-geometry()
+  (let (((nx ny nw nh) rect)
+	((ox oy ow oh) oldrect))
+    (let ((sx (- nx ox))
+	  (sy (- ny oy)) )
+      (dolist ((obj x y w h) contents)
+	(==> obj geometry (+ x sx) (+ y sy) w h)) ) ) )
+
+
+;; CHANGE GEOMETRY
+;; Called when a son has been MOVERESIZEd.
+
+(defmethod Container change-geometry()
+  (when ~changing-geometry
+    (dolist (i contents)
+      (rplacd i :(car i):rect) )
+    (setq oldrect (or oldrect rect))
+    (==> this compute-geometry)
+    (when oldrect
+      (let (((x y w h) rect))
+	(==> this geometry x y w h) ) ) ) )
+
+
+;; REALIZE
+;;   lorsque l'on realize un container, tous ses
+;;   objets le sont aussi.
+
+(defmethod Container realize(w)
+  (setq changing-geometry t)
+  (dolist (i contents)
+    (==> (car i) realize w) )
+  (setq changing-geometry ())
+  (dolist (i contents)
+    (rplacd i :(car i):rect) )
+  (==> this (VisualObject . realize) w) )
+
+
+;; INSERTION/DELETION
+;;   appels pour inserer et enlever des trucs d'un container
+
+(defmethod Container bringtofront(what)
+  (when (<> (car (lasta contents)) what)
+    (let ((newcontents ())
+	  ((myx myy myw myh) rect)
+	  (itsrect :what:rect) )
+      (dolist (i contents)
+	(when (<> what (car i))
+	  (setq newcontents (nconc1 newcontents i)) ) )
+      (setq contents (nconc1 newcontents (cons what itsrect))) ) ) )
+
+(defmethod Container sendtoback(what)
+  (when (<> (caar contents) what)
+    (let ((newcontents ())
+	  ((myx myy myw myh) rect)
+	  (itsrect :what:rect) )
+      (dolist (i contents)
+	(when (<> what (car i))
+	  (setq newcontents (nconc1 newcontents i)) ) )
+      (setq contents (cons (cons what itsrect) newcontents)) ) ) )
+
+
+
+(defmethod Container insert(what)
+  (when :what:itscontainer
+    (==> :what:itscontainer remove what) )
+  (let (((x y w h) rect)
+	(active (==> what isactivated)))
+    (when active
+      (==> active activate ()) )
+    (==> what moverel x y)
+    (setq contents (nconc1 contents (cons what :what:rect)))
+    (==> what setcontainer this)
+    (when active 
+      (==> active activate t))
+    (when window
+      (==> what realize window) ) ) )
+
+
+(defmethod Container remove(what)
+  (if (= this :what:itscontainer)
+      (let ((newcontents ())
+	    ((myx myy myw myh) rect) )
+	(when (== activated what)
+	  (==> this activate ()) )
+	(dolist (i contents)
+	  (when (<> what (car i))
+	    (setq newcontents (nconc1 newcontents i)) ) )
+	(setq contents newcontents)
+	(==> what setcontainer ())
+	(==> what realize ())
+	(==> what moverel (- myx) (- myy))
+	(when window
+	  (==> this expose :what:oldrect)
+	  (==> this change-geometry) ) ) ) )
+
+(defmethod Container removall()
+  (let ((oldcontents contents)
+	((myx myy myw myh) rect) )
+    (when (==> this isactivated)
+      (==> this activate ()) )
+    (setq contents ())
+    (dolist (i oldcontents)
+      (==> (car i) setcontainer ())
+      (==> (car i) realize ())
+      (==> (car i) moverel (- myx) (- myy)) )
+    (when window
+      (==> this expose rect)
+      (==> this change-geometry) ) ) )
+
+
+;; CONSTRUCTEUR DESTRUCTEUR
+
+(defmethod Container Container ( x y w h . contenu )
+  (setq rect (list x y w h))
+  (dolist (i contenu)
+    (==> this insert i) ) )
+
+(defmethod Container -destructor()
+  (setq window ())
+  (setq activated ())
+  (dolist (i contents)
+    (delete (car i)) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; FORM
+;;;   un container qui constitue un object complexe
+;;;   un FORM suit la taille de son contenu
+;;;
+;;; Les slots declares dans une FORM sont visible
+;;; dans les objets inferieurs!!
+;;;
+;;; Un FORM est la superclasse de choix pour tout
+;;; objet compose reutilisable.
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass Form Container
+  thisform )
+
+(defmethod Form Form contenu
+  (==> this Container 0 0 0 0)
+  (setq thisform this)
+  (dolist (x contenu)
+    (==> this insert x)) )
+
+(defmethod Form compute-geometry()
+  (when contents
+    (let ((newrect (cdar contents)))
+      (dolist (i (cdr contents))
+	(setq newrect (bounding-rect newrect (cdr i))))
+      (let (((x y w h) newrect))
+	(==> this moveresize x y w h) )
+      rect ) ) )
+
+
+(defmethod Form manage-geometry()
+  (let (((x y w h) rect)
+	(inrect (cdar contents)))
+    (dolist (i (cdr contents))
+      (setq inrect (bounding-rect inrect (cdr i))))
+    (let (((xx yy ww hh) inrect))
+      (let* ((sx (int (- (+ x (2/ w)) (+ xx (2/ ww)))))
+	     (sy (int (- (+ y (2/ h)) (+ yy (2/ hh))))) )
+	(dolist ((obj x y w h) contents)
+	  (==> obj geometry (+ x sx) (+ y sy) w h) ) ) ) ) )
+
+
+(defmethod Form propagate-activated (event)
+  (eval 
+   `(with-object this (==> this (Container . propagate-activated) ',event)) 
+   ))
+
+(defmethod Form propagate-event(x y event)
+  (eval 
+   `(with-object this (==> this (Container . propagate-event) ,x ,y ',event))
+   ))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; WINDOWOBJECT
+;;;   un form qui est aussi une fenetre
+;;;   (classe en sursis, en attendant la 
+;;;    convention (==> ogre-screen insert xxx) )
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass WindowObject Form
+  thiswindowobject   ;;; this slot is accessible from its sons
+  color-palette
+  modalobject
+  damaged-area )
+
+;; Un windowobject ne peut etre deplace.
+;; Il ne peut changer de taille que par une action
+;; de l'utilisateur.
+
+(defmethod WindowObject moveresize(x y w h)
+  (==> this geometry 0 0 w h) )
+
+(defmethod WindowObject resize(w h)
+  (==> this geometry 0 0 w h) )
+
+(defmethod WindowObject compute-geometry()
+  () )
+
+(defmethod WindowObject geometry(x y w h)
+  (when (and window ogre-configure 
+	     (or (<> w (xsize)) (<> h (ysize))) )
+    (ogre-configure () () () w h) ) 
+  (==> this (Form . geometry) 0 0 w h) )
+
+(defmethod WindowObject manage-geometry()
+  () )
+
+(defmethod WindowObject front r
+  () )
+
+(defmethod WindowObject back r
+  () )
+
+(defmethod WindowObject handle(event)
+  (==> this manage-event event) )
+
+(defmethod WindowObject realize(w)
+  ;; ONLY FOR WINDOWOBJECT
+  (when window
+    (set-event-handler window ()))
+  (when (setq window w)
+    (set-event-handler window this))
+  ;; BORROWED FROM CONTAINER
+  (setq changing-geometry t)
+  (dolist (i contents)
+    (==> (car i) realize w) )
+  (setq changing-geometry ())
+  (dolist (i contents)
+    (rplacd i :(car i):rect) )
+  ;; BORROWED FROM VISUALOBJECT
+  (when (setq window w)
+    (==> this compute-geometry)
+    (==> this geometry 0 0 (xsize) (ysize))
+    (==> this expose rect) ) )
+
+
+;; les evenements particuliers aux windowobjects
+
+(defmethod WindowObject size(w h)
+  (let (((xx yy ww hh) rect))
+    (when (or (<> w ww) (<> h hh))
+      (==> this resize (xsize) (ysize)) ) ) )
+
+(defmethod WindowObject delete()
+  ;; subclasses may define a confirm requester!
+  (delete this) )
+
+;; palette
+(defmethod WindowObject palette(p)
+  (setq color-palette p)
+  (==> this expose) )
+
+;; redrawing
+(defmethod WindowObject expose(&optional rec)
+  (cond
+    ((not rec)
+     (setq damaged-area (list (window-rect))) )
+    ((not damaged-area)
+     (setq damaged-area (list rec)) )
+    ((0<> (apply * (cddr rec)))
+     (let* ((rec1 (expand-rect rec 1 1))
+	    (area damaged-area))
+       (while (and rec area)
+	 (let* ((r (car area))
+		(p (cdr area)) )
+	   (cond 
+	     ((rect-in-rect rec r) 
+	      (setq rec ()))
+	     ((rect-in-rect r rec)
+	      (if p
+		  (displace area p)
+		(rplaca area rec)
+		(setq rec ()) ) 
+	      (setq p area) )
+	     ((collide-rect r rec1) 
+	      (let ((u (bounding-rect r rec)))
+		(let (((x y w h) u)	;; surface based heuristic!
+		      ((x1 y1 w1 h1) r)
+		      ((x2 y2 w2 h2) rec) )
+		  (when (> (+ (* w1 h1)(* w2 h2)) (* 0.5 w h))
+		    (setq rec u)
+		    (if p
+			(displace area p)
+		      (rplaca area rec) )
+		    (setq p damaged-area) ) ) ) ) )
+	   (setq area p) ) ) )
+     (when rec
+       (setq damaged-area (cons rec damaged-area)) ) ) )
+  (==> :ogre-task damaged-window this) )
+
+
+(defmethod WindowObject repair-damaged()
+  (when window
+    ;; full context for asynchronous repairs
+    (with-object this
+      (gsave
+        (graphics-batch
+          (linestyle 0)
+	  (let ((rectlist damaged-area))
+	    (setq damaged-area ())
+	    (dolist (rect rectlist)
+	      (==> this repair rect) ) ) ) ) ) ) )
+
+
+;; PROPAGATE-EVENT
+;; SETMODAL
+;; GETMODAL
+
+(defmethod WindowObject propagate-activated(event)
+  (eval 
+    (if modalobject
+	`(with-object this (==> modalobject propagate-activated ',event))
+      `(with-object this (==> this (Container . propagate-activated) ',event))) ) )
+
+(defmethod WindowObject propagate-event(x y event)
+  (eval
+    (if modalobject
+	`(with-object this (==> modalobject propagate-event ,x ,y ',event))
+      `(with-object this (==> this (Container . propagate-event) ,x ,y ',event) ) ) ) )
+
+(defmethod WindowObject setmodal(m)
+  (setq modalobject m) )
+
+(defmethod WindowObject getmodal()
+  modalobject)
+
+;; remove
+(defmethod WindowObject remove(what)
+  (when (= what modalobject)
+    (setq modalobject ()) )
+  (==> this (Form . remove) what) )
+
+;; constructor
+(defmethod WindowObject WindowObject(x y w h title . contenu)
+  (setq thisform this)
+  (setq thiswindowobject this)
+  (*ogre-windows* this t) ; add window to global htable
+  (setq color-palette :color-palette)
+  (dolist (i contenu)
+    (==> this insert i) )
+  (==> this realize (ogre-new-window x y w h title)) )
+
+
+;; destructor
+(defmethod WindowObject -destructor()
+  (let ((w window))
+    (when w
+      (==> this realize ())
+      (delete w) ) ) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; AUTOWINDOWOBJECT
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass AutoWindowObject WindowObject
+  managed)
+
+(defmethod AutoWindowObject AutoWindowObject(x y w h name contenu)
+  (setq managed contenu)
+  (==> this WindowObject (or x 0) (or y 0)
+    (or w 200) (or h 100) name managed ) )
+
+(defmethod AutoWindowObject compute-geometry()
+  (let (((x y w h) :managed:rect))
+    (==> this resize (+ 4 w) (+ 4 h)) ) )
+
+(defmethod AutoWindowObject manage-geometry()
+  (let (((x y w h) rect))
+    (==> managed geometry 2 2 (max 4 (- w 4)) (max 4 (- h 4)))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; OGRE IDLE TASKS
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass OgreTasks object
+  timerid
+  damagedwindows )
+
+(defmethod OgreTasks damaged-window(w)
+  (when (not timerid)
+    (setq timerid (create-timer this 0)) )
+  (when (not (member w damagedwindows))
+    (setq damagedwindows (cons w damagedwindows)) ) )
+
+(defmethod OgreTasks handle (event)
+  (let ((break-hook (or :ogre-break-hook :break-hook))
+	(debug-hook (or :ogre-debug-hook :debug-hook)))
+    (let ((winlist damagedwindows))
+      (setq timerid ())
+      (setq damagedwindows ())
+      (dolist (w winlist)
+	(when w (==> w repair-damaged)) ) ) ) )
+
+(de idle-hook()
+  (when :ogre-task
+    (==> :ogre-task handle ()) ) )
+
+
+;;; Initialisation de OGRE
+
+(de ogre()
+  ;;
+  ;; Test window system
+  ;;
+  (cond
+    ;; Test if running under WIN32
+    (wbm-window 
+      (setq ogre-new-window   wbm-window
+	    ogre-configure    win-configure
+	    ogre-clip-to-text win-clip-to-text
+	    ogre-text-to-clip win-text-to-clip )
+      (when (and win-depth (> (win-depth) 2))  ;; better test than colorp
+	(setq color-palette (new-palette 0.65 0.8 0.9)) ) )
+    ;; Test if running under X11
+    (x11-window 
+      (setq ogre-new-window   x11-window
+	    ogre-configure    x11-configure
+	    ogre-clip-to-text x11-clip-to-text
+	    ogre-text-to-clip x11-text-to-clip )
+      (when (and x11-depth (> (x11-depth) 2))  ;; better test than colorp
+	(setq color-palette (new-palette 0.65 0.8 0.9)) ) )
+    ;; Default
+    (t
+      (error 'ogre "Unsupported window system" ()) ) )
+  ;;
+  ;; Initialize OGRE
+  ;;
+  (when ~:ogre-task
+    (setq :ogre-task (new OgreTasks)) )
+  t)
+
+;; close all Ogre windows
+(defun ogre-close-all ()
+  (length (mapcar delete (htable-keys *ogre-windows*))) )
+
+;; function that processes events until its argument is nil
+(de wait (s) (while s (waitevent) (process-pending-events)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; COLUMN, ROW, GRID
+;;;    des container qui savent ranger leurs fils
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass Column Container
+  (vspace 4) )
+
+(defmethod Column compute-geometry()
+  (when window
+    (let* ((nth3 (lambda(c) (nth 3 c)))
+	   (nth4 (lambda(c) (nth 4 c)))
+	   (width (apply max (cons 0 (mapcar nth3 contents))))
+	   (height (sum (mapcar nth4 contents))) )
+      (==> this resize width (+ height (* vspace (length contents))))
+      rect ) ) )
+
+(defmethod Column manage-geometry()
+  (let (((x y w h) rect))
+    (incr y (div vspace 2))
+    (dolist (i contents)
+      (let ((h (lasta i)))
+	(==> (car i) geometry x y w h)
+	(rplacd i (list x y w h))
+	(incr y (+ h vspace)) ) ) ) )
+
+(defmethod Column Column contenu
+  (dolist (i contenu)
+    (==> this insert i) ) )
+
+
+
+(defclass Row Container
+  (hspace 4) )
+
+(defmethod Row compute-geometry()
+  (when window
+    (let* ((nth3 (lambda(c) (nth 3 c)))
+	   (nth4 (lambda(c) (nth 4 c)))
+	   (height (apply max (cons 0 (mapcar nth4 contents))))
+	   (width (sum (mapcar nth3 contents))) )
+      (==> this resize (+ width (* hspace (length contents))) height)
+      rect ) ) )
+
+(defmethod Row manage-geometry()
+  (let (((x y w h) rect))
+    (incr x (div hspace 2))
+    (dolist (i contents)
+      (let ((w (nth 3 i)))
+	(==> (car i) geometry x y w h)
+	(rplacd i (list x y w h))
+	(incr x (+ w hspace)) ) ) ) )
+
+(defmethod Row Row contenu
+  (dolist (i contenu)
+    (==> this insert i) ) )
+
+(defclass OgreStack Container)
+
+(defmethod OgreStack compute-geometry()
+  (when window
+    (let* ((nth3 (lambda(c) (nth 3 c)))
+	   (nth4 (lambda(c) (nth 4 c)))
+	   (h (apply max (cons 50 (mapcar nth4 contents))))
+	   (w (apply max (cons 50 (mapcar nth3 contents)))) )
+      (==> this resize w h)
+      rect ) ) )
+
+(defmethod OgreStack manage-geometry()
+  (let (((x y w h) rect))
+    (dolist (i contents)
+      (==> (car i) geometry x y w h)
+      (rplacd i (list x y w h)) ) ) )
+
+(defmethod OgreStack OgreStack contenu
+  (dolist (i contenu)
+    (==> this insert i) ) )
+
+
+(defclass Grid Container
+  (columns 2)
+  (vspace 4)
+  (hspace 4) 
+  wsize
+  hsize )
+
+(defparameter 3s (.cl 3))
+(defparameter 4s (.cl 4))
+
+(defmethod Grid compute-geometry ()
+  (when window
+    (if (not contents)
+	(==> this resize 0 0)
+      (let* ((n (length contents))
+	     (rows (div (+ n columns -1) columns))
+	     (wmat (float-array (* rows columns)))
+	     (hmat (float-array (* rows columns))) )
+	((idx-trim wmat 0 0 n) () (mapcar nth 3s contents))
+	((idx-trim hmat 0 0 n) () (mapcar nth 4s contents))
+	(idx-reshape! wmat (list rows columns))
+	(idx-reshape! hmat (list rows columns))
+	(setq wsize (array-reduce max wmat 0))
+	(setq hsize (array-reduce max hmat 1))
+	(==> this resize 
+	     (+ ((idx-sum wsize)) (* columns hspace))
+	     (+ ((idx-sum hsize)) (* rows vspace)) )))
+    rect))
+
+
+(defmethod Grid manage-geometry()
+  (when (and wsize hsize)
+    (let ((l contents)
+	  (x ())
+	  (y ()) )
+      (setq y (+ (cadr rect) (div vspace 2)))
+      (for (i 0 (1- (shape hsize 0)))
+	(setq x (+ (car rect) (div hspace 2)))
+	(for (j 0 (1- (shape wsize 0)))
+	  (when l
+	    (==> (caar l) geometry x y (wsize j)(hsize i))
+	    (rplacd (car l) :(caar l):rect)
+	    (incr x (+ (wsize j) hspace))
+	    (setq l (cdr l)) ) )
+	(incr y (+ (hsize i) vspace)) ) ) ) )
+
+(defmethod Grid Grid (col . contenu)
+  (setq columns col)
+  (dolist (i contenu)
+    (==> this insert i) ) )
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; EMPTYSPACE 
+;;; DARKSPACE
+;;;    espace a inserer dans
+;;;    les ROWs ou les COLUMNs
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass EmptySpace VisualObject)
+
+(defmethod EmptySpace EmptySpace (x &optional y)
+  (setq rect (list 0 0 x (or y x))) )
+
+
+
+(defclass DarkSpace VisualObject
+  fgcolor )
+
+(defmethod DarkSpace DarkSpace (x &optional y c)
+  (setq rect (list 0 0 x (or y x)))
+  (setq fgcolor c) )
+
+(defmethod DarkSpace repaint-bw()
+  (let (((x y w h) rect))
+    (when fgcolor
+      (color fgcolor) )
+    (fill-rect x y (1- w) (1- h)) ) )
+
+(defmethod DarkSpace repaint-color()
+  (let (((x y w h) rect))
+    (if fgcolor
+	(progn
+	  (color fgcolor)
+    	  (fill-rect x y (1- w) (1- h)) )
+      (draw-up-rect x y (1- w) (1- h))
+      (setcolor palette-up)
+      (fill-rect (1+ x) (1+ y) (- w 2) (- h 2)) ) ) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; REQUESTER
+;;;    Fenetres modales de dialogue
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;; REQUESTER
+;;
+;;  POPUP()
+;;  POPUPLOCK()
+;;  POPDOWN()
+
+
+(defclass Requester Form
+  thisrequester   ;;; this slot is accessible from its sons
+  oldhandler
+  support )
+
+
+;; SETSUPPORT
+
+(defmethod Requester setsupport (sup)
+  (setq support sup)
+  )
+
+;; COMPUTE-GEOMETRY
+
+(defmethod Requester compute-geometry()
+  (let ((newrect (cdar contents)))
+    (dolist (i (cdr contents))
+      (setq newrect (bounding-rect newrect (cdr i))))
+    (let (((x y w h) newrect)
+	  ((sx sy sw sh) :support:rect) )
+      (setq x (int (+ sx (2/ (- sw w)))))
+      (setq y (int (+ sy (2/ (- sh h)))))
+      (let* ((xmargin (min 20 (max 5 (int (2/ (- sw w))))))
+	     (ymargin (min 20 (max 5 (int (2/ (- sh h)))))) )
+	(==> this moveresize
+	  (- x xmargin) 
+	  (- y ymargin)
+	  (+ w xmargin xmargin)
+	  (+ h ymargin ymargin) ) ) ) )
+  rect )
+
+;; POPUP/POPDOWN
+;;
+;;   POPUP
+;;     installe le requester au centre de la fenetre
+;;     redirige les evenements vers lui!
+;;   POPDOWN
+;;     enleve le requester
+;;     restaure la gestion ordinaire des evenements.
+;; 
+;; Il est avise qu'un element au moins du requester
+;; puisse lui envoyer un message POPDOWN!
+
+
+(defmethod Requester popup()
+  (let ((s support))
+    (while (setq s :s:itscontainer)
+      (setq support s) ) )
+  (==> support insert this)
+  (when window
+    (setq oldhandler (==> support getmodal))
+    (==> support setmodal this) ) )
+
+(defmethod Requester popdown()
+  (when window
+    (when (= this (==> support getmodal))
+      (==> support setmodal oldhandler)
+      (setq oldhandler ()) ) )
+  (when itscontainer
+    (==> itscontainer remove this) ) )
+
+
+;; POPUPLOCK
+;; Comme POPUP mais ne retourne que lorsque c'est fini
+
+(defmethod Requester popuplock args
+  (lete ((lock (new RequesterLock this)))
+    (==> this popup . args)
+    (process-pending-events)
+    (while itscontainer
+      (waitevent)
+      (process-pending-events) ) ) )
+
+;; POPUPHARD
+;; Comme POPUPLOCK mais bloque les autres fenetres.
+
+(defmethod Requester popuphard args
+  (lete ((lock (new RequesterLock this)))
+    (==> this popup . args)
+    (when :ogre-task (==> :ogre-task handle ()))
+    (beep)
+    (when (and window ogre-configure)
+      (ogre-configure t () () () ()) )
+    (while itscontainer
+      (let ((handler (waitevent)))
+	(cond
+         ((= handler support)
+          (while (= handler (checkevent ()))
+            (==> support manage-event (checkevent handler)) ) )
+         ((not (isa handler WindowObject))
+          (if (not (getmethod (classof handler) 'handle))
+              (while (= handler (checkevent ()))
+                (checkevent handler) )
+            (while (= handler (checkevent ()))
+              (==> handler handle (checkevent handler)) ) ) )
+         (t
+	  (beep)
+	  (when (and window ogre-configure)
+	    (ogre-configure t () () () ()) )
+	  (while (= handler (checkevent ()))
+	    (checkevent handler) ) ) ) )
+      (when :ogre-task (==> :ogre-task handle ())) ) ) )
+
+;;; REQUESTERLOCK
+;;  utilise par POPUPLOCK!
+
+(defclass RequesterLock object
+  what )
+
+(defmethod RequesterLock RequesterLock(w)
+  (setq what w) )
+
+(defmethod RequesterLock -destructor()
+  (when (and what :what:itscontainer)
+    (==> what popdown) ) )
+
+
+;; REPAINT
+;;   les requester sont entoures d'un double trait.
+
+(defmethod Requester backpaint-color()
+  (apply fill-up-rect rect))
+
+(defmethod Requester repaint-bw()
+  (let (((x y w h) rect))
+    (color color-fg)
+    (draw-round-rect x y (1- w)(1- h))
+    (draw-round-rect (+ 2 x)(+ 2 y)(- w 5)(- h 5)) ) )
+
+(defmethod Requester repaint-color()
+  (let (((x y w h) rect))
+    (draw-up-round-rect (+ 2 x)(+ 2 y)(- w 5)(- h 5))) )
+
+;; CONSTRUCTEUR
+
+(defmethod Requester Requester(sup . contenu)
+  (setq thisrequester this)
+  (setq support sup)
+  (dolist (i contenu)
+    (==> this insert i)) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;; OGRELIB: library of graphics objects
+;;; 'ogre' predefined components
+;;;
+;;;  Copyright (C) 1990 Jean Bourrely & Leon Bottou
+;;;                     Neuristique SA
+;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;  STRING: chaine de caracteres statique.
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; SETTEXT(d) GETTEXT()
+
+
+(defclass OgreString VisualObject
+  (textfont font-12)
+  textw
+  texth
+  text
+  textlist 
+  textmax )
+
+(defmethod OgreString OgreString (s)
+  (==> this settext s) )
+
+(defmethod OgreString repaint ()
+  (textfont)
+  (let (((x y w h) rect))
+    (incr x 5)
+    (incr y texth)
+    (dolist (s textlist)
+      (draw-text x y s)
+      (incr y texth) ) ) )
+
+(defmethod OgreString compute-geometry ()
+  (gsave 
+    (textfont) 
+    (setq texth (+ 6 (text-height "0")))
+    (setq textw (apply max (domapcar ((s textlist)) (text-width s)))) )
+  (==> this resize (+ textw 10) (+ (* texth (length textlist)) 6))
+  rect )
+
+
+(defmethod OgreString splittext()
+  (let ((s text)
+	(idx 0) 
+	(nidx ())
+	(data ()) )
+    (while (setq nidx (car (regex-seek "[\n ]" s idx)))
+      (cond
+	((= "\n" (str-mid s (- nidx 1) 1))
+	 (setq data (nconc1 data (str-left s (1- nidx))))
+	 (setq s (str-mid s nidx))
+	 (setq idx 0) )
+	((and textmax (> nidx (1+ textmax)))
+	 (when (< idx (2/ textmax))
+	   (setq idx (1+ textmax)) )
+	 (setq data (nconc1 data (str-left s (1- idx))))
+	 (setq s (str-mid s (- idx 1)))
+	 (setq idx 0) )
+	(t
+	  (setq idx (1+ nidx)) ) ) )
+    (when (or (<> s "") (not data))
+      (setq data (nconc1 data s)) )
+    (setq textlist data)) )
+
+(defmethod OgreString gettext()
+  text )
+
+(defmethod OgreString settext(d)
+  (setq text d)
+  (setq textlist d)
+  (if (not (consp d))
+      (==> this splittext) )
+  (when window
+    (==> this compute-geometry)
+    (==> this expose rect) ) )
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;  ICON: icone statique.
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass Icon VisualObject
+  (white 1)
+  (black 0)
+  (colmap ())
+  (scale-x 1)
+  (scale-y 1)
+  text )
+
+(defmethod Icon Icon (mat &optional sx sy map)
+  (setq text mat) 
+  (when sx 
+    (setq scale-x sx))
+  (when sy 
+    (setq scale-y sy))
+  (when map 
+    (setq colmap map)) )
+
+(defmethod Icon gettext()
+  text )
+
+(defmethod Icon settext(mat)
+  (setq text mat)
+  (when window
+    (==> this compute-geometry)
+    (==> this expose rect) ) )
+
+(defmethod Icon setscale(sx sy)
+  (setq scale-x sx
+	scale-y sy)
+  (when window
+    (==> this compute-geometry)
+    (==> this expose rect) ) )
+
+(defmethod Icon compute-geometry()
+  (if ~text
+      (==> this resize 10 10)
+    (let (((h w) (shape text)))
+      (setq h (* h scale-y))
+      (setq w (* w scale-x))
+      (==> this resize w h)
+      rect ) ) )
+
+(defmethod Icon repaint()
+  (when text
+    (let (((x y w h) rect))
+      (if colmap
+	  (color-draw-matrix x y text black white scale-x scale-y colmap)
+	(gray-draw-matrix x y text black white scale-x scale-y) ) ) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; EDITSTRING: une ligne de texte editable
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; from CONTROL: ENABLE() DISABLE() SETDATA(d)
+;; from EDITSTRING: CHECK()  t ou () selon la validite de DATA.
+
+(defclass EditString Control
+  textw
+  texth
+  charlength
+  charwidth
+  (regex ".*")
+  (caret 0)
+  (offset 0)
+  (history-up ())
+  (history-down ())
+  (history-size 20) )
+
+;; keys that trigger events
+(defparameter EditStringKeymap
+  ((htable)
+   "\n"     'execute
+   "\r"     'execute
+   "\b"	    'backspace
+   "\x7f"   'backspace
+   "\t"     'activate-next
+   "\x04"   'delete-char
+   "Delete" 'delete-char
+   "\x01"   'begin-of-line
+   "\x05"   'end-of-line
+   "Home"   'begin-of-line
+   "End"    'end-of-line
+   "\x06"   'arrow-right
+   "\x02"   'arrow-left
+   "\x10"   'arrow-up
+   "\x0e"   'arrow-down
+   "\x0b"   'kill
+   "\x19"   'yank))
+
+(defvar EditStringKillBuffer "")
+
+(defmethod EditString compute-geometry()
+  (gsave
+    (font-8f)
+    (setq charwidth (- (text-width "00") (text-width "0")))
+    (setq textw (* charwidth charlength))
+    (setq texth (text-height "0")) )
+  (==> this resize (+ textw 10) (+ texth 12))
+  rect )
+
+
+(defmethod EditString backpaint-bw()
+  (let (((x y w h) rect))
+    (cls)
+    (when disabled (color color-gray))
+    (draw-rect x y (1- w) (1- h)) 
+    (if (and () activated (not disabled)) 
+	(draw-rect (+ x 2) (+ y 2) (- w 5) (- h 5)) ) ) )
+
+
+(defmethod EditString repaint-bw()
+  (font-8f)
+  (let (((x y w h) rect))
+    
+    (let* ((cl charlength)		; longueur disponible
+	   (xr (+ x w -1))		; droite du cadre
+	   (s data) )			; texte affiche
+      
+      (when disabled (color color-gray))
+      (setq y (+ -2 y (2/ h) (2/ texth)))
+      (setq x (+ x 5))
+      (setq xr (- xr 5))
+      (addclip (expand-rect rect -3 -2))
+      
+      (when (< caret offset)
+	(setq offset caret))
+      (when (> caret (+ offset (- cl 2)))
+	(setq offset (- caret (- cl 2))) )
+      
+      (when (> offset 0)
+	(gsave
+	  (when ~activated (color color-gray))
+	  (fill-polygon x (- y 4) (+ x 4) y (+ x 4) (- y 8)) )
+	(incr x 8)
+	(incr cl -1) 
+	(setq s (str-mid s offset)) )
+      (when (> (str-len s) cl)
+	(gsave
+	  (when ~activated (color color-gray))
+	  (fill-polygon xr (- y 4) (- xr 4) y (- xr 4) (- y 8)) )
+	(incr cl -1)
+	(setq s (str-left s cl)) )
+      (draw-text x y s)
+      (incr x (- (text-width (str-left s (- caret offset))) 3))
+      (incr y 5)
+      (when (and activated ~disabled)
+	(fill-polygon x y (+ x 3) (- y 5) (+ x 6) y) ) ) ) )
+
+
+(defmethod EditString backpaint-color()
+  (let (((x y w h) rect))
+    (fill-down-rect x y w h (when (not disabled) color-bg)) ) )
+
+(defmethod EditString repaint-color()
+  (font-8f)
+  (let (((x y w h) rect))
+    
+    (let* ((cl charlength)		; longueur disponible
+	   (xr (+ x w -1))		; droite du cadre
+	   (s data) )			; texte affiche
+      
+      (setq y (+ -2 y (2/ h) (2/ texth)))
+      (setq x (+ x 5))
+      (setq xr (- xr 5))
+      (addclip (expand-rect rect -3 -2))
+      
+      (when (< caret offset)
+	(setq offset caret))
+      (when (> caret (+ offset (- cl 2)))
+	(setq offset (- caret (- cl 2))) )
+      
+      (when (> offset 0)
+	(fill-polygon x (- y 4) (+ x 4) y (+ x 4) (- y 8))
+	(incr x 8)
+	(incr cl -1) 
+	(setq s (str-mid s offset)) )
+      (when (> (str-len s) cl)
+	(fill-polygon xr (- y 4) (- xr 4) y (- xr 4) (- y 8)) 
+	(incr cl -1)
+	(setq s (str-left s cl)) )
+      
+      (if disabled (setcolor palette-disabled))
+      (draw-text x y s)
+      (incr x (- (text-width (str-left s (- caret offset))) 3))
+      (incr y 5)
+      (when (and activated ~disabled)
+	(fill-polygon x y (+ x 3) (- y 5) (+ x 6) y) ) ) ) )
+
+
+
+;; ACCESS
+;; CREATION
+;; EXECUTE
+
+(defmethod EditString EditString(l &optional default)
+  (setq charlength l)
+  (setq activated t)
+  (setq data "")
+  (when (stringp default)
+    (==> this setdata default) ) )
+
+
+(defmethod EditString setdata(d)
+  (==> this (Control . setdata) d) 
+  (setq offset 0)
+  (setq caret (str-len data))
+  (==> this record-history) )
+
+(defmethod EditString getdata()
+  (==> this record-history)
+  (==> this (Control . getdata)) )
+
+(defmethod EditString execute()
+  (==> this record-history)
+  (if call
+      (==> this (Control . execute))
+    'ignored ) )
+
+(defmethod EditString activate(d)
+  (==> this (Control . activate) d)
+  (when (and ~d window) (==> this execute)) )
+
+(defmethod EditString record-history()
+  (when (<> data "")
+    (while history-down
+      (setq history-up (cons (car history-down) history-up))
+      (setq history-down (cdr history-down)) )
+    (if (not (member data history-up))
+	(setq history-down (cons data ())) ) )
+  (when (> (length history-up) history-size)
+    (rplacd (nthcdr history-size history-up) ()) ) )
+
+
+;; CHECK
+;;   appellee chaque fois qu'une touche est pressee
+;;   la touche est rejettee si CHECK renvoie ()
+
+(defmethod EditString check(d)
+  (when (regex-match regex d)
+    (setq data d) ) )
+
+;; GEOMETRY
+;; Quand ca change de taille, charlength change aussi!
+
+(defmethod EditString geometry(x y w h)
+  (when window
+    (gsave
+      (font-8f)
+      (setq textw (- w 10))
+      (setq charlength (div textw charwidth)) ) )
+  (==> this (Control . geometry) x y w h) )
+
+
+;; EVENEMENTS
+;;  click = activation
+;;  keypress = edition
+;;  enter = execute
+
+(defmethod EditString mouse-up(x y x1 y1)
+  (if disabled
+      'ignored
+    (when (point-in-rect x1 y1 rect)
+      (let (((x y w h) rect))
+	(incr x 1)
+	(let* ((lendata (str-len data))
+	       (pos (div (* charlength (- x1 x)) textw)) )
+	  (if (> offset 0)
+	      (if (< x1 (+ x 4))
+		  (setq pos -1)
+		(setq pos (1- pos)) ) )
+	  (setq caret (+ offset pos)) 
+	  (when (< caret 0) (setq caret 0))
+	  (when (> caret lendata) (setq caret lendata)) ) )
+      (==> this expose rect)
+      (==> this activate t) ) ) )
+
+(defmethod EditString arrow-left args
+  (if (or disabled ~activated)
+      'ignored
+    (when (> caret 0)
+      (incr caret -1) )
+    (==> this expose rect) ) ) 
+
+(defmethod EditString arrow-right args
+  (if (or disabled ~activated)
+      'ignored
+    (when (< caret (str-len data))
+      (incr caret 1) )
+    (==> this expose rect) ) )
+
+(defmethod EditString arrow-up args
+  (if (or disabled ~activated)
+      'ignored
+    (when history-up
+      (setq data (car history-up) caret 0 offset 0)
+      (setq history-up (cdr history-up))
+      (setq history-down (cons data history-down)) )
+    (==> this expose rect) ) )
+
+(defmethod EditString arrow-down args
+  (if (or disabled ~activated)
+      'ignored
+    (when history-down
+      (setq history-up (cons (car history-down) history-up))
+      (setq history-down (cdr history-down)) )
+    (if history-down
+	(setq data (car history-down) caret 0 offset 0)
+      (setq data "" caret 0 offset 0) )
+    (==> this expose rect) ) )
+
+(defmethod EditString backspace args
+  (when (> caret 0)
+    (decr caret)
+    (setq data (str-del data caret 1)) ) )
+
+(defmethod EditString delete-char args
+  (when (< caret (str-len data))
+    (setq data (str-del data caret 1)) ) )
+
+(defmethod EditString begin-of-line args
+  (setq caret 0)
+  (==> this expose rect) )
+
+(defmethod EditString end-of-line args
+  (setq caret (str-len data))
+  (==> this expose rect) )
+
+(defmethod EditString kill args
+  (setq EditStringKillBuffer (str-mid data caret))
+  (when ogre-text-to-clip 
+    (ogre-text-to-clip EditStringKillBuffer) )
+  (setq data (str-left data caret))
+  (==> this expose rect) )
+
+(defmethod EditString yank args
+  (when ogre-clip-to-text 
+    (setq EditStringKillBuffer (or (ogre-clip-to-text) "")) )
+  (let ((i 0) (m ()))
+    (while (setq m (str-find "\n" EditStringKillBuffer i))
+      (setq i m) )
+    (setq  EditStringKillBuffer (str-mid EditStringKillBuffer i)) )
+  (setq data (str-insert data caret EditStringKillBuffer))
+  (incr caret (str-len EditStringKillBuffer))
+  (==> this expose rect) )
+
+(defmethod EditString activate-next()
+  (let* ((limit (or thisrequester thiswindowobject))
+	 (ctrls (==> limit hasdata))
+	 (ans ()) 
+	 (loop (lambda(obj)
+		 (dolist (ctrl ctrls)
+		   (if (= ctrl obj)
+		       (setq obj ()) 
+		     (if (and (not obj) (not ans)
+			      (isa ctrl EditString) )
+			 (setq ans ctrl) ) ) )
+		 ans )) )
+    (if (or (loop this) (loop ()))
+	(==> ans activate t) ) ) )
+
+(defmethod EditString keypress(c x y)
+  (if (or disabled ~activated)
+      'ignored
+    (let ((olddata data)
+	  (oldcaret caret)
+	  (oldoffset offset)
+	  (event (EditStringKeymap c))
+	  (ans 'ignored) )
+      (when event
+	(setq ans (send this event))
+	(setq c ()) )
+      (when (and c (isprint c) (= (str-len c) 1))
+	(setq data (str-insert data caret c))
+	(incr caret 1) 
+	(setq ans c) )
+      (when (<> ans 'ignored)
+        (if (==> this check data)
+	    (==> this expose rect)
+	  (setq data olddata)
+	  (setq caret oldcaret)
+	  (setq offset oldoffset)
+	  (beep) ) )
+      ans ) ) )
+
+(defmethod EditString fkey(x y)
+  (when eventinfo
+    (==> this keypress (car (eventinfo)) x y) ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; EDITNUMBER: une editeur pour un nombre.
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass EditNumber EditString)
+
+(defmethod EditNumber EditNumber(l &optional default)
+  (==> this EditString l)
+  (setq regex "[-+]?[0-9]*(\\.[0-9]*)?([Ee][-+]?[0-9]*)?")
+  (when (numberp default)
+    (==> this setdata default) ) )
+
+(defmethod EditNumber getdata()
+  (let ((d (val data)))
+    (if d d 0) ) )
+
+(defmethod EditNumber setdata(s)
+  (==> this (EditString . setdata) 
+    (if s (str s) "")) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; EDITSECRETSTRING: edit string with anonymous rendering.
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass EditSecretString EditString)
+
+(defmethod EditSecretString EditSecretString(l &optional default)
+  (==> this EditString l default) )
+
+(defmethod EditSecretString repaint()
+  (let ((olddata data))
+    (setq data (apply concat (makelist (str-len data) "x")))
+    (==> this (EditString . repaint))
+    (setq data olddata) 
+    () ) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; BUTTON: zone que l'on peut presser.
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; from CONTROL:  SETTEXT(d) SETDATA(d) ENABLE() DISABLE()
+;; from BUTTON:   TRIGGER(): actionne le bouton
+
+
+(defclass Button Control
+  depressed )
+
+(defmethod Button mouse-down(x y)
+  (if (or disabled (<> (car (eventinfo)) "Button1"))
+      'ignored
+    (setq depressed t)
+    (==> this expose rect) ) )
+
+(defmethod Button mouse-up(x y nx ny)
+  (if (or disabled (<> (car (eventinfo)) "Button1"))
+      'ignored
+    (setq depressed ())
+    (when (point-in-rect nx ny rect)
+      (==> this execute) )
+    (when this
+      (==> this expose rect) ) ) )
+
+(defmethod Button trigger()
+  (setq depressed t)
+  (==> this expose rect)
+  (==> this execute)
+  (setq depressed ())
+  (when this (==> this expose rect)) )
+
+;;   (let (((x y w h) rect))
+;;     (==> this mouse-down x y)
+;;     (==> this mouse-up x y x y) ) )
+
+(defmethod Button Button(w h function)
+  (setq rect (list 0 0 w h))
+  (setq call function) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; STDBUTTON: classe de boutons poussoir
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass StdButton Button
+  (textfont font-12b)
+  default-ring
+  textrect )
+
+(defmethod StdButton compute-geometry()
+  (gsave
+    (textfont)
+    (setq textrect (rect-text 0 0 text)) )
+  (let (((x y w h) textrect))
+    (==> this resize (+ w 30) (+ h 20)) )
+  rect)
+
+(defmethod StdButton repaint-bw()
+  (let (((x y w h) rect)
+	((tx ty tw th) textrect))
+    (setq y (+ y (2/ h) (2/ th) (- th) (- ty)))
+    (setq x (+ x (2/ w) (2/ tw) (- tw) (- tx)))
+    
+    (cond
+      (disabled
+	(color color-gray)
+	(apply draw-round-rect (expand-rect rect -1 -1)) )
+      (depressed
+	(color color-fg)
+	(apply draw-round-rect (expand-rect rect -1 -1))
+	(apply fill-round-rect (expand-rect rect -4 -4))
+	(color color-bg) )
+      (t
+	(color color-fg) 
+	(apply draw-round-rect (expand-rect rect -1 -1))
+	(when default-ring
+	  (apply draw-round-rect (expand-rect rect -2 -2))
+	  (apply draw-round-rect (expand-rect rect -3 -3)) ) ) )
+    
+    (addclip (expand-rect rect -4 -4))
+    (textfont)
+    (draw-text x y text) ) )
+
+
+(defmethod StdButton repaint-color()
+  (let (((x y w h) rect)
+	((tx ty tw th) textrect))
+    (if depressed
+	(fill-down-round-rect x y w h)
+      (fill-up-round-rect x y w h) 
+      (when default-ring
+	(draw-up-round-rect (+ x 3) (+ y 3) (- w 7) (- h 7)) ) )
+    (setq y (+ y (2/ h) (2/ th) (- th) (- ty)))
+    (setq x (+ x (2/ w) (2/ tw) (- tw) (- tx)))
+    (when disabled (setcolor palette-disabled))
+    (addclip (expand-rect rect -4 -4))
+    (textfont)
+    (draw-text x y text) ) )
+
+
+
+;; press buttons do not have useful data in
+
+(defmethod StdButton hasdata()
+  () )
+
+;; constructor
+
+(defmethod StdButton StdButton(string function)
+  (setq text string)
+  (setq call function) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass StdButtonBg StdButton
+  up-image
+  down-image
+  disabled-image)
+
+(defmethod StdButtonBg compute-geometry()
+  (gsave
+    (textfont)
+    (setq textrect (rect-text 0 0 text)) )
+  (let (((x y w h) textrect))
+    (==> this resize (+ w 30) (+ h 20)) 
+    (when (not rgbaim-resize) 
+      (error "rgbaim-resize not defined, please load rgbaimage"))
+    (setq up-image (rgbaim-resize up-image (+ w 30) (+ h 20) 1))
+    (setq down-image (rgbaim-resize down-image (+ w 30) (+ h 20) 1))
+    (setq disabled-image (rgbaim-resize disabled-image (+ w 30) (+ h 20) 1)))
+  rect)
+
+
+(defmethod StdButtonBg repaint-bw()
+  (let (((x y w h) rect)
+	((tx ty tw th) textrect))
+    (setq y (+ y (2/ h) (2/ th) (- th) (- ty)))
+    (setq x (+ x (2/ w) (2/ tw) (- tw) (- tx)))
+    (cond
+      (disabled
+       (rgb-draw-matrix x y disabled-image))
+      (depressed
+       (rgb-draw-matrix x y down-image))
+      (t
+       (rgb-draw-matrix x y up-image)))
+    (addclip (expand-rect rect -4 -4))
+    (textfont)
+    (draw-text x y text) ) )
+
+(defmethod StdButtonBg repaint-color()
+  (let (((x y w h) rect)
+	((tx ty tw th) textrect))
+    (cond
+      (disabled
+       (rgb-draw-matrix x y disabled-image))
+      (depressed
+       (rgb-draw-matrix x y down-image))
+      (t
+       (rgb-draw-matrix x y up-image)))
+    (setq y (+ y (2/ h) (2/ th) (- th) (- ty)))
+    (setq x (+ x (2/ w) (2/ tw) (- tw) (- tx)))
+    (when disabled (setcolor palette-disabled))
+    (addclip (expand-rect rect -4 -4))
+    (textfont)
+    (draw-text x y text) ) )
+
+(defmethod StdButtonBg StdButtonBg(string u-im d-im n-im function)
+  (when (not rgbaim-resize) 
+    (error "rgbaim-resize is not defined, please load libimage/rgbaimage"))
+  (setq text string)
+  (when (or (<> (idx-dim u-im 0) (idx-dim d-im 0))
+	    (<> (idx-dim u-im 0) (idx-dim n-im 0))
+	    (<> (idx-dim u-im 1) (idx-dim d-im 1))
+	    (<> (idx-dim u-im 1) (idx-dim n-im 1))
+	    (not (member (idx-dim u-im 2) '(1 4)))
+	    (not (member (idx-dim d-im 2) '(1 4)))
+	    (not (member (idx-dim n-im 2) '(1 4))))
+    (error "illegal or incompatible sizes for StdButtonBg images"))
+  (setq up-image u-im)
+  (setq down-image d-im)
+  (setq disabled-image n-im)
+  (==> this StdButton string function))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; TINYBUTTON: classe de petits boutons poussoir
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass TinyButton StdButton)
+
+(defmethod TinyButton compute-geometry()
+  (gsave
+    (textfont)
+    (setq textrect (rect-text 0 0 text)) )
+  (let (((x y w h) textrect))
+    (==> this resize (+ w 12) (+ h 8)) )
+  rect)
+
+(defmethod TinyButton TinyButton(string function)
+  (==> this StdButton string function)
+  (setq textfont font-12) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; CHECKBOX: classe des boutons electriques
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass CheckBox Button
+  (textfont font-12)
+  texth
+  textw )
+
+
+(defmethod CheckBox compute-geometry()
+  (gsave
+    (textfont)
+    (setq textw (text-width text))
+    (setq texth (text-height "0"))
+    (==> this resize (+ textw 25) (+ texth 10)) )
+  rect ) 
+
+(defmethod CheckBox repaintbox-bw()
+  (let (((x y w h) rect))
+    (setq y (+ y texth 6))
+    (when depressed
+      (color color-gray)
+      (fill-rect (+ x 2) (- y 12) 12 12)
+      (color color-fg) )
+    (draw-rect (+ x 2) (- y 12) 12 12)
+    (when (and data ~depressed)
+      (draw-line (+ x 2) (- y 12) (+ x 14) y)
+      (draw-line (+ x 14) (- y 12) (+ x 2) y) ) ) )
+
+(defmethod CheckBox repaint-bw()
+  (let (((x y w h) rect))
+    (setq y (+ y texth 5))
+    (color color-fg)
+    (if disabled
+	(color color-gray) )
+    (==> this repaintbox-bw)
+    (textfont)
+    (draw-text (+ x 20) y text) ) )
+
+(defmethod CheckBox repaintbox-color()
+  (let (((x y w h) rect))
+    (setq y (+ y texth 6))
+    (if data
+	(fill-down-rect (+ x 2) (- y 12) 12 12 (getcolor palette-selected))
+      (fill-up-rect (+ x 2) (- y 12) 12 12)) ) )
+
+(defmethod CheckBox repaint-color()
+  (let (((x y w h) rect))
+    (setq y (+ y texth 5))
+    (==> this repaintbox-color)
+    (textfont)
+    (if disabled (setcolor palette-disabled))
+    (draw-text (+ x 20) y text) ) )
+
+
+(defmethod CheckBox execute()
+  (setq data (not data))
+  (==> this (Button . execute)) )
+
+(defmethod CheckBox CheckBox(string &optional function)
+  (setq text string)
+  (setq data ())
+  (setq call function) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; RADIOBUTTON: classe des boutons exclusif
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass RadioButton CheckBox)
+
+(defmethod RadioButton repaintbox-bw()
+  (let (((x y w h) rect))
+    (setq y (+ y texth 6))
+    (when depressed
+      (color color-gray)
+      (fill-circle (+ x 8) (- y 6) 4)
+      (color color-fg) )
+    (draw-circle (+ x 8) (- y 6) 6)
+    (when (and data ~depressed)
+      (fill-circle (+ x 8) (- y 6) 4) ) ) )
+
+
+(defmethod RadioButton repaintbox-color()
+  (let (((x y w h) rect))
+    (setq y (+ y texth 6))
+    (if data
+	(fill-down-circle (+ x 8) (- y 6) 6 (getcolor palette-selected))
+      (fill-up-circle  (+ x 8) (- y 6) 6)) ) )
+
+
+(defmethod RadioButton setdata(d)
+  (when (and d itscontainer)
+    (==> itscontainer cleardata) )
+  (==> this (Control . setdata) d) )
+
+(defmethod RadioButton setcontainer(c)
+  (==> this (Control . setcontainer) c)
+  (when (and c data)
+    (==> c cleardata) 
+    (setq data t) ) )
+
+
+(defmethod RadioButton execute()
+  (when itscontainer
+    (==> itscontainer cleardata) )
+  (setq data t)
+  (==> this (Control . execute)) )
+
+;;; constructeur
+
+(defmethod RadioButton RadioButton(string &optional function)
+  (setq text string)
+  (setq data t)
+  (setq call function) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass ImageButton Button
+  up-image
+  down-image
+  disabled-image)
+  
+
+(defmethod ImageButton compute-geometry()
+  (==> this resize (idx-dim up-image 1) (idx-dim up-image 0))
+  rect)
+
+(defmethod ImageButton repaint-bw()
+  (==> this repaint-color ()))
+
+(defmethod ImageButton repaint-color()
+  (let (((x y w h) rect))
+    (if depressed 
+	(rgb-draw-matrix x y down-image)
+      (if disabled
+	  (rgb-draw-matrix x y disabled-image)
+	(rgb-draw-matrix x y up-image)))
+    (addclip rect)))
+
+(defmethod ImageButton hasdata()
+  () )
+
+
+(defmethod ImageButton ImageButton(u-im d-im n-im function)
+  (when (or (<> (idx-dim u-im 0) (idx-dim d-im 0))
+	    (<> (idx-dim u-im 0) (idx-dim n-im 0))
+	    (<> (idx-dim u-im 1) (idx-dim d-im 1))
+	    (<> (idx-dim u-im 1) (idx-dim n-im 1)) )
+    (error "illegal or incompatible sizes for ImageButton images"))
+  (setq up-image u-im)
+  (setq down-image d-im)
+  (setq disabled-image n-im)
+  (setq call function) )
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; MENUITEM: Un objet dans un menu 
+;;; MENUPOPUP: Le menu deroule
+;;; MENU: L'objet qui declenche le menu
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;; la classe MENUITEM: les objets du menu...
+;;
+;;  from CONTROL:  
+;;   SETTEXT(t)
+;;   SETDATA(d) 
+;;   ENABLE() 
+;;   DISABLE()
+
+
+(defclass MenuItem Control
+  (textfont font-12)
+  textrect
+  hilited )
+
+(defmethod MenuItem MenuItem(string func)
+  (setq text string)
+  (setq call func) )
+
+(defmethod MenuItem compute-geometry()
+  (gsave
+    (textfont)
+    (setq textrect (rect-text 0 0 text)) )
+  (let (((x y w h) textrect))
+    (if color-palette
+	(==> this resize (+ w 20) (max 22 (+ h 12)))
+      (==> this resize (+ w 20) (max 20 (+ h 10))) ) )
+  rect )
+
+;;; This one redraws the menu item  
+(defmethod MenuItem sethilite(k)
+  (when (<> hilited k)
+    (setq hilited k)
+    (when ~disabled
+      (==> this expose rect)
+      (==> this repair-damaged) ) ) )
+
+(defmethod MenuItem repaint-bw()
+  (let (((x y w h) rect)
+	((tx ty tw th) textrect) )
+    (setq y (+ y (2/ h) (2/ th) (- th) (- ty)))
+    (cond
+      (disabled
+	(color color-gray) )
+      (hilited
+	(color color-fg)
+	(apply fill-rect rect)
+	(color color-bg) )
+      (t
+	(color color-fg) ) )
+    (incr x 1)
+    (when data
+      (fill-polygon x (- y 12) (+ x 6) y
+		    (+ x 9) (- y 9) (+ x 5) (- y 5) ) )
+    (incr x 11)
+    (textfont)
+    (draw-text x y text) ) )
+
+(defmethod MenuItem repaint-color()
+  (let (((x y w h) rect)
+	((tx ty tw th) textrect) )
+    
+    (if hilited
+	(fill-down-round-rect (+ x 2) (+ y 2) (- w 4) (- h 4)) )
+    
+    (setq y (+ y (2/ h) (2/ th) (- th) (- ty)))
+    (when disabled (setcolor palette-disabled) )
+    (incr x 3)
+    (when data
+      (fill-polygon x (- y 12) (+ x 6) y
+		    (+ x 9) (- y 9) (+ x 5) (- y 5) ) )
+    (incr x 11)
+    (textfont)
+    (draw-text x y text) ) )
+
+(defmethod MenuItem backpaint-color()
+  (when itscontainer
+    (==> itscontainer backpaint-color) ) )
+
+(defmethod MenuItem execute()
+  (when (and ~disabled call)
+    (==> this repair-damaged)
+    (when call (call this)) ) )
+
+
+;;; la classe MENUPOPUP
+
+(defclass MenuPopup Column
+  currentitem )
+
+(defmethod MenuPopup MenuPopup()
+  (setq vspace 0))
+
+;; events redirected by menu
+
+(defmethod MenuPopup mouse-down(x y)
+  (==> this mouse-drag x y x y) )
+
+(defmethod MenuPopup mouse-drag(x y xx yy)
+  (let ((item ()))
+    (dolist (i contents)
+      (when (point-in-rect xx yy (cdr i))
+	(setq item (car i))) )
+    (when (and currentitem (<> currentitem item))
+      (==> currentitem sethilite ()) )
+    (setq currentitem item)
+    (when item
+      (==> item sethilite t) ) ) )
+
+(defmethod MenuPopup mouse-up(x y xx yy)
+  () )
+
+;; repaint
+
+(defmethod MenuPopup backpaint-color()
+  (apply fill-up-rect rect) )
+
+(defmethod MenuPopup repaint-bw()
+  (let (((x y w h) rect))
+    (color color-fg)
+    (draw-rect x y (1- w) (1- h)) ) ) 
+
+;; called by the equivalent methods of menu.
+
+(defmethod MenuPopup finditems(s)
+  (cond
+    ((numberp s)
+     (list (car (nth s contents))) )
+    ((stringp s)
+     (let ((ans ())
+	   (txt ()))
+       (dolist (i contents)
+	 (setq txt :(car i):text)
+	 (when (consp txt)
+	   (setq txt (car txt)) )
+	 (when (= txt s)
+	   (setq ans (nconc1 ans (car i))) ) )
+       ans ) )	
+    ((null s)	
+     (all ((i contents)) (car i))) ) )
+
+
+;;; la classe MENU
+;;
+;; INSERT
+;; REMOVE
+;; FINDITEMS(string)
+;; ENABLE(string...)
+;; DISABLE(stings...)
+
+
+(defclass Menu VisualObject
+  text
+  (textfont font-12b)
+  textw 
+  texth
+  hilited
+  itspopup
+  itssupport )
+
+(defmethod Menu compute-geometry()
+  (setq itssupport ())
+  (gsave
+    (textfont)
+    (setq textw (text-width text))
+    (setq texth (text-height "0"))
+    (==> this resize (+ textw 30) (+ texth 10)) )
+  (let ((c this))
+    (while (setq c :c:itscontainer)
+      (setq itssupport c) ) )
+  rect )
+
+
+(defmethod Menu repaint-bw()
+  (let (((x y w h) rect))
+    (when hilited
+      (color color-gray)
+      (draw-rect x y (1- w) (1- h)) )
+    (setq y (+ y (2/ h) (2/ texth)))
+    (color color-fg)
+    (fill-polygon (+ x 2) (- y 10) (+ x 7) y (+ x 12) (- y 10))
+    (textfont)
+    (draw-text (+ x 17) y text) ) )
+
+(defmethod Menu repaint-color()
+  (let (((x y w h) rect))
+    (if hilited
+	(fill-down-rect x y w h))
+    (setq y (+ y (2/ h) (2/ texth)))
+    (setcolor palette-left)
+    (fill-polygon (+ x 4) (+ y -8) (+ x 9) (+ y 2) (+ x 14) (+ y -8))
+    (setcolor palette-right)
+    (fill-polygon (+ x 2) (+ y -10) (+ x 7) (+ y 0) (+ x 12) (+ y -10))
+    (setcolor palette-down)
+    (fill-polygon (+ x 3) (+ y -9) (+ x 8) (+ y 1) (+ x 13) (+ y -9))
+    (color color-fg)
+    (textfont)
+    (draw-text (+ x 17) y text) ) )
+
+
+;; les evenements sont surtout rediriges vers 'itspopup'
+
+(defmethod Menu mouse-down(x y)
+  (setq hilited t)
+  (==> this expose rect)
+  (==> itspopup move (+ x 3) y)
+  (==> itssupport insert itspopup)
+  (if (not (rect-in-rect :itspopup:rect :itssupport:rect))
+      (let (((xs ys ws hs) :itssupport:rect)
+	    ((xp yp wp hp) :itspopup:rect))
+	(==> itspopup move
+	  (max 0 (min xp (+ xs ws (- wp))))
+	  (max 0 (min yp (+ ys hs (- hp)))) ) ) )
+  (==> this repair-damaged)
+  
+  (let* ((thismenu this)
+	 (event (==> this read-event))
+	 (item ()) )
+    (==> itspopup manage-event event)
+    (when :itspopup:contents (setq event ()))
+    (while (<> (car event) 'mouse-up)
+      (setq event (==> this read-event))
+      (==> itspopup manage-event event) )
+    (when (setq item :itspopup:currentitem)
+      (==> item sethilite ()) )
+    (==> itssupport remove itspopup)
+    (setq hilited ())
+    (==> this expose rect)
+    (when item (==> item execute) ) ) )
+
+
+(defmethod Menu finditems(string)
+  (==> itspopup finditems string) )
+
+(defmethod Menu enable strings
+  (dolist (s strings)
+    (dolist (i (==> itspopup finditems s))
+      (==> i enable) ) ) )
+
+(defmethod Menu disable strings
+  (dolist (s strings)
+    (dolist (i (==> itspopup finditems s))
+      (==> i disable) ) ) )
+
+(defmethod Menu gettext()
+  text ) 
+
+(defmethod Menu settext(string)
+  (setq text string)
+  (when window
+    (==> this compute-geometry)
+    (==> this expose rect) ) )
+
+
+(defmethod Menu Menu(title . contenu)
+  (setq text title)
+  (setq itspopup (new MenuPopup))
+  (while contenu
+    (==> itspopup insert (new MenuItem (car contenu) (cadr contenu)))
+    (setq contenu (cddr contenu)) ) )
+
+(defmethod Menu insert(what)
+  (==> itspopup insert what) )
+
+(defmethod Menu remove(what)
+  (==> itspopup remove what) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; ChoiceMenu: a menu of which name is an item
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass ChoiceMenu Menu
+  popupcall
+  call
+  data )
+
+(defmethod ChoiceMenu ChoiceMenu(&optional d callback)
+  (==> this Menu "<noname>")
+  (==> this setcall callback)
+  (==> this setitems d) )
+
+(defmethod ChoiceMenu setitems(d)
+  (==> itspopup removall)
+  (let ((f (lambda(c) 
+	     (==> thismenu setdata :c:text)
+	     (==> thismenu execute) ) ))
+    (dolist (i d)
+      (==> this insert (new MenuItem i f)) ) )
+  (==> this setdata ()) )
+
+(defmethod ChoiceMenu hasdata()
+  this )
+
+(defmethod ChoiceMenu setdata(d)
+  (==> this settext (or d "[*****]" ))
+  (setq data d) )
+
+(defmethod ChoiceMenu getdata()
+  data )
+
+(defmethod ChoiceMenu setcall(callback)
+  (setq call callback) )
+
+(defmethod ChoiceMenu setpopupcall(callback)
+  (setq popupcall callback) )
+
+(defmethod ChoiceMenu mouse-down(x y)
+  (when (functionp popupcall) (popupcall this))
+  (==> this (Menu . mouse-down) x y) )
+
+
+;;; ----------------------------------------
+
+(defmethod ChoiceMenu execute()
+  (when (functionp call)
+    (call this) ) )
+
+
+;;; ----------------------------------------
+
+(defmethod ChoiceMenu disable()
+  (==> this (Menu . disable) ()) )
+
+
+;;; ----------------------------------------
+
+(defmethod ChoiceMenu enable()
+  (==> this (Menu . enable) ()) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Knob: un truc que l'on peut dragger
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass Knob Control)
+
+
+(defmethod Knob Knob(w h callback) 
+  (==> this Control w h callback)
+  (setq data '(0 0 0 0)) )
+
+(defmethod Knob repaint-bw()
+  (let (((x y w h) rect))
+    (when disabled
+      (color color-gray) )
+    (draw-rect x y (1- w) (1- h)) ) )
+
+(defmethod Knob repaint-color()
+  (let (((x y w h) rect))
+    (draw-up-rect x y (1- w) (1- h)) ) )
+
+(defmethod Knob hasdata()
+  () )
+
+;; called when the mouse is moved
+
+(defmethod Knob data-from-drag(x1 y1 x2 y2)
+  (let (((x y w h) rect))
+    (incr x (- x2 x1))
+    (incr y (- y2 y1))
+    (when itscontainer
+      (let (((xin yin win hin) :itscontainer:rect))
+	(setq x (max xin (min x (- (+ xin win) w))))
+	(setq y (max yin (min y (- (+ yin hin) h)))) ) )
+    (setq data (list x y w h)) ) )
+
+;; the mouse events
+
+(defmethod Knob mouse-down(x y)
+  (==> this data-from-drag x y x y)
+  (let (((x y w h) data))
+    (hilite hilite-rect x y (+ x w) (+ y h)) ) )
+
+(defmethod Knob mouse-drag(x1 y1 x2 y2)
+  (==> this data-from-drag x1 y1 x2 y2)
+  (let (((x y w h) data))
+    (hilite hilite-rect x y (+ x w) (+ y h)) ) )
+
+(defmethod Knob mouse-up(x1 y1 x2 y2)
+  (==> this data-from-drag x1 y1 x2 y2)
+  (let (((x y w h) data))
+    (hilite hilite-none x y (+ x w) (+ y h)) )
+  (==> this execute) )
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; DragArea: un knob qui deplace son container
+;;; SizeArea: un knob qui change la taille de son container
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass DragArea Knob
+  constraintrect
+  magnet )
+
+(defmethod DragArea DragArea(w h)
+  (==> this Knob w h 
+    (lambda(caller)
+      (when :caller:itscontainer
+	(let (((x y w h) (==> caller getdata)))
+	  (==> :caller:itscontainer front x y w h) ) ) ) ) )
+
+(defmethod DragArea repaint-bw()
+  (color color-gray)
+  (let (((x y w h) rect))
+    (draw-rect x y (1- w) (1- h)) ) )
+
+(defmethod DragArea repaint-color()
+  (let (((x y w h) rect))
+    (draw-up-rect x y (1- w) (1- h)) ) )
+
+
+(defmethod DragArea data-from-drag(x1 y1 x2 y2)
+  (when itscontainer
+    (let (((x y w h) :itscontainer:rect))
+      (incr x (- x2 x1))
+      (incr y (- y2 y1))
+      (when :itscontainer:itscontainer
+	(let (((xin yin win hin)
+	       (or constraintrect
+		   :itscontainer:itscontainer:rect) ))
+	  (setq x (- x xin))
+	  (setq y (- y yin))
+	  (setq win (- win w))
+	  (setq hin (- hin h))
+	  (if magnet
+	      (let (((mx my) magnet))
+		(setq win (div win mx))
+		(setq hin (div hin my))
+		(setq x (div x mx))
+		(setq y (div y my))
+		(setq x (* mx (max 0 (min win x))))
+		(setq y (* my (max 0 (min hin y)))) )
+	    (setq x (max 0 (min win x)))
+	    (setq y (max 0 (min hin y))) )
+	  (incr x xin)
+	  (incr y yin) ) )
+      (setq data (list x y w h)) ) ) )
+
+
+
+(defclass SizeArea Knob
+  constraintrect
+  formfactor 
+  (touchx 0)
+  (touchy 0) )
+
+(defmethod SizeArea SizeArea(w h)
+  (==> this Knob w h 
+    (lambda(caller)
+      (setq :caller:touchx 0)
+      (setq :caller:touchy 0)
+      (when :caller:itscontainer
+	(let (((x y w h) (==> caller getdata)))
+	  (==> :caller:itscontainer front x y w h) ) ) ) ) )
+
+(defmethod SizeArea repaint-bw()
+  (color color-gray)
+  (let (((x y w h) rect))
+    (draw-rect x y (1- w) (1- h))
+    (draw-rect x y (2/ w) (2/ h)) ) )
+
+(defmethod SizeArea repaint-color()
+  (let (((x y w h) rect))
+    (fill-up-rect x y (1- w) (1- h)) ) )
+
+(defmethod SizeArea data-from-drag(x1 y1 x2 y2)
+  (when itscontainer
+    (let (((x y w h) :itscontainer:rect))
+      (when (< x2 x) (setq touchx -1))
+      (when (>= x2 (+ x w)) (setq touchx 1))
+      (when (< y2 y) (setq touchy -1))
+      (when (>= y2 (+ y h)) (setq touchy 1))
+      (when (> touchx 0)
+	(setq w (- x2 x)))
+      (when (< touchx 0)
+	(setq w (- (+ x w) x2))
+	(setq x x2) )
+      (when (> touchy 0)
+	(setq h (- y2 y)))
+      (when (< touchy 0)
+	(setq h (- (+ y h) y2))
+	(setq y y2) )
+      (setq data (list x y w h)) )
+    
+    (let* ((constraint (or constraintrect
+			   (when :itscontainer:itscontainer
+			     :itscontainer:itscontainer:rect ) ))
+	   (newrect ()) )
+      (when constraint
+	(setq newrect (collide-rect data (or constraintrect constraint)))
+	(when newrect 
+	  (setq data newrect)) ) )
+    
+    (when formfactor
+      (let (((x y w h) data)
+	    ((fw fh) formfactor) )
+	(let ((factor (max 1 (min (div w fw) (div h fh)))))
+	  (when (< touchx 0)
+	    (setq x (+ x w (- (* factor fw)))) )
+	  (when (< touchy 0)
+	    (setq y (+ y h (- (* factor fh)))) )
+	  (setq data (list x y (* factor fw) (* factor fh))) ) ) ) ) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Frame:      un container avec un dragarea
+;;; FrameSize:  un container avec un dragarea et un sizearea
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass Frame Container
+  thisframe
+  dragitem )
+
+(defmethod Frame Frame(x y w h . contenu)
+  (setq thisframe this)
+  (setq dragitem (new DragArea w h))
+  (==> this Container x y w h dragitem)
+  (dolist (i contenu)
+    (==> i moverel 1 1)
+    (==> this insert i) ) )
+
+(defmethod Frame manage-geometry()
+  (let (((x y w h) rect)
+	((ox oy ow oh) oldrect))
+    (dolist ((obj xx yy ww hh) contents)
+      (==> obj geometry (+ xx (- x ox)) (+ yy (- y oy)) ww hh) )
+    (when dragitem
+      (==> dragitem back x y w h) ) ) )
+
+
+(defclass FrameSize Frame
+  sizeitem )
+
+(defmethod FrameSize FrameSize(x y w h . contenu)
+  (setq dragitem (new DragArea w h))
+  (setq sizeitem (new SizeArea 5 5))
+  (==> this Container x y w h dragitem sizeitem)
+  (dolist (i contenu)
+    (==> i moverel 1 1)
+    (==> this insert i) ) )
+
+(defmethod FrameSize manage-geometry()
+  (let (((x y w h) rect)
+	((ox oy ow oh) oldrect) )
+    (dolist ((obj xx yy ww hh) contents)
+      (==> obj geometry (+ xx (- x ox)) (+ yy (- y oy)) ww hh) )
+    (when dragitem
+      (==> dragitem back x y w h) )
+    (when sizeitem
+      (==> sizeitem front (+ x w -10) (+ y h -10) 10 10) ) ) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; HSLIDER, VSLIDER: sliders...
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; from CONTROL: SETDATA(d) GETDATA()
+;;             : ENABLE() DISABLE()
+;;
+;; from HSLIDER: SETRANGE(min max) 
+;;             : SETSTEP(step)
+
+
+(defclass Slider Control
+  minvalue
+  maxvalue
+  (drag-callback ())
+  (stepvalue 1)
+  (bar 0)
+  (knobw 0)
+  (knobh 0)
+  (point 0) )
+
+(defmethod Slider Slider(w h mini maxi callback)
+  (setq data 0)
+  (setq text t)
+  (==> this setrange mini maxi)
+  (==> this setdata minvalue)
+  (==> this Control w h callback) )
+
+;; SETDRAG
+;; SETRANGE
+;; SETSTEP
+;; SETDATA
+
+(defmethod Slider setdrag(f)
+  (setq drag-callback f) )
+
+(defmethod Slider setrange(x y)
+  (setq minvalue x)
+  (setq maxvalue (max x y))
+  (when data
+    (==> this setdata data) )
+  (when window
+    (==> this compute-geometry)
+    (==> this expose) ) )
+
+(defmethod Slider setstep(s)
+  (setq stepvalue s)
+  (==> this setdata data) )
+
+(defmethod Slider setdata(d)
+  (when stepvalue
+    (let ((ipos (int (+ 0.5 (/ (- d minvalue) stepvalue)))))
+      (setq d (+ minvalue (* stepvalue ipos))) ) )
+  (when (< d minvalue) 
+    (setq d minvalue))
+  (when (> d maxvalue) 
+    (setq d maxvalue))
+  (==> this (Control . setdata) d) )
+
+
+;; SLIDER PRIVATE METHOD
+
+
+(defmethod Slider data-from-drag(x1 y1 x2 y2)
+  "Return the data from the position of the knob"
+  'dummy )
+
+(defmethod Slider click-in-knob-p(x1 y1)
+  'dummy )
+
+(defmethod Slider click-for-less-p(x1 y1)
+  'dummy )
+
+(defmethod Slider click-for-more-p(x1 y1)
+  'dummy )
+
+(defmethod Slider drag(dragdata)
+  (let ((olddata data))
+    (==> this setdata dragdata)
+    (when drag-callback
+      (drag-callback this) )
+    (==> this expose)
+    (==> this repair-damaged)
+    (setq data olddata) ) )
+
+;; ACTIONS
+
+(defmethod Slider drag-action(x1 y1)
+  (let ((ok t)
+	(event ())
+	(drag data))
+    (while ok
+      ;; Compress mouse events
+      (let ((ev (==> this read-event)))
+        (while ev
+	  (when (member (car ev) '(mouse-drag mouse-up))
+	    (setq event ev) ) 
+	  (setq ev (checkevent)) ) )
+      (if event
+	  (let (((evtype x1 y1 x2 y2) event))
+	    (let ((oldpoint point))
+	      (setq drag (==> this data-from-drag x1 y1 x2 y2))
+	      (==> this drag drag)
+	      (setq point oldpoint)) ) )
+      (when (= (car event) 'mouse-up)
+	(setq ok ()) ) )
+    (==> this setdata drag) 
+    (==> this execute) ) )
+
+(defmethod Slider up-action(x1 y1)
+  (let ((ok t)
+	(event ())
+	(drag data)
+	(step (or stepvalue (div (- maxvalue minvalue) 10))) )
+    (sendevent x1 y1)
+    (while ok
+      (while (testevent)
+	(setq event (==> this read-event))
+	(selectq (car event)
+	  (mouse-drag
+	    (setq x1 (nth 3 event))
+	    (setq y1 (nth 4 event)) )
+	  (mouse-up
+	    (setq ok ()) ) ) )
+      (when (not (==> this click-for-more-p x1 y1))
+	(setq ok ()) )
+      (when ok		
+	(sendevent x1 y1)
+	(incr drag step)
+	(==> this drag drag) ) )
+    (==> this setdata drag) 
+    (==> this execute) ) )
+
+(defmethod Slider down-action(x1 y1)
+  (let ((ok t)
+	(event ())
+	(drag data)
+	(step (or stepvalue (div (- maxvalue minvalue) 10))) )
+    (sendevent x1 y1)
+    (while ok
+      (while (testevent)
+	(setq event (==> this read-event))
+	(selectq (car event)
+	  (mouse-drag
+	    (setq x1 (nth 3 event))
+	    (setq y1 (nth 4 event)) )
+	  (mouse-up
+	    (setq ok ()) ) ) )
+      (when (not (==> this click-for-less-p x1 y1))
+	(setq ok ()) )
+      (when ok		
+	(sendevent x1 y1)
+	(incr drag (- step))
+	(==> this drag drag) ) )
+    (==> this setdata drag) 
+    (==> this execute) ) )
+
+
+;; EVENTS
+
+(defmethod Slider mouse-down(x1 y1)
+  (when ~disabled
+    (let (((x y w h) rect)
+          (name (car (eventinfo))))
+      (cond
+       ;; wheel
+       ((= name "Button4")
+        (==> this up-action x1 y1))
+       ((= name "Button5")
+        (==> this down-action x1 y1))
+       ;; in the knob
+       ((==> this click-in-knob-p x1 y1)
+        (==> this drag-action x1 y1) )
+       ;; up
+       ((==> this click-for-more-p x1 y1)
+        (==> this up-action x1 y1) )
+       ;; down
+       ((==> this click-for-less-p x1 y1)
+        (==> this down-action x1 y1) ) ) ) ) )
+
+
+
+;;;;;;;;;;;;
+;;;; HSLIDER
+;;;;;;;;;;;;
+
+(defclass HSlider Slider)
+
+(defmethod HSlider HSlider(mini maxi &optional callback)
+  (==> this Slider 100 0 mini maxi callback) )
+
+;; HSLIDER PRIVATE
+
+;; BUG to fix: in some weird situations (slider has almost 
+;; the same size as the sliding area) this code 
+;; produces a division by zero error.
+(defmethod HSlider data-from-drag(x1 y1 x2 y2)
+  (let ((newpoint ()) 
+	((x y w h) rect) )
+    (setq newpoint (min (- w (+ 3 knobw)) 
+			(max (+ 3 knobw) 
+			     (+ point (- x2 x1)) ) ))
+    (+ minvalue (* (- newpoint (+ knobw 3))
+		   (/ (- maxvalue minvalue)
+		      (- w (+ knobw knobw 6)) ) )) ) )
+
+(defmethod HSlider click-in-knob-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (>= x1 (+ x point (- knobw)))
+	 (<= x1 (+ x point knobw))
+	 (point-in-rect x1 y1 rect) ) ) )
+
+(defmethod HSlider click-for-less-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (< x1 (+ x point (- knobw)))
+	 (point-in-rect x1 y1 rect) ) ) )
+
+(defmethod HSlider click-for-more-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (> x1 (+ x point knobw))
+	 (point-in-rect x1 y1 rect) ) ) )
+
+
+;; HSLIDER REPAINT
+
+(defmethod HSlider compute-geometry()
+  (let (((x y w h) rect))
+    (==> this moveresize x y w 25) )
+  rect )
+
+
+(defmethod HSlider repaint-bw()
+  (let (((x y w h) rect))
+    (font-8)
+    (let* ((th (if text (text-height "0") 0))
+	   (l1 (text-width (str minvalue)))
+	   (l2 (text-width (str maxvalue)))
+	   (length w) )
+      
+      (setq bar (max (div h 2) (div (* 3 th) 2)))
+      (setq knobh (- h (1+ bar)))
+      
+      (when (or (> (+ l1 l2) (* 0.6 w))
+		(> bar (* 0.6 h)) )
+	;; don't fit
+	(setq th 0)
+	(setq knobh (1- (div h 2)))
+	(setq bar (div h 2)) )
+      
+      ;; compute point knobw & knobh
+      (setq knobw (div knobh 2))
+      (setq length (- w (+ knobw knobw 6)))
+      (setq point (+ 3 knobw (int (/ (* (- data minvalue) length) 
+				     (- maxvalue minvalue) ))))
+      
+      ;; draws the background
+      (if disabled
+	  (color color-gray)
+	(color color-fg) )
+      (when (> th 0)
+	(draw-text (+ x 2) (+ y th) (str minvalue))
+	(draw-text (+ x w -2 (- l2)) (+ y th) (str maxvalue)) )
+      (draw-rect x (+ y bar -2) (1- w) 4)
+      (fill-rect x (+ y bar -2) point 4)
+      
+      ;; draws the knob
+      (color color-bg)
+      (fill-rect (+ x point (- knobw)) (+ y bar (- knobh)) 
+		 (+ knobw knobw) (+ knobh knobh))
+      (if disabled
+	  (color color-gray)
+	(color color-fg) )
+      (draw-rect (+ x point (- knobw)) (+ y bar (- knobh)) 
+		 (+ knobw knobw) (+ knobh knobh)) ) ) )
+
+(defmethod HSlider repaint-color()
+  (let (((x y w h) rect))
+    (font-8)
+    (let* ((th (if text (text-height "0") 0))
+	   (l1 (text-width (str minvalue)))
+	   (l2 (text-width (str maxvalue)))
+	   (length w) )
+      
+      (setq bar (max (div h 2) (div (* 3 th) 2)))
+      (setq knobh (- h (1+ bar)))
+      
+      (when (or (> (+ l1 l2) (* 0.6 w))
+		(> bar (* 0.6 h)) )
+	;; don't fit
+	(setq th 0)
+	(setq knobh (1- (div h 2)))
+	(setq bar (div h 2)) )
+      
+      (setq knobw (div knobh 2))
+      (setq length (- w (+ knobw knobw 6)))
+      (setq point (+ 3 knobw (int (/ (* (- data minvalue) length) 
+				     (- maxvalue minvalue) ))))
+      
+      (if disabled (setcolor palette-disabled) )
+      (when (> th 0)
+	(draw-text (+ x 2) (+ y th) (str minvalue))
+	(draw-text (+ x w -2 (- l2)) (+ y th) (str maxvalue)) )
+      (fill-down-rect x (+ y bar -3) (1- w) 6)
+      (fill-down-rect x (+ y bar -3) point 6 color-fg)
+      (fill-up-round-rect (+ x point (- knobw)) (+ y bar (- knobh)) 
+			  (+ knobw knobw) (+ knobh knobh)) ) ) )
+
+
+
+
+
+
+
+
+;;;;;;;;;;;;
+;;;; VSLIDER
+;;;;;;;;;;;;
+
+(defclass VSlider Slider)
+
+(defmethod VSlider VSlider(mini maxi &optional callback)
+  (==> this Slider 0 100 mini maxi callback) )
+
+;; VSlider PRIVATE
+
+(defmethod VSlider data-from-drag(x1 y1 x2 y2)
+  (let ((newpoint ())
+	((x y w h) rect))
+    (setq newpoint (min (- h (+ 3 knobh)) 
+			(max (+ 3 knobh) 
+			     (+ point (- y2 y1)) ) ))
+    (+ minvalue (* (- h (+ newpoint knobh 3))
+		   (/ (- maxvalue minvalue)
+		      (- h (+ knobh knobh 6)) ) )) ) )
+
+(defmethod VSlider click-in-knob-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (>= y1 (+ y point (- knobw)))
+	 (<= y1 (+ y point knobw))
+	 (point-in-rect x1 y1 rect) ) ) )
+
+(defmethod VSlider click-for-less-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (> y1 (+ y point))
+	 (point-in-rect x1 y1 rect) ) ) )
+
+(defmethod VSlider click-for-more-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (< y1 (+ y point))
+	 (point-in-rect x1 y1 rect) ) ) )
+
+
+
+;; VSlider REPAINT
+
+(defmethod VSlider compute-geometry()
+  (let (((x y w h) rect))
+    (if ~text
+	(==> this moveresize x y 25 h)
+      (gsave
+	(font-8)
+	(==> this moveresize x y 
+	  (+ 20 (max (text-width (str maxvalue))
+		     (text-width (str minvalue)) ) )
+	  h ) ) ) )
+  rect )
+
+(defmethod VSlider repaint-bw()
+  (let (((x y w h) rect))
+    (font-8)
+    (let* ((th (if text 
+		   (max (text-width (str maxvalue))
+			(text-width (str minvalue)) ) ))
+	   (l (text-height "0"))
+	   (length h) )
+      
+      (setq bar (if text 
+		    (min (div w 2) (div (2* (- w th)) 3))
+		  (div w 2) ))
+      (setq knobw (if text
+		      (1- bar)
+		    (- w (1+ bar)) ))
+      
+      ;; compute point knobw & knobh
+      (setq knobh (div knobw 2))
+      (setq length (- h (+ knobh knobh 6)))
+      (setq point (+ 3 knobh
+		     (int (/ (* (- maxvalue data) length) 
+			     (- maxvalue minvalue) ))))
+      
+      ;; draws the background
+      (if disabled
+	  (color color-gray)
+	(color color-fg) )
+      (when (and th (> (- w th) bar))
+	(draw-text (+ x w (- th)) (+ y l) (str maxvalue))
+	(draw-text (+ x w (- th)) (+ y h -2) (str minvalue)) )
+      (draw-rect (+ x bar -2) y 4 (1- h))
+      (fill-rect (+ x bar -2) (+ y point) 4 (- h point))
+      
+      ;; draws the knob
+      (color color-bg)
+      (fill-rect (+ x bar (- knobw)) (+ y point (- knobh)) 
+		 (+ knobw knobw) (+ knobh knobh))
+      (if disabled
+	  (color color-gray)
+	(color color-fg) )
+      (draw-rect (+ x bar (- knobw)) (+ y point (- knobh)) 
+		 (+ knobw knobw) (+ knobh knobh) ) ) ) )
+
+
+
+
+
+(defmethod VSlider repaint-color()
+  (let (((x y w h) rect))
+    (font-8)
+    (let* ((th (if text 
+		   (max (text-width (str maxvalue))
+			(text-width (str minvalue)) ) ))
+	   (l (text-height "0"))
+	   (length h) )
+      
+      (setq bar (if text 
+		    (min (div w 2) (div (2* (- w th)) 3))
+		  (div w 2) ))
+      (setq knobw (if text
+		      (1- bar)
+		    (- w (1+ bar)) ))
+      
+      ;; compute point knobw & knobh
+      (setq knobh (div knobw 2))
+      (setq length (- h (+ knobh knobh 6)))
+      (setq point (+ 3 knobh
+		     (int (/ (* (- maxvalue data) length) 
+			     (- maxvalue minvalue) ))))
+      
+      (if disabled (setcolor palette-disabled))
+      (when (and th (> (- w th) bar))
+	(draw-text (+ x w (- th)) (+ y l) (str maxvalue))
+	(draw-text (+ x w (- th)) (+ y h -2) (str minvalue)) )
+      (fill-down-rect (+ x bar -3) y 6 (1- h))
+      (fill-down-rect (+ x bar -3) (+ y point) 6 (- h point) color-fg)
+      (fill-up-round-rect (+ x bar (- knobw)) (+ y point (- knobh)) 
+			  (+ knobw knobw) (+ knobh knobh)) ) ) )
+
+
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; SCROLLBAR: VSCROLLBAR HSCROLLBAR
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass ScrollBar Slider
+  knobv)
+
+
+(defmethod ScrollBar ScrollBar(w h maxi callback)
+  (==> this Slider w h 0 maxi callback)
+  (==> this setstep 1) )
+
+(defmethod ScrollBar setrange(x y &optional prop)
+  (setq knobv prop)
+  (==> this (Slider . setrange) x (- y (or knobv 0))) )
+
+(defmethod ScrollBar execute()
+  (when (and ~disabled call)
+    (lete ((lock (new DisableLock this)))
+      (when call
+	(call this) ) ) ) )
+
+;;;;;;;;;;;;
+;;;; HSCROLLBAR
+;;;;;;;;;;;;
+
+(defclass HScrollBar ScrollBar)
+
+(defmethod HScrollBar HScrollBar(maxi &optional callback)
+  (==> this ScrollBar 21 0 maxi callback) )
+
+;; HScrollBar PRIVATE
+
+(defmethod HScrollBar data-from-drag(x1 y1 x2 y2)
+  (let ((newpoint ())
+	((x y w h) rect) )
+    (setq newpoint (max (+ 2 x) (min (+ x w -2) (+ point (- x2 x1)))))
+    (if (<= maxvalue minvalue) 0
+      (+ minvalue (/ (* (- newpoint (+ 2 x)) (- maxvalue minvalue))
+		     (- w (+ 4 knobw)) )) ) ) )
+
+(defmethod HScrollBar click-in-knob-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (>= x1 point)
+	 (<= x1 (+ point knobw))
+	 (point-in-rect x1 y1 rect) ) ) )
+
+(defmethod HScrollBar click-for-less-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (< x1 point)
+	 (point-in-rect x1 y1 rect) ) ) )
+
+(defmethod HScrollBar click-for-more-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (> x1 (+ point knobw))
+	 (point-in-rect x1 y1 rect) ) ) )
+
+
+;; HScrollBar REPAINT
+
+(defmethod HScrollBar compute-geometry()
+  (let (((x y w h) rect))
+    (==> this moveresize x y w 21) )
+  rect )
+
+(defmethod HScrollBar repaint-bw()
+  (let (((x y w h) rect))
+    (setq h (+ h -1 (mod h 2)))
+    (setq knobh h)
+    (setq knobw (max 12 (if knobv
+			    (div (* knobv w) (+ knobv (- maxvalue minvalue)))
+			  (min h (div w 2)) )))
+    (when disabled (color color-gray) )    
+    (gsave
+      (color-shade 0.8)
+      (fill-rect x y (1- w) (1- h)) )
+    (draw-rect x y (1- w) (1- h))
+    
+    (when (> maxvalue minvalue)
+      (setq point (+ x 2 (int (/ (* (- data minvalue) (- w (+ 4 knobw)))
+				 (- maxvalue minvalue) ))))
+      (gsave
+	(color color-bg)
+	(fill-rect point (+ y 2) (- knobw 1) (- knobh 5)) )
+      (draw-rect  point (+ y 2) (- knobw 1) (- knobh 5)) ) ) )
+
+(defmethod HScrollBar repaint-color()
+  (let (((x y w h) rect))
+    (setq h (+ h -1 (mod h 2)))
+    (setq knobh h)
+    (setq knobw (max 12 (if knobv
+			    (div (* knobv w) (+ knobv (- maxvalue minvalue)))
+			  (min h (div w 2)) )))
+    (fill-down-rect x y w h)
+    (when (not disabled)
+      (when (> maxvalue minvalue) 
+	(setq point (+ x 2 (int (/ (* (- data minvalue) (- w (+ 4 knobw)))
+				   (- maxvalue minvalue) ))))
+	(fill-up-rect point (+ y 2) (- knobw 1) (- knobh 5)) ) ) ) )
+
+
+;;;;;;;;;;;;
+;;;; VSCROLLBAR
+;;;;;;;;;;;;
+
+(defclass VScrollBar ScrollBar)
+
+(defmethod VScrollBar VScrollBar(range &optional callback)
+  (==> this ScrollBar 0 21 range callback) )
+
+;; VScrollBar PRIVATE
+
+(defmethod VScrollBar data-from-drag(x1 y1 x2 y2)
+  (let ((newpoint ())
+	((x y w h) rect) )
+    (setq newpoint (max (+ 2 y) (min (+ y h -2) (+ point (- y2 y1)))))
+    (if (<= maxvalue minvalue) 0
+      (+ minvalue (/ (* (- newpoint (+ 2 y)) (- maxvalue minvalue))
+		     (- h (+ 4 knobh)) )) ) ) )
+
+(defmethod VScrollBar click-in-knob-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (>= y1 point)
+	 (<= y1 (+ point knobh))
+	 (point-in-rect x1 y1 rect) ) ) )
+
+(defmethod VScrollBar click-for-less-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (< y1 point)
+	 (point-in-rect x1 y1 rect) ) ) )
+
+(defmethod VScrollBar click-for-more-p(x1 y1)
+  (let (((x y w h) rect))
+    (and (> y1 (+ point knobh))
+	 (point-in-rect x1 y1 rect) ) ) )
+
+
+;; VScrollBar REPAINT
+
+(defmethod VScrollBar compute-geometry()
+  (let (((x y w h) rect))
+    (==> this moveresize x y 21 h) )
+  rect )
+
+(defmethod VScrollBar repaint-bw()
+  (let (((x y w h) rect))
+    (setq w (+ w -1 (mod w 2)))
+    (setq knobw w)
+    (setq knobh (max 12 (if knobv
+			    (div (* knobv h) (+ knobv (- maxvalue minvalue)))
+			  (min w (div h 2)) )))
+    (when disabled (color color-gray) )    
+    (gsave
+      (color-shade 0.8)
+      (fill-rect x y (1- w) (1- h)) )
+    (draw-rect x y (1- w) (1- h))
+    
+    (when (> maxvalue minvalue)
+      (setq point (+ y 2 (int (/ (* (- data minvalue) (- h (+ 4 knobh)))
+				 (- maxvalue minvalue) ))))
+      (gsave
+	(color color-bg)
+	(fill-rect (+ x 2) point (- knobw 5) (- knobh 1)) )
+      (draw-rect  (+ x 2) point (- knobw 5) (- knobh 1)) ) ) )
+
+
+(defmethod VScrollBar repaint-color()
+  (let (((x y w h) rect))
+    (setq w (+ w -1 (mod w 2)))
+    (setq knobw w)
+    (setq knobh (max 12 (if knobv
+			    (div (* knobv h) (+ knobv (- maxvalue minvalue)))
+			  (min w (div h 2)) )))
+    (fill-down-rect x y w h)
+    (when (not disabled)
+      (when (> maxvalue minvalue)
+	(setq point (+ y 2 (int (/ (* (- data minvalue) (- h (+ 4 knobh)))
+				   (- maxvalue minvalue) ))))
+	(fill-up-rect (+ x 2) point (- knobw 5) (- knobh 1)) ) ) ) )
+
+
+
+
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Viewer: a small window on a large container
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+(defclass ViewerHole Container
+  color-palette )
+
+
+(defmethod ViewerHole ViewerHole(x y w h contenu)
+  (setq color-palette :color-palette)	
+  (==> this Container x y w h contenu) )
+
+(defmethod ViewerHole repair(rect)
+  (==> this (Container . repair) rect) )
+
+
+(defclass Viewer Container
+  inside
+  view
+  hpos
+  vpos
+  hscroll
+  vscroll )
+
+
+(defmethod Viewer Viewer(w h contenu &optional hs vs)
+  (setq inside contenu)
+  (setq hpos 0 vpos 0)
+  (setq view (new ViewerHole 0 0 w h inside))
+  (==> this Container 0 0 w h view)
+  (when hs
+    (setq hscroll 
+	  (new HScrollBar 0
+	    (eval `(lambda (c) (==> ,this sethpos (==> c getdata)))) ))
+    (==> this insert hscroll) )
+  (when vs 
+    (setq vscroll 
+	  (new VScrollBar 0 
+	    (eval `(lambda (c) (==> ,this setvpos (==> c getdata)))) ))
+    (==> this insert vscroll) ) 
+  () )
+
+
+
+;;; PROPAGATE
+
+(defmethod Viewer hasdata()
+  (==> inside hasdata) )
+
+(defmethod Viewer getdata()
+  (==> inside getdata) )
+
+(defmethod Viewer setdata(d)
+  (==> inside setdata d) )
+
+(defmethod Viewer gettext()
+  (==> inside gettext) )
+
+(defmethod Viewer settext(d)
+  (==> inside settext d) )
+
+(defmethod Viewer disable()
+  (==> inside disable) )
+
+(defmethod Viewer enable()
+  (==> inside enable) )
+
+
+;;; SET POSITION
+
+(defmethod Viewer sethpos(h)
+  (==> this setpos h vpos))
+
+(defmethod Viewer setvpos(v)
+  (==> this setpos hpos v))
+
+(defmethod Viewer setpos(ph pv)
+  (let (((xx yy ww hh) :inside:rect)
+	((x y w h) :view:rect) )
+    (setq ph (max 0 (min ph (- ww w))))
+    (setq pv (max 0 (min pv (- hh h))))
+    (when (or (<> hpos ph)
+	      (<> vpos pv))
+      (setq hpos ph)
+      (setq vpos pv)
+      (==> inside move (- x hpos) (- y vpos))
+      (==> this expose rect) 
+      (==> this advertize) ) ) )
+
+
+(defmethod Viewer setcontenu(c)
+  (lete ((lock (new GeometryLock this)))
+    (when inside
+      (==> view remove inside))
+    (setq inside c)	
+    (==> view insert c) )
+  (==> this setpos hpos vpos)
+  (==> this advertize)
+  (==> this expose) )
+
+;;; BORDER
+
+(defmethod Viewer repaint-bw()
+  (let (((x y w h) :view:rect))
+    (draw-rect (- x 2) (- y 2) 
+	       (+ w (if vscroll 6 3))
+	       (+ h (if hscroll 6 3)) ) ) )
+
+(defmethod Viewer repaint-color()
+  () )
+
+(defmethod Viewer backpaint-color()
+  (let (((x y w h) :view:rect))
+    (fill-down-rect (- x 2) (- y 2) (+ w 4) (+ h 4)) ) )
+
+
+
+;;; ADVERTIZE
+
+(defmethod Viewer advertize()
+  (let (((xx yy ww hh) :inside:rect)
+	((x y w h) :view:rect) )
+    (when hscroll 
+      (==> hscroll setrange 0 ww w)
+      (==> hscroll setdata hpos) )
+    (when vscroll 
+      (==> vscroll setrange 0 hh h)
+      (==> vscroll setdata vpos)) ) )
+
+
+;;; COMPUTE GEOMETRY USING THE CONTENTS
+
+(defmethod Viewer compute-geometry()
+  (==> this advertize)
+  () )
+
+(defmethod Viewer manage-geometry()
+  (let (((x y ww hh) rect))
+    (when hscroll (incr hh -21))
+    (when vscroll (incr ww -21))
+    (==> view geometry (+ x 2) (+ y 2)
+      (- ww (if vscroll 6 4))
+      (- hh (if hscroll 6 4)) )
+    (when hscroll
+      (==> hscroll geometry x (+ y hh)
+	(if vscroll (1+ ww) ww) 21 ) )
+    (when vscroll
+      (==> vscroll geometry (+ x ww) y
+	21 (if hscroll (1+ hh) hh) ) ) )
+  (==> this setpos hpos vpos)
+  (==> this advertize) )
+
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; SELECTOR: A vertical selector
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+(defclass Selector Form
+  scroller
+  (textfont font-12)
+  textw
+  texth
+  nvisible
+  items
+  data
+  nline
+  (pos 0)
+  multiple
+  call1
+  call2 )
+
+;;; Constructor
+
+(defmethod Selector Selector(nlin &optional function items) 
+  (==> this Form (setq scroller (new VScrollBar 0)))
+  (let ((f (lambda(c) (==> thisform setpos (==> c getdata)))))
+    (==> scroller setcall f)
+    (==> scroller setdrag f) )
+  (setq nline nlin)
+  (setq nvisible nlin)
+  (cond ((functionp function)
+	 (setq call1 function call2 function)
+	 )
+    ((consp function)
+     (setq call1 (car function))
+     (setq call2 (cadr function))
+     )
+    (t
+      (setq multiple (not (not function)))
+      ) )
+  (==> this setitems items) )
+
+;;; Aspect
+
+(defmethod Selector compute-geometry()
+  (when window
+    (let (((x1 y1 w1 h1) :scroller:rect))
+      (textfont)
+      (setq texth (max 20 (text-height "0")))
+      (setq textw (max 22 (text-width "00000")))
+      (dolist (n items)
+	(setq textw (max textw (text-width n))) )
+      (==> this resize (+ w1 textw 10) (+ (* nline texth) 4))
+      rect ) ) )
+
+(defmethod Selector manage-geometry()
+  (let (((x y w h) rect)
+	((x1 y1 w1 h1) :scroller:rect) )
+    (==> scroller geometry (- (+ x w) w1) y w1 h)
+    (==> scroller setrange 0 (length items) nvisible) ) )
+
+
+(defmethod Selector repaint-bw()
+  (let (((x1 y1 w1 h1) :scroller:rect)
+	((x y w h) rect))
+    (draw-rect x y w (1- h))
+    (setq nvisible (/ (- h 4) texth))
+    (for (i 0 (1- nvisible))
+      (when (< (+ pos i) (length items))
+	(textfont)
+	(color color-fg)
+	(when (member (+ i pos) data)
+	  (fill-rect x (+ y 2 (* i texth)) (- x1 x) texth)
+	  (color color-bg) )
+	(draw-text (+ x 5) (+ y 2 (* (+ i 0.7) texth)) 
+		   (nth (+ pos i) items)) ) ) ) )
+
+(defmethod Selector repaint-color()
+  (let (((x1 y1 w1 h1) :scroller:rect)
+	((x y w h) rect))
+    (fill-down-rect x y (- w (1+ w1)) (1- h) color-bg)
+    (setq nvisible (/ (- h 4) texth))
+    (for (i 0 (1- nvisible))
+      (when (< (+ pos i) (length items))
+	(textfont)
+	(when (member (+ i pos) data)
+	  (setcolor palette-selected)
+	  (fill-rect (+ x 2) (+ y 2 (* i texth)) (- w (+ w1 4)) texth)
+	  (color color-fg) )
+	(draw-text (+ x 5) (+ y 2 (* (+ i 0.7) texth)) 
+		   (nth (+ pos i) items)) ) ) ) )
+
+(defmethod Selector mouse-up(x1 y1 x2 y2)
+  (cond
+   ;; scroller
+   ((point-in-rect x1 y1 :scroller:rect)
+    (==> scroller mouse-up x1 y1 x2 y2) )
+   ;; wheel
+   ((selectq (car (eventinfo))
+      ("Button4" (==> this arrow-up x1 y1) t)
+      ("Button5" (==> this arrow-down x1 y1) t)
+      (t ()) )
+    () )
+   ;; select
+   (t
+    (let (((x y w h) rect))
+      (let ((n1 (+ pos (div (- y1 (+ y 2)) texth)))
+	    (n2 (+ pos (div (- y2 (+ y 2)) texth))))
+	(when (= n1 n2)
+	  (when (< n1 (length items))
+	    (cond
+	      (multiple
+		;; selector with multiple choices	
+		(if (member n1 data)
+		    (setq data (flatten (all ((i data)) (when (<> i n1) i)))) 
+		  (setq data (cons n1 data)) )
+		(==> this expose rect) )
+	      ((member n1 data)
+	       ;; selector single choice, second click
+	       (when call2 (call2 this)) )
+	      (t
+		;; selector single choice, first click
+		(setq data (list n1))
+		(==> this expose rect) 
+		(when call1 (call1 this)) ) ) ) ) ) ) ) ) )
+
+
+(defmethod Selector arrow-up(x y)
+  (when items
+    (if (not data)
+        (==> this setpos (1- pos))
+      (setq data (list (max 0 (1- (car data))))) 
+      (if (< (car data) pos)
+          (==> this setpos (car data))
+        (==> this expose) )
+      (when call1 (call1 this)) ) ) )
+
+(defmethod Selector arrow-down(x y)
+  (when items
+    (if (not data)
+        (==> this setpos (1+ pos))
+      (setq data (list (min (1- (length items)) (1+ (car data)))))
+      (if (>= (car data) (+ pos nvisible))
+          (==> this setpos (1+ (- (car data) nvisible)))
+        (==> this expose) )
+      (when call1 (call1 this)) ) ) )
+
+(defmethod Selector setpos(n)
+  (let ((newpos (max 0 (min n (- (length items) nvisible)))))
+    (when (<> pos newpos)
+      (setq pos newpos)
+      (==> scroller setdata pos)
+      (==> this expose rect) ) ) )
+
+
+(defmethod Selector setitems(itms)
+  (setq pos 0)
+  (setq items itms)
+  (==> scroller setdata 0)
+  (==> scroller setrange 0 (length items) nvisible)
+  (when window
+    (==> this compute-geometry)
+    (==> this expose rect) )
+  (==> this setpos 0) 
+  (==> this setdata ()) )
+
+;;; Data
+
+(defmethod Selector setdata(itms)
+  (when (<> itms data)
+    (setq data ())
+    (dolist (i (flatten itms))
+      (cond
+	((and (numberp i) (>= i 0) (< i (length items))) 
+	 (setq data (cons i data)) )
+	((and (stringp i) (member i items))
+	 (setq data (cons (- (length items) 
+			     (length (member i items))) 
+			  data)) ) ) )
+    (==> this expose rect) ) )
+
+(defmethod Selector getdata()
+  (if multiple
+      (all ((i data)) (nth i items))
+    (when data
+      (nth (car data) items))) )
+
+(defmethod Selector getdatanum()
+  (if multiple
+      data
+    (when data
+      (car data)) ))
+
+(defmethod Selector hasdata()
+  this )
+
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; Standard requesters
+;;;
+;;; WARNINGREQUESTER:  popup with message.
+;;; ERRORREQUESTER:    popup with message and okay bouton.
+;;; YESNOREQUESTER:    popup (action if yes)
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+
+
+;;; WARNINGREQUESTER
+;;
+;;  POPUP(s)       display message s until receiving popdown
+;;  POPUPLOCK(d s) display message s for d seconds
+
+
+(defclass WarningRequester Requester
+  stringitem )
+
+(defmethod WarningRequester WarningRequester(w)
+  (setq stringitem (new OgreString "Warning message"))
+  (setq :stringitem:textmax 64)
+  (==> this Requester w stringitem) )
+
+(defmethod WarningRequester popup(s)
+  (==> stringitem settext s)
+  (==> this (Requester . popup))
+  (==> this repair-damaged) )
+
+;; POPUPLOCK
+
+(defmethod WarningRequester popuplock(delay s)
+  (lete ((lock (new RequesterLock this)))
+    (==> this popup s)
+    (sleep delay) ) )
+
+
+;;; ERRORREQUESTER
+
+(defclass ErrorRequester Requester
+  stringitem
+  okbutton )
+
+(defmethod ErrorRequester ErrorRequester(w)
+  (setq stringitem (new OgreString "Error message"))
+  (setq :stringitem:textmax 64)
+  (setq okbutton (new StdButton ostring-ok
+		   (lambda(caller) 
+		     (==> thisrequester popdown) ) ) )
+  (setq :okbutton:default-ring t)
+  (==> this Requester w (new Column 
+			  stringitem 
+			  (new Row okbutton))) )
+
+(defmethod ErrorRequester keypress(c x y)
+  (when (= c "\r")
+    (==> okbutton trigger) ) )
+
+(defmethod ErrorRequester popup(s)
+  (==> stringitem settext s)
+  (==> this (Requester . popup))
+  (==> this repair-damaged)
+  (beep) )
+
+
+;;; YESNOREQUESTER
+;;
+;; from REQUESTER:   
+;;   POPUP() POPUPLOCK()
+;;   POPDOWN()
+;; from YESNOREQUESTER:
+;;   SETTEXT(yestext notext yes|no|())
+;;   ASK(string yestext notext yes|no|())
+
+
+(defclass YesNoRequester Requester
+  result
+  string
+  saveddata
+  call
+  yesbutton
+  nobutton )
+
+
+(defmethod YesNoRequester yes_action()
+  (setq result 'yes)
+  (==> this popdown)
+  (when call 
+    (call this)) )
+
+(defmethod YesNoRequester no_action()
+  (setq result 'no)
+  (==> this popdown)
+  (==> this setdata saveddata) )
+
+(defmethod YesNoRequester setcall(callback)
+  (setq call callback) )
+
+(defmethod YesNoRequester createbuttons(yestext notext)
+  (setq yesbutton (new StdButton yestext 
+		    (lambda(caller) 
+		      (==> thisrequester yes_action))) )
+  (setq nobutton  (new StdButton notext 
+		    (lambda(caller)
+		      (==> thisrequester no_action))) )
+  (==> this settext yestext notext 'yes) )
+
+(defmethod YesNoRequester keypress(c x y)
+  (cond
+    ((and (= c "\r") :yesbutton:default-ring)   
+     (==> yesbutton trigger) )
+    ((and (= c "\r") :nobutton:default-ring)   
+     (==> nobutton trigger) )
+    (t 
+      (==> this (Requester . keypress) c x y) ) ) )
+
+(defmethod YesNoRequester YesNoRequester( w contenu yestext notext callback )
+  (==> this createbuttons yestext notext)
+  (setq call callback)
+  (setq string (if (stringp contenu)
+                   (new OgreString contenu)
+                 contenu) )
+  (==> this Requester w
+    (new Column string (new Row yesbutton (new EmptySpace 8) nobutton)) ))
+
+(defmethod YesNoRequester popup()
+  (setq saveddata (==> this getdata))
+  (==> this (Requester . popup)) )
+
+(defmethod YesNoRequester popuplock()
+  (==> this (Requester . popuplock))
+  (when (= result 'yes) (or (==> this getdata) t)) )
+
+(defmethod YesNoRequester popuphard()
+  (==> this (Requester . popuphard))
+  (when (= result 'yes) (or (==> this getdata) t)) )
+
+(defmethod YesNoRequester settext(yestext notext default)
+  (setq :yesbutton:default-ring ()
+	:nobutton:default-ring () )
+  (selectq default
+    (yes  (setq :yesbutton:default-ring t))
+    (no   (setq :nobutton:default-ring t))
+    (t    ()) )
+  (==> yesbutton settext yestext)
+  (==> nobutton settext notext) )
+
+
+(defmethod YesNoRequester ask(text yestext notext default)
+  (==> string settext text)
+  (==> this settext yestext notext default)
+  (==> this popuphard) )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; PRINTREQUESTER:  a print requester
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass PrintRequester YesNoRequester
+  the-destination )
+
+(defmethod PrintRequester PrintRequester(w &optional callback)
+  (cond
+    ;; Windows 
+    (wpr-window
+      (when (and wpr-window wpr-printers (wpr-printers))
+	(setq the-destination (new Selector 4))
+	(==> the-destination setitems (wpr-printers))
+	(setq :the-destination:call2 (lambda(c) (==> yesbutton trigger))) 
+	(==> the-destination setdata 0) 
+	(setq the-destination
+	      (new Column
+		(new OgreString "Choose a printer:")
+		the-destination 
+		(new DarkSpace 200 3) ) ) ) )
+    ;; Unix
+    (ps-window
+      (setq the-destination
+	    (new Column 
+	      (new OgreString "Output Encapsulated PostScript to:")
+	      (new EditString 16 "|lpr") ) ) ) )
+  ;; Initialize requester
+  (==> this YesNoRequester w 
+    (or the-destination (new OgreString "Printing not supported"))
+    ostring-ok ostring-cancel callback ) )
+
+
+(defmethod PrintRequester getdata()
+  (car (==> this (YesNoRequester . getdata)) ) )
+
+(defmethod PrintRequester setdata(data)
+  (==> this (YesNoRequester . setdata) (list data)) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; FILEREQUESTER:  a file requester
+;;; FILEREQBUTTON:  a button attached to an editstring 
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+;;; FILEREQUESTER
+;;
+;; from REQUESTER:   
+;;   POPUP() POPUPLOCK()  
+;;   POPDOWN()
+;; from YESNOREQUESTER:
+;;   SETTEXT()
+;; from FILEREQUESTER:
+;;   GETDIR()
+;;   SETPARM(mesg [flag] [filter])
+
+
+(defclass FileRequester YesNoRequester
+  flag					; no-newfile ask-newfile ask-oldfile
+  filter				; (filter s) tells if s is OK.
+  mesg
+  flist dlist dir
+  ask-dialog
+  selector-item
+  string-item
+  file-item )
+
+;; DATA
+
+(defmethod FileRequester hasdata()
+  this)
+
+(defmethod FileRequester getdata()
+  (==> file-item getdata) )
+
+(defmethod FileRequester getdir()
+  dir ) 
+
+(defmethod FileRequester getbase()
+  (let ((d (==> file-item getdata)))
+    (when ~(dirp d) (basename d)) ) )
+
+(defmethod FileRequester setdata(d)
+  (==> file-item setdata d)
+  (==> this update-2) )
+
+
+;; CREATION
+
+(defmethod FileRequester FileRequester(w &optional msg flg filt callback)
+  (setq mesg ostring-freq-msg)
+  (setq string-item (new OgreString mesg))
+  (setq selector-item (new Selector 6 ()))
+  (setq file-item (new EditString 30 (chdir)))
+  (setq ask-dialog (new YesNoRequester w (new OgreString "") "Yes" "No" ()))
+  
+  (==> this YesNoRequester w
+    (new Column
+      string-item
+      selector-item
+      file-item ) 
+    ostring-ok ostring-cancel callback )
+  
+  (setq :selector-item:call1 (lambda(c) (==> thisrequester select1-action)))
+  (setq :selector-item:call2 (lambda(c) (==> thisrequester select2-action)))
+  (==> this setparm msg flg filt) )
+
+
+;; ACTIONS
+
+(defmethod FileRequester select1-action()
+  (==> this update-1)
+  (==> this check) )
+
+(defmethod FileRequester select2-action()
+  (==> yesbutton trigger) )
+
+
+(defmethod FileRequester yes_action()
+  (let* ((data (==> this getdata))
+	 (oldf (or (filep data) (dirp data)))
+	 (ok t) )
+    
+    (if (dirp data)
+	(==> this update-2)
+      (cond		
+	((and (= flag 'no-newfile) ~oldf)
+	 (setq ok ()) )	
+	((and (= flag 'ask-newfile) ~oldf)
+	 (setq ok (==> ask-dialog ask 
+		    (sprintf ostring-freq-create (basename data)) 
+		    ostring-ok ostring-cancel 'no) )) 
+	((and (= flag 'ask-oldfile) oldf)
+	 (setq ok (==> ask-dialog ask
+		    (sprintf ostring-freq-overwrite (basename data)) 
+		    ostring-ok ostring-cancel 'no) )) )
+      (when ok 
+	(==> this (YesNoRequester . yes_action)) ) ) ) )
+
+
+;; EVENTS
+
+(defmethod FileRequester arrow-up(x y)
+  (==> selector-item arrow-up x y) 
+  (==> this update-1) )
+
+(defmethod FileRequester arrow-down(x y)
+  (==> selector-item arrow-down x y) 
+  (==> this update-1) )
+
+
+(defmethod FileRequester keypress(c x y)
+  (selectq c
+    ("\t"
+     (lete ((lock (new DisableLock file-item)))
+       (==> file-item setdata
+	 (concat-fname (==> file-item getdata)))
+       (==> this repair-damaged)
+       (==> this update-2) ) )
+    ("\r"
+     (==> yesbutton trigger) )
+    (t
+      (==> file-item keypress c x y)
+      (==> selector-item setdata ())
+      (==> this check) ) ) )
+
+
+
+;; COMMANDS
+
+(defmethod FileRequester setparm(msg flg &optional filt)
+  (setq mesg (or msg mesg))
+  (==> string-item settext mesg)
+  (setq flag flg)
+  (setq filter filt)
+  (==> this update-2) 
+  (==> this check) )
+
+
+(defmethod FileRequester ask(msg flg &optional filt dir)
+  (==> this setparm msg flg filt)
+  (when dir (==> this setdata dir))
+  (==> this popuplock) )
+
+
+
+;; UPDATE
+
+(defmethod FileRequester check()
+  (let ((data (==> this getdata))
+	(ok t) )
+    (==> yesbutton enable)
+    (==> yesbutton enable)
+    (if (dirp data)
+	(when (= (str-right data 1) "/")
+	  (==> yesbutton disable) 
+	  (==> yesbutton disable) )
+      (when (or (not (dirp (dirname data)))
+		(and filter (not (filter data)))
+		(and (= flag 'no-newfile) (not (filep data))) )
+	(==> yesbutton disable) 
+	(==> yesbutton disable) 
+	(setq ok ()) ) )
+    ok ) )
+
+
+(defmethod FileRequester update-1()
+  (let ((sel (==> selector-item getdata)))
+    (let ((f (car (member sel flist)))
+	  (d (car (member sel dlist))) )
+      (when f
+	(==> file-item setdata (concat-fname (==> this getdir) f)) )
+      (when d
+	(setq d (regex-subst " /$" "" d))
+	(==> file-item setdata (concat-fname (==> this getdir) d)) ) ) ) )
+
+
+(defmethod FileRequester update-2()
+  (let ((data (==> file-item getdata)))
+    (setq data (concat-fname data))
+    (if (not (dirp data))
+	(setq dir (dirname data))
+      (setq dir data)
+      (let ((mark (if winlushp "\\" "/")))
+	(when (<> (str-right data 1) mark)
+	  (setq data (concat data mark)) ) ) )
+    (==> file-item setdata data) )
+  (setq flist ())	
+  (setq dlist ())	
+  (dolist (l (files dir))
+    (let ((f (concat-fname dir l)))
+      (cond
+	((dirp f)
+	 (setq dlist (cons (concat l " /") dlist)) )
+	((or (not filter) (filter f))
+	 (setq flist (cons l flist)) ) ) ) )
+  (==> selector-item setitems (sort-list (append dlist flist) >))
+  (==> this check)
+  (when window (while (checkevent) ())) )
+
+
+;;; FILEREQBUTTON
+;;  A button for popping up a filerequester
+
+(defclass FileReqButton Button
+  the-editstring
+  the-filereq )
+
+(defmethod FileReqButton FileReqButton(amsg astring)
+  (setq the-editstring astring)
+  (setq the-filereq
+	(cond ((or ~amsg (stringp amsg))
+	       (new FileRequester this amsg () () ())
+	       )
+	  ((consp amsg)
+	   (new FileRequester this (nth 0 amsg) (nth 1 amsg) (nth 2 amsg))
+	   )
+	  (t
+	    amsg
+	    )
+	  ) )
+  (==> the-filereq setcall (eval `(lambda(c) (==> ,this reqdone))))
+  (==> this Button 21 21 (lambda(c) (==> c reqpopup))) )
+
+(defmethod FileReqButton hasdata()
+  () )
+
+(defmethod FileReqButton reqpopup()
+  (==> the-filereq setdata (==> the-editstring getdata))
+  (==> the-filereq popup) )
+
+(defmethod FileReqButton reqdone()
+  (==> the-editstring setdata (==> the-filereq getdata)) )
+
+(defmethod FileReqButton repaint-icon()
+  (let (((x y w h) rect))
+    (setq x (+ 5 x))
+    (setq y (+ 5 y))
+    (setq w (- w 11))
+    (setq h (- h 11))
+    (let ((w2 (- w (div w 3)))
+	  (h2 (div h 3)) )
+      (dolist ((nx ny) `((,(+ x w2) ,y)
+			(,(+ x w) ,(+ y h2))
+			(,(+ x w) ,(+ y h))
+			(, x ,(+ y h))
+			(,x ,y) ))
+	(draw-line x y nx ny)
+	(setq x nx y ny) ) ) ) )
+
+(defmethod FileReqButton repaint-bw()
+  (let (((x y w h) rect))
+    (if disabled
+	(color color-gray) )
+    (if (not depressed)
+	(draw-rect x y (1- w) (1- h))
+      (fill-rect x y (1- w) (1- h))
+      (color color-bg) )
+    (==> this repaint-icon) ) )
+
+(defmethod FileReqButton repaint-color()
+  (if depressed 
+      (apply fill-down-rect rect)
+    (apply fill-up-rect rect) )
+  (if disabled
+      (setcolor palette-disabled) )
+  (==> this repaint-icon) )
+
+
+;;; utilities
+
+(de ogre-ask-file (winobj message flag &optional filter fname)
+  (if (not :ogre-filerequester)
+      (setq :ogre-filerequester (new FileRequester winobj))
+    (==> :ogre-filerequester setsupport winobj)
+    )
+  (when ~fname (setq fname (==> :ogre-filerequester getdir)))
+  (==> :ogre-filerequester ask message flag filter fname)
+  )
+
+
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; EDITTEXT: a multiline text editor
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defclass EditText Form
+  hscroller
+  vscroller
+  text )
+
+(defmethod EditText EditText(w h &optional (def ""))
+  (setq vscroller (new VScrollBar 0 ()))
+  (setq hscroller (new HScrollBar 0 ()))
+  (setq text (new TextPane w h def t vscroller hscroller))
+  (let ((vs (lambda(c) (==> :thisform:text vscroll (==> c getdata))))
+	(hs (lambda(c) (==> :thisform:text hscroll (==> c getdata)))) )
+    (==> vscroller setcall vs)
+    (==> vscroller setdrag vs)
+    (==> hscroller setcall hs)
+    (==> hscroller setdrag hs) )
+  (==> this Form text vscroller hscroller) )
+
+(defmethod EditText compute-geometry()
+  (when window
+    (let (((x1 y1 w1 h1) :hscroller:rect)
+	  ((x1 y2 w2 h2) :vscroller:rect)
+	  ((x y w h) :text:rect))
+      (==> this resize (+ w w2 1) (+ h h1 1)) ) )
+  rect )
+
+(defmethod EditText manage-geometry()
+  (let (((x y w h) rect)
+	((x1 y1 w1 h1) :hscroller:rect)
+	((x1 y2 w2 h2) :vscroller:rect))
+    (setq w (max w (2* w2)))
+    (setq h (max h (2* h1)))
+    (setq w (- w (mod (1+ w) 2)))  ;; removes dirty effect on BW screen
+    (setq h (- h (mod h 2)))
+    (==> text geometry x y (- (1+ w) w2) (- (1+ h) h1))
+    (==> hscroller geometry x (+ y (- h h1)) (- w w2) h1)
+    (==> vscroller geometry (+ x (- w w2)) y w2 (- h h1)) ) )
+
+(defmethod EditText hasdata()
+  this )
+
+(defmethod EditText getdata()
+  (==> text getdata) )
+
+(defmethod EditText setdata(d)
+  (==> text setdata d) )
+
+(defmethod EditText gotoxy(pos &optional (line 0))
+  (==> text gotoxy pos line) )
+
+(defmethod EditText read-file(d)
+  (==> text read-file d) )
+
+(defmethod EditText write-file(d)
+  (==> text write-file d) )
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; TEXTPANE: text editor without scrollbar
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; ----------------------------------------
+(defvar TextPaneKeymap
+  '(("\n"     execute)
+    ("\r"     execute)
+    ("\b"     backspace)
+    ("\x7f"   backspace)
+    ("\x01"   begin-of-line)
+    ("Home"   begin-of-line)
+    ("\x02"   arrow-left)
+    ("\x04"   delete-char)
+    ("Delete" delete-char)
+    ("\x05"   end-of-line)
+    ("End"    end-of-line)
+    ("\x06"   arrow-right)
+    ("\x0b"   kill)
+    ("\x0e"   arrow-down)
+    ("\x10"   arrow-up)
+    ("\x16"   page-down)
+    ("Next"   page-down)
+    ("\x19"   yank) 
+    ("\x1b"   metakey "\x1b") 
+    ("\x1b<"  begin-of-text)
+    ("C-Home" begin-of-text)
+    ("\x1b>"  end-of-text)
+    ("C-End"  end-of-text)
+    ("\x1bv"  page-up)
+    ("Prior"  page-up)
+    ) )
+
+;; ----------------------------------------
+(defclass TextPane Control
+  width height
+  cw lh
+  ;data
+  (sline 0)
+  (spos 0)
+  (cline 0)
+  (cpos  0)
+  (tcols 0)
+  (tlines 1)
+  metakey
+  editable
+  gatherkill
+  vscroller 
+  hscroller
+  modified )
+
+
+(defmethod TextPane TextPane(w h &optional def editp vs hs)
+  (setq data (list ""))
+  (setq width w)
+  (setq height h)
+  (setq editable editp)
+  (setq activated editp)
+  (==> this setdata def)
+  (setq vscroller vs)
+  (setq hscroller hs) 
+  (==> this Control w h ()) )
+
+
+(defmethod TextPane compute-geometry()
+  (when window 
+    (gsave 
+      (font-8f)
+      (setq lh (+ 6 (text-height "0")))
+      (setq cw (- (text-width "00") (text-width "0"))) )
+    (==> this resize (+ 8 (* cw width)) (+ 8 (* lh height)))
+    rect ) )
+
+(defmethod TextPane geometry(x y w h)
+  (when window
+    (setq width (div (- w 8) cw))
+    (setq height (div (- h 8) lh))
+    (==> this advertize) )
+  (==> this (Control . geometry) x y w h) )
+
+
+(defmethod TextPane backpaint-bw()
+  (let (((x y w h) rect))
+    (cls)
+    (when disabled (color color-gray))
+    (draw-rect x y (1- w) (1- h)) )
+  (if (and () activated (not disabled)) 
+      (draw-rect (+ x 2) (+ y 2) (- w 5) (- h 5)) ) )
+
+(defmethod TextPane repaint-bw()
+  (font-8f)
+  (let (((x y w h) rect))
+    (addclip (list (+ x 2) (+ y 2) (- w 4) (- h 4)))
+    (when disabled (color color-gray))
+    (let ((d (nthcdr sline data))
+	  (c (- cline sline)) )
+      (for (i 1 height)
+	(when d
+	  (draw-text (+ x 4) (+ y (* lh i)) (str-mid (car d) spos))
+	  (when (and (0= c) activated ~disabled)
+	    (gsave
+	      (when (not editable)
+		(color color-gray) )
+	      (let ((xr (+ x 2 (* cw (- cpos spos))))
+		    (yr (+ y 5 (* lh i))) )
+		(fill-polygon xr yr (+ xr 3) (- yr 5) (+ xr 6) yr) ) ) )
+	  (setq c (1- c))
+	  (setq d (cdr d)) ) ) ) ) )
+
+
+
+(defmethod TextPane backpaint-color()
+  (let (((x y w h) rect))
+    (fill-down-rect x y w h (when (not disabled) color-bg)) ) )
+
+(defmethod TextPane repaint-color()
+  (font-8f)
+  (let (((x y w h) rect))
+    (addclip (list (+ x 2) (+ y 2) (- w 4) (- h 4)))
+    (if disabled (setcolor palette-disabled))
+    (let ((d (nthcdr sline data))
+	  (c (- cline sline)) )
+      (for (i 1 height)
+	(when d
+	  (draw-text (+ x 4) (+ y (* lh i)) (str-mid (car d) spos))
+	  (when (and (0= c) activated ~disabled)
+	    (gsave
+	      (when (not editable)
+		(setcolor palette-down) )
+	      (let ((xr (+ x 2 (* cw (- cpos spos))))
+		    (yr (+ y 5 (* lh i))) )
+		(fill-polygon xr yr (+ xr 3) (- yr 5) (+ xr 6) yr) ) ) )
+	  (setq c (1- c))
+	  (setq d (cdr d)) ) ) ) ) )
+
+
+;; ----------------------------------------
+(defmethod TextPane setdata(d)
+  (cond
+    ((consp d)
+     (setq data (append d ())))
+    ((stringp d)
+     (let ((pos ())
+	   (lst ()) )
+       (while (setq pos (str-find "\n" d))
+	 (setq lst (nconc1 lst (str-left d pos)))
+	 (setq d (str-mid d (+ pos 1))) )
+       (setq data (nconc1 lst d)) ) ) )
+  (let ((pos ())
+	(d data)
+	(l ()) )
+    (while d
+      (setq l (car d))
+      (while (setq pos (+ (str-find "\t" l) 1))
+	(let ((nextpos (1+ (* 8 (div (+ pos 7) 8)))))
+	  (setq l (str-insert (str-del l (- pos 1) 1) (1- pos) 
+			  (str-left "         " (- nextpos pos)) ) ) ) )
+      (rplaca d l)
+      (setq d (cdr d)) ) )
+  (setq sline 0 spos 0 cline 0 cpos 0)
+  (setq modified ())
+  (==> this advertize) )
+
+
+;; ----------------------------------------
+(defmethod TextPane read-file(fname)
+  (let ((ok t)
+	(l ())
+	(d ()))
+    (reading fname
+      (while (and ok (<> "\e" (skip-char "\e")))
+	(setq l (read-string "~\n"))
+	(read-string 1)
+	(when (and (not (isprint l)) (not (= l ""))
+		   (not (isprint (regex-subst "\t" " " l))) )
+	  (setq ok ()) )
+	(setq d (cons l d)) ) )
+    (==> this setdata (if ok (reverse d) "<<< not a text file >>>")) ) )
+
+
+;; ----------------------------------------
+(defmethod TextPane write-file(fname)
+  (writing fname
+    (dolist (s data)
+      (printf "%s\n" s) ) )
+  (setq modified ()) )
+
+;; ----------------------------------------
+(defmethod TextPane getdata()
+  data )
+
+
+;; ----------------------------------------
+;; Elementary actions
+
+(defmethod TextPane vscroll(s)
+  (setq sline (max 0 (min (- tlines (1- height)) s)))
+  (when vscroller (==> vscroller setdata sline))
+  (==> this expose) )
+
+(defmethod TextPane hscroll(s)
+  (setq spos (max 0 (min (- tcols (1- width)) s)))
+  (when hscroller (==> hscroller setdata spos))
+  (==> this expose) )
+
+(defmethod TextPane join-line(cl)
+  (let* ((p (nthcdr cl data))
+	 (h (str-len (car p)))
+	 (l (concat (car p) (cadr p))) )
+    (rplaca p l)
+    (rplacd p (cddr p))
+    (==> this advertize)
+    (setq modified t)
+    h ) )
+
+(defmethod TextPane insert-line(cl cp)
+  (let* ((p (nthcdr cl data))
+	 (l (car p)) )
+    (rplacd p (cons (str-mid l cp) (cdr p)))
+    (rplaca p (str-left (car p) cp))
+    (==> this advertize) 
+    (setq modified t) ) )
+
+
+(defmethod TextPane advertize()
+  (setq tlines (length data))
+  (setq tcols (apply max (domapcar ((i data)) (str-len i))))
+  (when vscroller 
+    (==> vscroller setrange 0 tlines height)
+    (==> vscroller setdata cline) )
+  (when hscroller 
+    (==> hscroller setrange 0 tcols width)
+    (==> hscroller setdata cpos) )
+  (==> this check) )
+
+
+(defmethod TextPane check()
+  (when (or (> sline cline)
+	    (< sline (- cline (1- height))) )
+    (==> this vscroll (- cline (div height 2))) )
+  (when (or (> spos cpos)
+	    (< spos (- cpos (1- width))) )
+    (==> this hscroll (- cpos (div width 2))) )
+  (==> this expose) )
+
+
+(defmethod TextPane fastcheck()
+  (when (or (> spos cpos)
+	    (< spos (- cpos (1- width))) )
+    (==> this hscroll (- cpos (div width 2))) )
+  (let (((x y w h) rect))
+    (==> this expose (list x (+ y (* lh (- cline sline))) (- w 2) (+ lh 5))) ) )
+
+
+(defmethod TextPane gotoxy(pos &optional (line 0))
+  (let ((d (nthcdr line data))
+	(m 0))
+    (while (and d (> pos (setq m (str-len (car d)))))
+      (incr line)
+      (setq d (cdr d))
+      (setq pos (- pos (1+ m))) )
+    (setq cpos (min pos m))
+    (setq cline line) )
+  (==> this check) )
+
+
+
+;; ----------------------------------------
+;; EVENEMENTS
+;;  click = activation
+;;  keypress = edition
+
+
+(defmethod TextPane keypress(c x y)
+  (if (or disabled ~activated)
+      'ignored
+    (when metakey (setq c (concat metakey c)))
+    (let ((keymap (assoc c TextPaneKeymap)))
+      (if (or keymap metakey)
+	  (progn
+	    (setq metakey ())
+	    (if keymap
+		(send this (cadr keymap))) )
+	(if (and c (= (str-len c) 1) (isprint c))
+	    (==> this insert c) ) ) )
+    (when (> (str-len (nth cline data)) tcols)
+      (==> this advertize) ) ) )
+
+(defmethod TextPane fkey(x y)
+  (when eventinfo
+    (let (((name shift ctrl) (eventinfo)))
+      (when shift (setq name (concat "S-" name)))
+      (when ctrl (setq name (concat "C-" name)))
+      (==> this keypress name x y) ) ) )
+
+(defmethod TextPane mouse-up(x y x1 y1)
+  (when (not disabled)
+    (when (point-in-rect x1 y1 rect)
+      (let (((x y w h) rect))
+	(setq x1 (- x1 (+ x 2)))
+	(setq y1 (- y1 (+ y 4)))
+	
+	(setq cline (min (1- tlines)
+			 (+ sline (div y1 lh)) ))
+	(setq cpos (min (str-len (nth cline data))
+			(+ spos (div x1 cw)) )) )
+      (==> this expose)
+      (==> this activate t) ) ) )
+
+
+;; ----------------------------------------
+;; Editing Actions
+
+
+(defmethod TextPane execute()
+  (when editable
+    (==> this insert-line cline cpos)
+    (setq cline (1+ cline))
+    (setq cpos 0) 
+    (setq gatherkill ())
+    (==> this check) ) )
+
+(defmethod TextPane arrow-left args
+  (if (or disabled ~activated)
+      'ignored
+    (setq gatherkill ())
+    (cond
+      ((> cpos 0)
+       (setq cpos (1- cpos))
+       (==> this fastcheck) )
+      ((> cline 0)
+       (setq cpos width)
+       (==> this arrow-up) ) ) ) )
+
+(defmethod TextPane arrow-up args
+  (if (or disabled ~activated)
+      'ignored
+    (setq gatherkill ())
+    (when (> cline 0) 
+      (setq cline (1- cline))
+      (setq cpos (min cpos (str-len (nth cline data)))) 
+      (==> this check) ) ) )
+
+(defmethod TextPane arrow-right args
+  (if (or disabled ~activated)
+      'ignored
+    (setq gatherkill ())
+    (cond
+      ((< cpos (str-len (nth cline data)))
+       (setq cpos (1+ cpos))
+       (==> this fastcheck) )
+      ((< cline (1- tlines))
+       (setq cpos 0)
+       (==> this arrow-down) ) ) ) )
+
+(defmethod TextPane arrow-down args
+  (if (or disabled ~activated)
+      'ignored
+    (setq gatherkill ())
+    (when (< cline (1- tlines ))
+      (setq cline (1+ cline))
+      (setq cpos (min cpos (str-len (nth cline data))))
+      (==> this check) ) ) )
+
+(defmethod TextPane page-up args
+  (setq gatherkill ())
+  (setq cline (max 0 (- cline height)))
+  (setq cpos (min cpos (str-len (nth cline data))))
+  (==> this check) )
+
+(defmethod TextPane page-down args
+  (setq gatherkill ())
+  (setq cline (min (1- tlines) (+ cline height)))
+  (setq cpos (min cpos (str-len (nth cline data))))
+  (==> this check) )
+
+
+(defmethod TextPane backspace args
+  (when editable
+    (setq gatherkill ())
+    (cond
+      ((> cpos 0)
+       (let ((p (nthcdr cline data)))
+	 (setq modified t)
+	 (setq cpos (1- cpos))
+	 (rplaca p (str-del (car p) cpos 1))
+	 (==> this fastcheck) ) )
+      ((> cline 0)
+       (setq cline (1- cline))
+       (setq cpos (==> this join-line cline)) ) ) ) )
+
+(defmethod TextPane delete-char args
+  (when editable
+    (setq gatherkill ())
+    (cond
+      ((< cpos (str-len (nth cline data)))
+       (let ((p (nthcdr cline data)))
+	 (setq modified t)
+	 (rplaca p (str-del (car p) cpos 1))
+	 (==> this fastcheck) ) )
+      ((< cline (1- tlines))
+       (setq cpos (==> this join-line cline)) ) ) ) )
+
+
+(defmethod TextPane begin-of-text args
+  (setq cline 0)
+  (==> this begin-of-line) )
+
+(defmethod TextPane begin-of-line args
+  (setq gatherkill ())
+  (setq cpos 0)
+  (==> this check) )
+
+(defmethod TextPane end-of-text args
+  (setq cline (1- (length data)))
+  (==> this end-of-line) )
+
+(defmethod TextPane end-of-line args
+  (setq gatherkill ())
+  (setq cpos (str-len (nth cline data)))
+  (==> this check) )
+
+(defmethod TextPane kill args
+  (when editable
+    (let ((p (nthcdr cline data)))
+      (when (and ogre-clip-to-text
+		 (<> (ogre-clip-to-text) EditStringKillBuffer) )
+	(setq gatherkill ()) )
+      (when (not gatherkill)
+	(setq EditStringKillBuffer "")
+	(setq gatherkill t) )
+      (cond
+	((> (str-len (car p)) cpos)
+	 (setq EditStringKillBuffer 
+	       (concat EditStringKillBuffer (str-mid (car p) cpos)))
+	 (when ogre-text-to-clip
+	   (ogre-text-to-clip EditStringKillBuffer) )
+	 (setq modified t)
+	 (rplaca p (str-left (car p) cpos)) 
+	 (==> this check) )
+	((< cline (1- tlines))
+	 (setq EditStringKillBuffer (concat EditStringKillBuffer "\n"))
+	 (when ogre-text-to-clip
+	   (ogre-text-to-clip EditStringKillBuffer) )
+	 (setq cpos (==> this join-line cline))) ) ) ) )
+
+
+(defmethod TextPane yank args
+  (when (and editable ogre-clip-to-text)
+    (setq gatherkill ())
+    (setq modified t)
+    (setq EditStringKillBuffer (or (ogre-clip-to-text) ""))
+    (let ((d EditStringKillBuffer)
+	  (pos ())
+	  (lst ()) 
+	  (l ()) )
+      (while (setq pos (+ (str-find "\n" d) 1))
+	(setq lst (nconc1 lst (str-left d (1- pos))))
+	(setq d (str-mid d pos)) )
+      (setq lst (nconc1 lst d))
+      (setq d lst)
+      (while d
+	(setq l (car d))
+	(while (setq pos (str-find "\t" l))
+	  (let ((nextpos (1+ (* 8 (div (+ pos 6) 8)))))
+	    (setq l (str-insert (str-del l pos 1) pos 
+			    (str-left "         " (- nextpos pos 1)) ) ) ) )
+	(rplaca d l)
+	(setq d (cdr d)) )
+      (setq d lst)
+      (while d
+	(setq l (car d))
+	(setq d (cdr d))
+	(==> this insert l)
+	(when d
+	  (==> this execute) ) ) )
+    (==> this check) ) )
+
+
+(defmethod TextPane insert(c &optional nocheck)
+  (when editable
+    (setq gatherkill ())
+    (setq modified t)
+    (let* ((p (nthcdr cline data)))
+      (rplaca p (str-insert (car p) cpos c))
+      (incr cpos (str-len c))
+      (if ~nocheck
+	  (==> this fastcheck) ) ) ) )
+
+(defmethod TextPane metakey(c)
+  (setq metakey c) )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun -scale-image (img)
+  (chk-idx img)
+  (let* ((x (as-double-array img))
+	 (x (if (== x img) (copy-array x) x))
+	 (l (idx-inf x))
+	 (u (idx-sup x))
+	 (s (if (> (u) (l)) (/ 255 (- u l)) [@ 1])) )
+    (idx-sub x (apply idx-lift l (shape x)) x)
+    (idx-mul x (apply idx-lift s (shape x)) x)
+    x))
+
+(defclass OgrImage VisualObject
+  image
+  selected
+  autoscale
+  zoom)
+
+(defmethod OgrImage OgrImage(&optional mat autosc) 
+  (setq image mat)
+  (setq autoscale autosc) 
+  (setq zoom 1) )
+
+(defmethod OgrImage gettext() 
+  image)
+
+(defmethod OgrImage toggle-autoscale()
+  (setq autoscale (not autoscale))
+  (==> this expose) )
+  
+(defmethod OgrImage set-zoom(n)
+  (setq zoom (max 1 (int n)))
+  (==> this expose))
+
+(defmethod OgrImage incr-zoom()
+  (==> this set-zoom (1+ zoom)) )
+
+(defmethod OgrImage decr-zoom()
+  (==> this set-zoom (1- zoom)) )
+
+(defmethod OgrImage settext(mat)
+  (setq image mat)
+  (when window
+    (==> this compute-geometry)
+    (==> this expose rect) ) )
+
+(defmethod OgrImage compute-geometry()
+  (if ~image
+      (==> this resize 10 10)
+    (==> this resize 
+	 (* zoom (idx-dim image 1))
+	 (* zoom (idx-dim image 0)) )
+    rect ))
+
+(defmethod OgrImage repaint()
+  (when image
+    (let (((x y w h) rect) ((cx cy cw ch) (clip)))
+      (decr cw (- w (* (idx-dim image 1) zoom)))
+      (decr ch (- h (* (idx-dim image 0) zoom)))
+      (let ((cimage (idx-trim (idx-trim image 0 (div (- cy y) zoom) (div ch zoom))
+			      1 (div (- cx x) zoom) (div cw zoom)) ))
+	(if autoscale
+	    (rgb-draw-matrix cx cy (-scale-image cimage) zoom zoom)
+	  (rgb-draw-matrix cx cy cimage zoom zoom) )))))
+
+(defmethod OgrImage mouse-down(x y) ())
+
+(defmethod OgrImage mouse-drag(x1 y1 x2 y2)
+  (hilite hilite-rect x1 y1 x2 y2))
+
+(defmethod OgrImage mouse-up(x1 y1 x2 y2)
+  (hilite hilite-rect x1 y1 x2 y2)
+  (let (((x y w h) rect)
+        (sx (min x1 x2))
+        (sy (min y1 y2))
+        (sw (abs (- x1 x2)))
+        (sh (abs (- y1 y2))))
+    (setq selected (list (max 0 (- sx x)) (max 0 (- sy y)) sw sh))))
+
+(defmethod OgrImage get-selected ()
+  selected)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass TiledImage OgrImage)
+
+(defmethod TiledImage TiledImage(mat) 
+  (setq image mat))
+
+(defmethod TiledImage compute-geometry()
+  (if ~image
+      (==> this resize 10 10)
+    (==> this resize (idx-dim image 1) (idx-dim image 0))
+    rect))
+
+(defmethod TiledImage repaint()
+  (when image
+    (let (((x y w h) rect)
+	  ((cx cy cw ch) (clip)) )
+	  (let ((cimage (idx-trim (idx-trim image 0 (- cy y) ch)
+			     1 (- cx x) cw) ))
+	    (rgb-draw-matrix cx cy cimage) ))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass ImageViewer Viewer 
+  ogrim)
+
+(defmethod ImageViewer ImageViewer (w h m &optional drg)
+  (==> this Viewer w h (setq ogrim (new OgrImage m)) t t)
+  (when drg
+    (setq :hscroll:drag-callback :hscroll:call)
+    (setq :vscroll:drag-callback :vscroll:call))
+  ())
+
+(defmethod ImageViewer keypress (c x y)
+  (let (((x y w h) :view:rect))
+    (cond 
+     ((= c " ")  (==> this setvpos (+ vpos (* .9 h))))
+     ((= c "\b") (==> this setvpos (- vpos (* .9 h))))
+     (t ()) )))
+
+(defmethod ImageViewer get-selected () 
+  (==> ogrim get-selected) )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+

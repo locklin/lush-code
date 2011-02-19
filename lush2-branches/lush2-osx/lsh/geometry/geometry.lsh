@@ -1,0 +1,381 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "triangle/triangle")
+(libload "geometry/triangulation")
+(libload "geometry/polygon")
+(libload "overload")
+
+(defun -delaunay-points (points)
+  (declare (-idx2- (-double-)) points)
+  (ifcompiled (cpheader "#include \"triangle.h\""))
+  (let ((in (new triangulateio)))
+    (setq :in:pointlist points)
+    (let* ((out (triangulate "zeBNQ" in)))
+      (new SimpleTriangulation points :out:edgelist :out:trianglelist))))
+
+
+(defun -delaunay-mesh (m)
+  (declare (-obj- (Mesh)) m)
+  (lete ((in (new triangulateio))
+         (edge-markers (int-array (length :m:edges))) )
+    (for* (i 0 (length edge-markers)) (edge-markers i (+ i 2)))
+    (setq :in:pointlist :m:points)
+    (setq :in:segmentlist :m:edges)
+    (setq :in:segmentmarkerlist edge-markers)
+    (let* ((out (triangulate "zepcNPQ" in))
+	   (ne (length :m:edges))
+	   (ii -1) )
+      (declare (-int-) ne ii)
+      ;; copy edgelist data to restore mesh segments
+      (assert (= (length :out:edgelist) (length :out:edgemarkerlist)))
+
+      (setq ii (length :out:edgelist)) 
+      (for (i (- ii 1) 0 -1)
+	(declare (-int-) i)
+	(let ((si (:out:edgemarkerlist i)))
+	  (declare (-int-) si)
+	  (when (<= si 1)
+	    (decr ii)
+	    (:out:edgelist ii 0 (:out:edgelist i 0))
+	    (:out:edgelist ii 1 (:out:edgelist i 1)) )))
+      (assert (= ii ne))
+      (array-copy :m:edges (idx-trim :out:edgelist 0 0 ne))
+     (new SimpleTriangulation :m:points :out:edgelist :out:trianglelist))))
+
+
+(defun -delaunay-simple-polygon (m)
+  (declare (-obj- (SimplePolygon)) m)
+  (lete ((in (new triangulateio))
+         (edge-markers (int-array (length :m:edges))) )
+    (for* (i 0 (length edge-markers))
+      (declare (-int-) i)
+      (edge-markers i (+ i 2)) )
+    (setq :in:pointlist :m:points)
+    (setq :in:segmentlist :m:edges)
+    (setq :in:segmentmarkerlist edge-markers)
+    (let* ((out (triangulate "zepNPQ" in))
+	   (ne (length :m:edges))
+	   (ii -1) )
+      (declare (-int-) ne ii)
+      ;; copy edgelist data to restore mesh segments
+      (assert (= (length :out:edgelist) (length :out:edgemarkerlist)))
+
+      (setq ii (length :out:edgelist)) 
+      (for (i (- ii 1) 0 -1)
+	(declare (-int-) i)
+	(let ((si (:out:edgemarkerlist i)))
+	  (declare (-int-) si)
+	  (when (<= si 1)
+	    (decr ii)
+	    (:out:edgelist ii 0 (:out:edgelist i 0))
+	    (:out:edgelist ii 1 (:out:edgelist i 1)) )))
+      (assert (= ii ne))
+      (array-copy :m:edges (idx-trim :out:edgelist 0 0 ne))
+
+      (new SimpleTriangulation :m:points :out:edgelist :out:trianglelist))))
+
+(defun -delaunay-polygon (m)
+  (declare (-obj- (Polygon)) m)
+  (lete ((in (new triangulateio))
+         (edge-markers (int-array (length :m:edges)))
+         (holelist (double-array (length :m:i-holes) 2))
+         (orm (==> m orientation)) )
+    (for* (i 0 (length edge-markers))
+      (declare (-int-) i)
+      (edge-markers i (+ i 2)) )
+    ;; find points inside holes
+    (for* (i 0 (length holelist))
+      (let* ((h (:m:i-holes i))
+             (j 1)
+             (l (if (= i (- (length holelist) 1))
+                    (length :m:points)
+                  (:m:i-holes (+ i 1)) ))
+	     (x0 (:m:points (- l 1) 0)) (y0 (:m:points (- l 1) 1))
+	     (x1 (:m:points (+ h 0) 0)) (y1 (:m:points (+ h 0) 1))
+	     (x2 (:m:points (+ h 1) 0)) (y2 (:m:points (+ h 1) 1))
+             (xc 0) (yc 0) (dc 0)
+             (a2 (orient2d (x0 y0) (x1 y1) (x2 y2))) )
+        (declare (-int-) i j h l)
+
+        ;; first: find a convex triangle
+        (while (= (sgn a2) orm)
+          (setq x0 x1  y0 y1  x1 x2  y1 y2)
+          (incr j)
+          (assert (< (+ h j) l))
+          (setq x2 (:m:points (+ h j) 0)  y2 (:m:points (+ h j) 1))
+          (setq a2 (orient2d (x0 y0) (x1 y1) (x2 y2)) ))
+
+        ;; second: find interior point closest to (x1 y1)
+        (setq xc (/ (+ x0 x1 x2) 3))
+        (setq yc (/ (+ y0 y1 y2) 3))
+        (setq dc (euclidean-norm-squared (- x1 xc) (- y1 yc)))
+        (setq j (+ h j -1))
+        (when (> (- l h) 3)
+          (for* (k h l)
+            (declare (-int-) k)
+            (when (> (abs (- k j)) 1)
+              (let* ((x (:m:points k 0))
+                     (y (:m:points k 1))
+                     (d (euclidean-norm-squared
+                         (- x1 x) (- y1 y))) )
+                (when (and (< d dc)
+                           (-point-inside-triangle-p
+                            x y
+                            x0 y0  x1 y1  x2 y2))
+                  (setq xc (/ (+ x x1) 2)
+                        yc (/ (+ y y1) 2)
+                        dc d) )))))
+	(holelist i 0 xc)
+	(holelist i 1 yc) ))
+    (setq :in:pointlist :m:points)
+    (setq :in:segmentlist :m:edges)
+    (setq :in:segmentmarkerlist edge-markers)
+    (setq :in:holelist holelist)
+
+    (let* ((out (triangulate "zepNPQ" in))
+	   (ne (length :m:edges))
+	   (ii -1) )
+      (declare (-int-) ne ii)
+      ;; copy edgelist data to restore mesh segments
+      (assert (= (length :out:edgelist) (length :out:edgemarkerlist)))
+      (setq ii (length :out:edgelist)) 
+      (for (i (- ii 1) 0 -1)
+	(declare (-int-) i)
+	(let ((si (:out:edgemarkerlist i)))
+	  (declare (-int-) si)
+	  (when (<= si 1)
+	    (decr ii)
+	    (:out:edgelist ii 0 (:out:edgelist i 0))
+	    (:out:edgelist ii 1 (:out:edgelist i 1)) )))
+      (assert (= ii ne))
+      (array-copy :m:edges (idx-trim :out:edgelist 0 0 ne))
+      (new SimpleTriangulation :m:points :out:edgelist :out:trianglelist))))
+
+
+(defun -delaunay-triang (m)
+  (declare (-obj- (SimpleTriangulation)) m)
+  (lete ((in (new triangulateio))
+         (edge-markers (int-array (length :m:edges))) )
+    (for* (i 0 (length edge-markers)) 
+      (declare (-int-) i) 
+      (edge-markers i (+ i 2)) )
+    (setq :in:pointlist :m:points)
+    (setq :in:trianglelist :m:triangles)
+    (setq :in:segmentlist :m:edges)
+    (setq :in:segmentmarkerlist edge-markers)
+    (let* ((out (triangulate "zepcNPQ" in))
+	   (ne (length :m:edges))
+	   (nt (length :m:triangles))
+	   (ii -1) ) 
+      (declare (-int-) ne nt ii)
+      (assert (= (length :out:edgelist) (length :out:edgemarkerlist)))
+
+      (setq ii (length :out:edgelist)) 
+      (for (i (- ii 1) 0 -1)
+	(declare (-int-) i)
+	(let ((si (:out:edgemarkerlist i)))
+	  (declare (-int-) si)
+	  (when (<= si 1)
+	    (decr ii)
+	    (:out:edgelist ii 0 (:out:edgelist i 0))
+	    (:out:edgelist ii 1 (:out:edgelist i 1)) )))
+      (assert (= ii ne))
+      (array-copy :m:edges (idx-trim :out:edgelist 0 0 ne))
+
+      ;; identify new triangles by comparing :m:triangles with
+      ;; :out:trianglelist in order (this might break in a new
+      ;; release of triangle.c
+      (let ((trs :out:trianglelist) 
+            (ii (length :out:trianglelist))
+            (iis (int-array (length :out:trianglelist)))
+            (j (- (length :m:triangles) 1)) )
+        (declare (-int-) ii j)
+        (for (i (- ii 1) 0 -1)
+          (declare (-int-) i)
+          (if (and (> j -1)
+                   (= (:m:triangles j 0) (trs i 0))
+                   (= (:m:triangles j 1) (trs i 1))
+                   (= (:m:triangles j 2) (trs i 2)) )
+              (decr j)
+            ;; copy triangle entries
+            (decr ii)
+            (trs ii 0 (trs i 0))
+            (trs ii 1 (trs i 1))
+            (trs ii 2 (trs i 2)) ))
+      (assert (= ii nt))
+      (array-copy :m:triangles (idx-trim :out:trianglelist 0 0 nt))
+      
+      (new SimpleTriangulation :m:points :out:edgelist :out:trianglelist) ))))
+
+
+(defun -conforming-cdt-polygon (m)
+  (declare (-obj- (Polygon)) m)
+  (lete ((in (new triangulateio))
+         (edge-markers (int-array (length :m:edges)))
+         (holelist (double-array (length :m:i-holes) 2))
+         (orm (==> m orientation)) )
+    (for (i 1 (length edge-markers))
+      (declare (-int-) i)
+      (edge-markers (- i 1) i) )
+    ;; find points inside holes
+    (for* (i 0 (length holelist))
+      (let* ((h (:m:i-holes i))
+             (j 2)
+	     (x0 0) (y0 0)
+	     (x1 (:m:points (+ h 0) 0)) (y1 (:m:points (+ h 0) 1))
+	     (x2 (:m:points (+ h 1) 0)) (y2 (:m:points (+ h 1) 1))
+             (a2 0) )
+        (declare (-int-) i j h)
+        (while (or (< (abs a2) (* (max (abs (- x2 x1)) (abs (- y2 y1))) 0.0001))
+                   (= (sgn a2) orm))
+          (setq x0 x1  y0 y1  x1 x2  y1 y2)
+          (incr j)
+          (assert (< (+ h j) (length :m:points)))
+          (setq x2 (:m:points (+ h j) 0)  y2 (:m:points (+ h j) 1))
+          (setq a2 (orient2d (x0 y0) (x1 y1) (x2 y2)) ))
+	(holelist i 0 (/ (+ x0 x1 x2) 3))
+	(holelist i 1 (/ (+ y0 y1 y2) 3)) ))
+    (setq :in:pointlist :m:points)
+    (setq :in:segmentlist :m:edges)
+    (setq :in:segmentmarkerlist edge-markers)
+    (setq :in:holelist holelist)
+    (let* ((out (triangulate "zpDeQ" in))
+	   (edges (clone-array :out:edgelist))
+	   (ii 0) )
+      (declare (-int-) ii)
+      ;; copy edgelist data to restore mesh segments
+      (assert (= (length :out:edgelist) (length :out:edgemarkerlist)))
+      (for* (i 0 (length :out:edgelist))
+	(declare (-int-) i)
+	(when (> (:out:edgemarkerlist i) 0)
+	  (let ((e0 (:out:edgelist i 0))
+		(e1 (:out:edgelist i 1)) )
+	    (declare (-int-) e0 e1)
+	    (edges ii 0 e0)
+	    (edges ii 1 e1)
+	    (incr ii)) ))
+      (for* (i 0 (length :out:edgelist))
+	(declare (-int-) i)
+	(when (= (:out:edgemarkerlist i) 0)
+	  (let ((e0 (:out:edgelist i 0))
+		(e1 (:out:edgelist i 1)) )
+	    (declare (-int-) e0 e1)
+	    (edges ii 0 e0)
+	    (edges ii 1 e1)
+	    (incr ii)) ))
+      (new SimpleTriangulation :out:pointlist edges :out:trianglelist))))
+
+
+(defun -conforming-cdt-simple-polygon (m)
+  (declare (-obj- (SimplePolygon)) m)
+;  (ifcompiled (cpheader "#include \"triangle.h\""))
+  (lete ((in (new triangulateio))
+         (edge-markers (int-array (length :m:edges))) )
+    (for (i 1 (length edge-markers)) (edge-markers (- i 1) i))
+    (setq :in:pointlist :m:points)
+    (setq :in:segmentlist :m:edges)
+    (setq :in:segmentmarkerlist edge-markers)
+    (let* ((out (triangulate "zpDeQ" in))
+	   (edges (clone-array :out:edgelist))
+	   (ii 0) )
+      (declare (-int-) ii)
+      ;; copy edgelist data to restore mesh segments
+      (assert (= (length :out:edgelist) (length :out:edgemarkerlist)))
+      (for* (i 0 (length :out:edgelist))
+	(declare (-int-) i)
+	(when (> (:out:edgemarkerlist i) 0)
+	  (let ((e0 (:out:edgelist i 0))
+		(e1 (:out:edgelist i 1)) )
+	    (declare (-int-) e0 e1)
+	    (edges ii 0 e0)
+	    (edges ii 1 e1)
+	    (incr ii)) ))
+      (for* (i 0 (length :out:edgelist))
+	(declare (-int-) i)
+	(when (= (:out:edgemarkerlist i) 0)
+	  (let ((e0 (:out:edgelist i 0))
+		(e1 (:out:edgelist i 1)) )
+	    (declare (-int-) e0 e1)
+	    (edges ii 0 e0)
+	    (edges ii 1 e1)
+	    (incr ii)) ))
+      ;;       (pause)
+      (new SimpleTriangulation :out:pointlist edges :out:trianglelist))))
+
+
+#? (delaunay <arg>)
+;; Compute Delaunay or Constrained Delauny triangulation.
+;; If <arg> is an Nx2 array of point coordinates, compute the Delaunay 
+;; triangulation of the point set and return a <SimpleTriangulation>
+;; object. If <arg> is a <Mesh> object, compute the constrained Delaunay
+;; triangulation of the points and edges and return a <SimpleTriangulation>
+;; object.
+;;
+;; Example:
+;; {<code>
+;;   (libload "geometry/demos") ;; load a-points
+;;   (==> (delaunay a-points) display)
+;; </code>}
+;;
+;; <Delauny> uses J.R. Shewchuk's triangle library. See 
+;; {<hlink> http://www.cs.cmu.edu/~quake/triangle.html} for more information.
+
+(defoverload delaunay -delaunay-points -delaunay-polygon -delaunay-simple-polygon -delaunay-triang -delaunay-mesh)
+(defoverload conforming-cdt -conforming-cdt-polygon -conforming-cdt-simple-polygon)
+
+#? (convex-hull <points>)
+;; Compute convex hull of point set and return as <SimplePolygon> object.
+;;
+;; Example:
+;; {<code>
+;;   (libload "geometry/demos") ; load a-points
+;;   (==> (convex-hull a-points) display)
+;; </code>}
+;;
+;; <Convex-hull> uses J.R. Shewchuk's triangle library. See 
+;; {<hlink> http://www.cs.cmu.edu/~quake/triangle.html} for more information.
+(defun convex-hull (points)
+  (declare (-idx2- (-double-)) points)
+  (let ((in (new triangulateio)))
+    (setq :in:pointlist points)
+    (let* ((out (triangulate "zcBENQ" in))
+	   (ch-points (double-array (length :out:segmentlist) 2)) )
+      (for* (i 0 (length ch-points))
+	(declare (-int-) i)
+	(ch-points i 0 (points (:out:segmentlist i 0) 0))
+	(ch-points i 1 (points (:out:segmentlist i 0) 1)) )
+      (new SimplePolygon ch-points))))
+
+
+
+(let ((dhc-make-lushflags (concat dhc-make-lushflags *triangle-make-flags*)))
+   (dhc-make () -delaunay-points -delaunay-mesh -delaunay-simple-polygon -delaunay-polygon -delaunay-triang
+	     convex-hull
+	     -conforming-cdt-polygon -conforming-cdt-simple-polygon
+	     )
+   )

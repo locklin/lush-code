@@ -1,0 +1,226 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; ------------------------------------------------------------
+;; Load sysenv as appropriate (must be first)
+
+(when (null (functionp path)) 
+  (load "sysenv.lsh") )
+
+
+;; ------------------------------------------------------------
+;; Define startup function
+
+(de startup argv
+  ;; ------------------------------
+  ;; Rebase path components
+  ;; ------------------------------
+  (let ((dir (getenv "LUSHDIR")))
+    (when (and (<> dir "") (<> dir lushdir))
+      ;; This means that the dump file was created from
+      ;; another location (before an install for instance).
+      ;; We must correct all the absolute paths.
+      (let ((rebase (lambda(x) 
+                      (let* ((f (concat-fname x))
+                             (r (relative-fname lushdir f)) )
+                        (if (= x f) (concat-fname dir (or r f)) x) ) )))
+        ;; fix absolute paths
+        (setq |*PATH| (mapcar rebase |*PATH|))
+        (setq c-include-path (mapcar rebase c-include-path))
+        (setq shared-library-path (mapcar rebase shared-library-path))
+        (setq static-library-path (mapcar rebase static-library-path))
+        ;; fix lushdir
+        (unlock-symbol lushdir)
+        (setq lushdir dir)
+        (lock-symbol lushdir) )))
+  ;; ------------------------------
+  ;; Determine location of compiled 
+  ;; versions of installed lsh files.
+  ;; ------------------------------
+  (unlock-symbol varlushdir)
+  (setq :varlushdir ())
+  (when (and getpid (not wintl3p))
+    ;; Check for .lush2 directory
+    (let ((home (getenv "HOME")))
+      (when (<> home "")
+        (let* ((mylushdir (concat-fname home ".lush2"))
+               (mylushrc (concat-fname mylushdir "lushrc.lsh")) )
+          (when (not (dirp mylushdir))
+            (printf "*** First time user: Creating directory %s\n" mylushdir) 
+            (mkdir mylushdir) )
+          (when (not (filep mylushrc))
+            (printf "*** First time user: Creating initial file %s\n" mylushrc)
+            (writing mylushrc
+              (printf ";;; Customize this LUSHRC file as you see fit.\n") ) )
+          ;; Make a decision regarding varlushdir
+          (let ((owner (alist-get 'uid (fileinfo lushdir))))
+            (when (and getuid owner (<> (getuid) owner))
+              (setq varlushdir mylushdir) ) )
+          ;; Load lushrc
+          (libload mylushrc t) ) ) ) )
+  (lock-symbol varlushdir)
+  ;; ------------------------------
+  ;; Process arguments
+  ;; ------------------------------
+  (when argv
+    ;; Process options
+    (while (and (consp argv) (= (str-left (car argv) 1) "-"))
+      (cond
+       ;; Option -h for help
+       ((= (car argv) "-h")
+        (writing "$stderr"
+          (printf "Usage:\n")
+          (printf " 'lush2 [options]' for the interactive mode.\n")
+          (printf " 'lush2 [options] <lshfile> <...args...>' for script mode.\n")
+          (printf " 'lush2 [options] -e \"lush expression\"' for immediate eval.\n")
+          (exit 10) ) )
+       ;; Option -e for immediate execute
+       ((= (car argv) "-e") 
+        (let ((tmp (tmpname)))
+          (writing tmp 
+            (dolist (x (cdr argv))
+              (printf "%s " x) )
+            (printf "\n"))
+          (load tmp)
+          (unlink tmp)
+          (lush-is-quiet t)
+          (setq argv ()) ) )
+       ;; Unrecognized option
+       (t 
+        (writing "$stderr"
+          (printf "Warning: unrecognized option %s\n" (car argv)) 
+          (exit 10) ) ) )
+      (setq argv (cdr argv)) )
+    ;; Process file arguments
+    (when (consp argv)
+      (when (not (filep (car argv)))
+        (writing "$stderr"
+          (printf "lush2: file not found: %s\n" (car argv))
+          (exit 10) ) )
+      (libload (car argv))
+      (setq argv ()) )
+    ;; Exit with code 0 unless lush is interactive.
+    (when (lush-is-quiet)
+      (exit 0) ) ) )
+
+;; ------------------------------------------------------------
+;; Setup paths for C include files and libraries
+
+(let ((lprepend (mlambda(fn lname dir)
+                  `(let ((dir ,dir))
+                     (when (and (dirp dir) (not (member dir ,lname)))
+                       (setq ,lname (cons dir ,lname)) ) ) ))
+      (lappend  (mlambda(fn lname dir)
+                  `(let ((dir ,dir))
+                     (when (and (dirp dir) (not (member dir ,lname)))
+                       (setq ,lname (append ,lname (list dir))) ) ) ) ) )
+  
+  (lappend c-include-path      "/usr/local/include")
+  (lappend shared-library-path "/usr/local/lib")
+  (lappend static-library-path "/usr/local/lib")
+
+  (dolist (flag (regex-split "[^\t ]+" (or (getconf "LDFLAGS") "")))
+    (when (= (str-left flag 2) "-L")
+      (lprepend shared-library-path (str-mid flag 3))
+      (lprepend static-library-path (str-mid flag 3)) ) )
+  
+  (dolist (flag (regex-split "[^\t ]+" (or (getconf "LIBS") "")))
+    (when (= (str-left flag 2) "-L")
+      (lprepend shared-library-path (str-mid flag 3))
+      (lprepend static-library-path (str-mid flag 3)) ) )
+  
+  (dolist (flag (regex-split "[^\t ]+" (or (getconf "X_LIBS") "")))
+    (when (= (str-left flag 2) "-L")
+      (lprepend shared-library-path (str-mid flag 3))
+      (lprepend static-library-path (str-mid flag 3)) ) )
+  
+  (dolist (flag (regex-split "[^\t ]+" (or (getconf "CPPFLAGS") "")))
+    (when (= (str-left flag 2) "-I")
+      (lprepend c-include-path (str-mid flag 3)) ) )
+
+  (dolist (flag (regex-split "[^\t ]+" (or (getconf "X_CFLAGS") "")))
+    (when (= (str-left flag 2) "-I")
+      (lprepend c-include-path (str-mid flag 3)) ) )
+  
+  (lprepend c-include-path (concat-fname lushdir "include")) 
+
+  ;; Attempts to be smart about systems using "lib64".
+  (let ((lib64 ()))
+    (dolist (f shared-library-path)
+      (setq lib64 (or lib64 (regex-match ".*/lib64$" f))) )
+    (when lib64
+      (setq shared-library-path
+            (domapcar ((f shared-library-path))
+              (let ((ff (regex-subst "/lib$" "/lib64" f)))
+                (if (dirp ff) ff f) ) ) )
+      (setq static-library-path
+            (domapcar ((f static-library-path))
+              (let ((ff (regex-subst "/lib$" "/lib64" f)))
+                (if (dirp ff) ff f) ) ) ) ) )
+  
+  t )
+
+
+;; ------------------------------------------------------------
+;; Setup paths for lush libraries
+
+(addpath (concat-fname lushdir "lsh"))
+
+(dolist (d (list "libstd" "libidx" "compiler" "libogre"))
+  (let ((fd (concat-fname (concat-fname lushdir "lsh") d)))
+    (when (dirp fd) (addpath fd)) ) )
+
+(dolist (d (list "contrib" "packages" "local"))
+  (let ((fd (concat-fname lushdir d)))
+    (when (dirp fd) (addpath fd))))
+
+
+;; ------------------------------------------------------------
+;; Load standard library files
+
+(libload "symbols")
+(libload "oo")
+(libload "namespace")
+(libload "compat")
+(libload "kwdargs")
+(libload "boxing")
+(libload "arrays")
+(libload "dh-compile")
+(libload "iterator")
+(libload "mat")
+(libload "graphenv")
+(libload "ogre")
+(libload "help")
+;(read-lush-manual)
+
+;; ------------------------------------------------------------
+;; Autoload tools and libraries
+
+(autoload "libogre/helptool" helptool)
+(autoload "libogre/classtool" classtool)
+(autoload "libogre/calctool" calctool)

@@ -1,0 +1,464 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; inspired by Yann LeCun's "gnuplotter.lsh"
+
+(libload "gnuplot-config")
+
+#? (new-gnuplot [<x> <y>] <w> <h> [<title>])
+;; Create <Gnuplot> instance with X11 terminal of size <w>x<h> to
+;; appear at position (<x>,<y>).
+(defun new-gnuplot (w h . args)
+  (let ((x ()) (y ()) (title "gnuplot")
+	(*gnuplot-cmd* *gnuplot-cmd*)
+	(*gnuplot-preamble* 
+	 (concat *gnuplot-preamble* "; set terminal x11")) )
+    (selectq (length args)
+      (0
+       (setq *gnuplot-cmd*
+	     (sprintf "%s -noraise -background white -tvtwm -geometry %dx%d -title \"%s\""
+		      *gnuplot-cmd* w h title)))
+      (1
+       (setq title (car args))
+       (setq *gnuplot-cmd*
+	     (sprintf "%s -noraise -background white -tvtwm -geometry %dx%d -title \"%s\""
+		      *gnuplot-cmd* w h title)))
+      (2
+       (let ((x w) (y h) (w (car args)) (h (cadr args)))
+	 (setq *gnuplot-cmd*
+	       (sprintf "%s -noraise -background white -tvtwm -geometry %dx%d+%d+%d -title \"%s\""
+			*gnuplot-cmd* w h x y title))))
+      (3
+       (let ((x w) (y h) (w (car args)) (h (cadr args)) (title (caddr args)))
+	 (setq *gnuplot-cmd*
+	       (sprintf "%s -noraise -background white -tvtwm -geometry %dx%d+%d+%d -title \"%s\""
+			*gnuplot-cmd* w h x y title))))
+      (t 
+       (error "invalid number of arguments") ))
+    (let ((gp (new Gnuplot 'interactive ())))
+      (gp "clear")
+      gp)))
+
+(defclass GnuplotBinary object
+  data)
+
+(defmethod GnuplotBinary GnuplotBinary (arg)
+  (assert (numericp arg))
+  (setq data arg) )
+
+#? Class Gnuplot
+;; Instances of class <Gnuplot> serve as proxies for external gnuplot 
+;; processes. Creating a new <Gnuplot> involves starting a new external
+;; gnuplot process. The external gnuplot process exists until the proxy
+;; object gets deleted (that is, until its destructor is called).
+;; A <Gnuplot> object may be "interactive" or "non-interactive", 
+;; depending on the current state of the (boolean) instance variable 
+;; <interactive>.
+(defclass Gnuplot object
+  interactive    ; if true, object prints output received from gnuplot
+  echo-on        ; when true, gnuplot prints echo (internal)
+  logfile        ; if not nil, open log file and log gnuplot session 
+  fd-from        ; file descriptor for receiving output from gnuplot
+  fd-to          ; file descriptor for sending input to gnuplot
+  pid            ; process id of gnuplot process
+  )
+
+(in-namespace (class Gnuplot)
+
+(dm escape-%s (_ s)
+  `(regex-subst "%" "%%%%" ,s))
+
+;; return <t> when string ends with prompt or <()> otherwise.
+(defun found-gnuplot-prompt-p (txt &optional (prompts (  )))
+  (let ((lt (length txt)) (last-two (str-right txt 2)))
+    (if (< lt 9)
+	()
+      (or (and (= last-two "> ")
+	       (or (str-endswith txt "gnuplot> ")
+		   (str-endswith txt "multiplot> ")
+		   (str-endswith txt "input data ('e' ends) > ") ))
+	  (and (= last-two ": ")
+	       (or (str-endswith txt "Press return for more: ") 
+		   (str-endswith txt "Help topic: ")
+		   (regex-match ".+Subtopic of (.+): $" txt) )))
+      )))
+ 
+;; auxiliary for method 'read-til-next-prompt'
+;; remove suffix from txt if it is a gnuplot prompt
+(defun remove-prompt (txt &optional (prompts ("gnuplot> " "multiplot> " "input data ('e' ends) > ")))
+  (if (null prompts)
+      ()
+    (let* ((prompt (car prompts))
+	   (lenp   (length prompt)) )
+      (if (and (>= (length txt) lenp)  (= (str-right txt lenp) prompt))
+	  (str-left txt (- lenp))
+	(remove-prompt txt (cdr prompts)) ))))
+
+(defmacro with-fd-log (fd-log . body)
+  `(when ,fd-log
+     (writing ,fd-log ,@body)) )
+
+)
+	      
+(defmethod Gnuplot read-til-next-prompt ()
+  (let ((txt ""))
+    (while (not (found-gnuplot-prompt-p txt))
+      (flush fd-from)
+      (setq txt (concat txt (reading fd-from (read-string "~>:"))))
+      (setq txt (concat txt (reading fd-from (read-string 2)))) )
+    
+    (when logfile
+      (writing (open-append logfile) 
+	(printf "%s" txt) ))
+
+    (selectq (str-right txt 2)
+      (": " (cond
+             ((= (str-right txt 23) "Press return for more: ")
+              ;; send carriage-return and remove prompt text
+              (writing fd-to (printf "\n"))
+              (concat (str-left txt -24)
+                      (==> this read-til-next-prompt)))
+             
+             ((= (str-right txt 12) "Help topic: ")
+              ;; send carriage-return and remove prompt text
+              (writing fd-to (printf "\n"))
+              (concat (str-left txt -12) 
+                      (==> this read-til-next-prompt)))
+             
+             ((regex-match ".+Subtopic of (.+): $" txt)
+              ;; send carriage-return and remove prompt text
+              (writing fd-to (printf "\n"))
+              (concat (or (car (regex-extract "(.+)\nSubtopic of (.+): $" txt)) "")
+		      (==> this read-til-next-prompt)) )
+             (t 
+              (concat txt (==> this read-til-next-prompt)) )))
+      
+      ("> " (or (remove-prompt txt) (==> this read-til-next-prompt)))
+      
+      (t   (error "Don't know how I got here:" txt) ))) )
+
+(defmethod Gnuplot print-array (m fd-log)
+  (let* ((elt     (idx-element-type m))
+	 (pf-at   (lambda (i) (printf " ") (prin (m i)) ))
+	 (pf-real (lambda (i) (printf "%.48f\t" (m i))))
+	 (pf-rest (lambda (i) (printf "%10d\t" (m i))))
+	 (pf      (cond 
+		   ((member elt '(atom gptr)) pf-at)
+		   ((member elt '(float double)) pf-real)
+		   (t pf-rest) )))
+    (cond
+     ((= 0 (idx-rank m))   ; scalar 
+      (with-fd-log fd-log (prin (m)) (printf "\n"))
+      (prin (m))
+      (printf "\n") (flush)
+      (==> this read-til-next-prompt) )
+
+     ((= 1 (idx-rank m))   ; one dimensional
+      (for (i 0 (- (idx-shape m 0) 1)) 
+	(with-fd-log fd-log (pf i))
+	(pf i))
+      (with-fd-log fd-log (printf "\n"))
+      (printf "\n") (flush)
+      (==> this read-til-next-prompt) )
+     
+     (t                    ; all other
+      (for (i 0 (- (idx-shape m 0) 1))
+	   (==> this print-array (select m 0 i) fd-log) )
+      (with-fd-log fd-log (printf "\n"))
+      (printf "\n") (flush)
+      (==> this read-til-next-prompt) ))))
+
+
+#? (new Gnuplot)
+;; Create new gnuplot process and an associated <Gnuplot> object.
+;; {<pre>
+;; Optional keyword arguments:
+;; logfile     : name of log file for debugging (default is nil)
+;; interactive : true triggers interactive mode (default is t)
+;; </pre>}
+(defmethod Gnuplot Gnuplot args
+  (let ((option (parse-kwdargs args  'interactive t  'logfile ()))
+	(myopen (if *gnuplot-use-pty* filteropenpty filteropen)) )
+    (setq logfile (option 'logfile))
+    (setq interactive (option 'interactive))
+    (let (((to from pid) (myopen (sprintf "%s - 2>&1" *gnuplot-cmd*))))
+      (when logfile
+	(writing (open-append logfile)
+	  (printf "\n\n*** New gnuplot process %d created (%s).\n" 
+		  pid (date-to-string (now)))
+	  (flush) ))
+      (setq fd-to to)
+      (setq fd-from from)
+      (setq :this:pid pid)
+      (when *gnuplot-preamble* (this *gnuplot-preamble*))
+      (==> this read-til-next-prompt) )
+    (setq echo-on *gnuplot-echo-on*) ))
+
+(defmethod Gnuplot pname ()
+  (let ((s (==> this (object . pname))))
+    (concat (str-left s 10) (str pid) ":" (str-right s -10)) ))
+
+#? (==> <Gnuplot> variables)
+;; Return <Htable> of currently defined gnuplot variables.
+(defmethod Gnuplot variables ()
+  (let ((ia interactive)
+        (vs (htable)) )
+    (setq interactive ())
+    (dolist (s (str-split (this "show variables all") "\n"))
+      (let (((name val) (or (regex-extract "\t([^=]+) = (.+)" s)
+                            '(() ()) )))
+        (when name
+          (if (str-startswith val "\"")
+              (vs name (substring val 1 -1)) ; variable is a string
+            (vs name (str-val val)) ))))     ; variable is a number
+    (setq interactive ia)
+    vs))
+
+#? (==> <Gnuplot> colors)
+;; Return <Htable> of named colors.
+;; {<see> *gnuplot-colors*}
+(defmethod Gnuplot colors ()
+  (let ((ia interactive)
+        (cs (htable)) )
+    (setq interactive ())
+    (dolist (s (str-split (this "show palette colornames") "\n"))
+      (let (((name r g b) (or (regex-extract " +([^ ]+)[ #0-9a-f]+ = +([0-9]+) +([0-9]+) +([0-9]+)" s)
+                              '(() () () ()) )))
+        (when name
+          (cs (make-symbol name) (list (str-val r) (str-val g) (str-val b))) )))
+    (setq interactive ia)
+    cs))
+
+
+;; this requires gnuplot 4.4
+;; #? (==> <Gnuplot> use-window <win>)
+;; Have gnuplot use the X11 window <win> for terminal output. Return <win>.
+(defmethod Gnuplot use-window (win)
+  (if (not (and win (isa win Window) (x11-id win)))
+      (error "argument not an X11 window" win)
+    (this (sprintf "set terminal x11 window \"%s\"" (strhex (x11-id win))))
+    (putp win 'client this)
+    (this "clear")
+    win))
+
+(defmethod Gnuplot -listeval args
+  (let ((arg (when args (car args)))
+	(args (when args (cdr args)))
+	(response ()))
+    (cond
+     ((null arg)
+      (when (socketselect fd-from 100)
+        (setq response (==> this read-til-next-prompt)) ))
+     
+     ((stringp arg)
+      (when logfile
+	(writing (open-append logfile) (printf "%s\n" arg)) )
+      (writing fd-to 
+	(printf "%s\n" arg) )
+      (when (not (or (= "exit" (str-strip arg)) (= "quit" (str-strip arg))
+		     (and (str-find "plot" arg) (str-find "binary" arg)) ))
+        (setq response (==> this read-til-next-prompt))
+	;; remove echo from response
+        (when echo-on
+          (setq response (str-right response 
+                                 (- (min (1+ (length arg))
+                                         (length response)) ))) )))
+     ((indexp arg)
+      (let ((fd-log (if logfile (open-append logfile) ())))
+	(writing fd-to
+	  (setq response (==> this print-array arg fd-log)) ))
+      (when (not (and args (indexp (car args))))
+	(setq response (this "e")) ))
+     
+     ((isa arg GnuplotBinary)
+      (export-array :arg:data fd-to)
+      (when (null args)
+        (writing fd-to
+          (printf "\n") )
+        (while (null (socketselect fd-from 0)) ()) ; wait for gnuplot to respond
+        (==> this read-til-next-prompt)
+        (setq response (==> this read-til-next-prompt)) ))
+
+     (t
+      (error "not a valid argument" arg) ))
+     
+    ;; print response if in interactive mode
+    (when (and interactive response)
+      (printf (escape-%s response))
+      (setq response ()) )
+    
+    ;; process remaining arguments
+    (if args 
+	(apply this args)
+      response) ))
+
+(defmethod Gnuplot check-for-error (last-cmd last-ans)
+  () )
+  ;; (when (> *gnuplot-version* 4.2)
+  ;;   (while (this) ())
+  ;;   (let* ((cmd "if (exists(\"GPVAL_ERRNO\")) print GPVAL_ERRNO; else print -1")
+  ;; 	   (errno (str-val (print (this cmd)))) )
+  ;;     (while (null errno)
+  ;; 	(setq errno (str-val (this))) )
+  ;;     (when (> errno 0)
+  ;; 	(printf "\n")
+  ;; 	(printf "*** An error occurred while processing gnuplot script:\n\n")
+  ;; 	(printf "gnuplot> %s\n" last-cmd)
+  ;; 	(printf "%s\n" last-ans)
+  ;; 	(error "error in gnuplot script") ))))
+
+#? (==> <Gnuplot> reset)
+;; Reset gnuplot for new plot.
+(defmethod Gnuplot reset ()
+  (while (this) ())
+  (this "reset")
+  ())
+
+(defmethod Gnuplot -destructor ()
+  (when logfile
+    (writing (open-append logfile)
+      (printf "\n*** Terminating gnuplot process %d (%s).\n" 
+	      pid (date-to-string (now)) )))
+  (while (this) ())
+  (writing fd-to 
+    (printf "exit gnuplot\n") )
+  (setq fd-from ())
+  (setq fd-to ())
+  ())
+
+(defmethod Gnuplot send-binary (cmd . arrays)
+  ;; check input command
+  (when (not (stringp cmd))
+    (error "first argument not a command string" cmd) )
+  (dolist (a arrays)
+    (when (not (indexp a))
+      (error "not an array" a) ))
+  ;; send command
+  (writing fd-to 
+    (printf "%s\n" cmd) )
+  ;; send data
+  (dolist (a arrays)
+    (export-array a fd-to) )
+  ;; get ready for next input
+  (writing fd-to
+    (printf "\n") )
+  (==> this read-til-next-prompt) 
+  (==> this read-til-next-prompt) )
+
+(defun -mkfmt-4.2 (a)
+  (str-join "x" (make-list (idx-rank a) "%d")) )
+  
+(defun -mkfmt (a)
+  (concat "(" (str-join "," (make-list (idx-rank a) "%d")) ")") )
+
+(defun -binary-descriptor arrays
+  (let ((shps ()) (fmts ()) (mkfmt (if (<= *gnuplot-version* 4.2) -mkfmt-4.2 -mkfmt)))
+    (dolist (a arrays)
+      (let ((shpfmt (mkfmt a))
+	    (shp (idx-shape a))
+	    (scs (storage-class-symbol (classof (idx-storage a)))) )
+	(setq shps (cons (apply sprintf shpfmt (reverse shp)) shps))
+	(setq fmts (cons
+                    (selectq scs
+                      ('float  "'%float'")
+                      ('double "'%double'")
+                      ('int    "'%int'")
+                      ('short  "'%short'")
+                      ('char   "'%char'")
+                      ('uchar  "'%uchar'")
+                      ('byte   "'%char'")
+                      ('ubyte  "'%uchar'")
+                      (t 
+                       (error "not a supported binary type" scs)) )
+		    fmts)) ))
+    (sprintf "binary array=%s format=%s" 
+	     (str-join "," shps) (str-join "," fmts)) ))
+
+(defun test-gnuplot args
+  ;; todo: add some examples, e.g. from http://www-106.ibm.com/developerworks/library/l-gnuplot/
+  (let ((gp (new Gnuplot 'interactive ())))
+    (gp "set terminal x11 0" 
+	"test")
+    (sleep 2)
+    (gp "set terminal x11 1"
+	"test palette")
+    (sleep 2)
+    (gp "set terminal x11 0 close")
+    (sleep 2)
+    (gp "set terminal x11 1 close")
+    (setq gp ()) ))
+
+;; auxiliary definitions
+
+(let* ((*gnuplot-use-pty* t)
+       (gp (new Gnuplot 'interactive ())) )
+  
+;; test if gnuplot echos
+(let ((*gnuplot-echo-on* ())
+      (r (gp "show terminal")))
+  (defparameter *gnuplot-echo-on* (str-startswith r "show terminal")) )
+
+#? *gnuplot-preamble*
+;; A gnuplot command string that is sent to each new gnuplot instance upon
+;; creation. You may customize this setting (e.g., in your lushrc.lsh file).
+(defvar *gnuplot-preamble* "set mouse")
+
+#? *gnuplot-version*
+;; Version of gnuplot program.
+(defparameter *gnuplot-version* 
+  ((==> gp variables) "GPVAL_VERSION") )
+
+#? *gnuplot-build-options*
+;; String of gnuplot build options.
+(defparameter *gnuplot-build-options*
+  (str-join "" (str-split ((==> gp variables) "GPVAL_COMPILE_OPTIONS")
+			  "\\\\n")))
+
+;; Decide if gnuplot should use pseudo-terminals for communication.
+(defparameter *gnuplot-use-pty* (not (str-find "+LIBREADLINE" *gnuplot-build-options*)))
+(when :*gnuplot-use-pty*
+  (printf "*** Warning: The gnuplot build on this machine requires pseudo-terminals\n")
+  (printf "***        : for communication and causes the gnuplot interface to be slow.\n")
+  (printf "***        : Please see README.gnuplot in the lush directory for details.\n")
+  )
+
+#? *gnuplot-version-string*
+;; Fully qualified version of gnuplot program.
+
+#? *gnuplot-colors*
+;; <HTable> mapping color names to RGB triples.
+(defparameter *gnuplot-colors* (==> gp colors))
+
+#? *gnuplot-shape-to-pointtype*
+;; <Htable> mapping shape names (symbols) to gnuplot pointtype codes.
+(defvar *gnuplot-shape-to-pointtype*
+  ((htable) 'dot 0  'cross 1  '+ 1  'x 2  'asterisk 3  '* 3  'square 4
+   'filled-square 5  'circle 6  'filled-circle 7  'triangle 8 
+   'filled-triangle 8  triangle-down 10  'filled-triangle-down 11
+   'diamond 12  'filled-diamond 13))
+
+) ; let

@@ -1,0 +1,472 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; This file contains algorithms for generating new graphs.
+
+
+#? *** Transformation Operators on Graphs
+
+
+(libload "dynamic.lsh")
+(libload "graph.lsh")
+
+
+;; LATE REMARK
+;; Both <g-transform> and <g-compose> should be implemented with a two pass
+;; algorithm like <g-copy>. This would also simplify <g-restrict-to-meanings>
+;; in "grammar.lsh".
+
+
+
+
+;;; ========================================
+;;; CLASS GTRANS FOR TRANSFORMER
+;;; ========================================
+
+
+
+#? (new GTrans)
+;; A transformer is the object which embodies the rules used for creating a
+;; new graph from one or two graphs using <g-transform> or <g-compose>. 
+;; Class <GTrans> is the base class for all transformers.
+;;.IP
+;; Method <check> is used for selecting links in the initial graph(s)
+;; for which structures will be created between two nodes of the 
+;; destination graph.
+;;.IP
+;; Method <vcost> and <fcost> compute the cost of these structures without
+;; actually building them. Method <vcost> (Viterbi's cost) computes the cost
+;; of the best path. Method <fcost> (Forward's cost) computes the logadded
+;; cost of all paths.
+;;.IP
+;; Method <build> build a structure in the resulting graph on the basis of
+;; the information provided by the corresponding links in the parent graphs.
+;; This involves computing cost, label and data.
+;;.IP
+;; Method <bprop> is used during training to update the gradient with respect
+;; to the cost of the initial graph. The implentation of this method requires
+;; that the transformer remembers the association between the structures
+;; created by <build> and the initial links. This memory is cleaned by method
+;; <reset>.
+;;.PP
+;; The base class <GTrans> accepts all links of the product graph.  The cost
+;; in the link of the product graph will be the sum of the costs of the
+;; corresponding links in both graphs.  The label and data component are
+;; copied from the second and first graph respectively.
+;;
+;;.SEE (==> <gtrans> check <link1> <link2>)
+;;.SEE (==> <gtrans> vcost <link1> <link2>)
+;;.SEE (==> <gtrans> fcost <link1> <link2>)
+;;.SEE (==> <gtrans> build <ngraph> <nnodefrom> <nnodeto> <link1> <link2>)
+;;.SEE (==> <gtrans> remember <rememberp>)
+;;.SEE (==> <gtrans> reset)
+;;.SEE (==> <gtrans> bprop)
+
+(defclass GTrans Object)
+
+
+#? (==> <gtrans> check <link1> <link2>)
+;; Tells <g-transform> or <g-compose> if they must create a structure in the
+;; new graph corresponding to the given links of the parent graphs.  A
+;; structure may be as simple as a single link or as complex as a subgraph.
+;;.IP
+;; In the case of <g-transform>, arguments <link1> and <link2> are equal and
+;; identify a link of the initial graph. This function returns <t> if a new
+;; structure corresponding to this link must be created in the new graph
+;;.IP
+;; In the case of <g-compose>, argument <link1> and <link2> identify two links
+;; in the two initial graph. This function returns <t> if a new
+;; structure corresponding to these links must be created in the new graph
+
+
+(defmethod GTrans check(link1 link2)
+  ((-obj- (GLink)) link1 link2)
+  t )
+
+#? (==> <gtrans> vcost <link1> <link2>)
+;; Given two links <link1> and <link2> in two graphs, this method returns a
+;; floating point number indicating the cost of the best path in the structure
+;; corresponding to links <link1> and <link2>.
+;;
+;; The default function just adds the costs of both links.
+
+(defmethod GTrans vcost(link1 link2)
+  ((-obj- (GLink)) link1 link2)
+  (+ :link1:cost :link2:cost) )
+
+#? (==> <gtrans> fcost <link1> <link2>)
+;; Given two links <link1> and <link2> in two graphs, this method returns a
+;; floating point number indicating the loadadded cost of all paths in the
+;; structure corresponding to links <link1> and <link2>.
+;; 
+;; The default function just calls <vcost>.
+
+(defmethod GTrans fcost(link1 link2)
+  ((-obj- (GLink)) link1 link2)
+  (==> this vcost link1 link2) )
+
+
+#? (==> <gtrans> build <ngraph> <nnodefrom> <nnodeto> <link1> <link2>)
+;; Given to links <link1> and <link2> in two graphs (for which method <check>
+;; indicates that we should build something in the resulting graph), method
+;; <build> creates a new structure between nodes <nnodefrom> and <nnodeto> in
+;; graph <ngraph>. This task involves computing cost, label and data for the
+;; new links.
+;;
+;; The default function just builds a single new link whose label comes 
+;; from <link2> and whose data slot comes from <link1>.
+
+(defmethod GTrans build(ngraph nnodefrom nnodeto link1 link2)
+  ((-obj- (GGraph)) ngraph)
+  ((-obj- (GNode)) nnodefrom nnodeto)
+  ((-obj- (GLink)) link1 link2)
+  ;; Create link
+  (let ((cost (+ :link1:cost :link2:cost)))
+    (==> ngraph linkm nnodefrom nnodeto cost 
+	 :link2:label :link2:meaning :link1:data) 
+    ;; Returns a boolean
+    t ) )
+
+
+#? (==> <gtrans> bprop)
+;; Propagates the gradients of the links of the destination graph into the the
+;; corresponding links of the initial graph. The resulting gradients are
+;; accumulated into the fields <dcost> of the corresponding links.
+;;
+;; If running the transformer involves parametric operations (e.g. running a
+;; network), the gradients are also propagated along these operations and
+;; finally accumulated into the parameter vector.
+;;
+;; To achieve this task (optional), the transformer must remember
+;; all structures build since its creation.
+
+(defmethod GTrans bprop()
+  (error "Transformer does not support <bprop>") 
+  t )
+
+
+#? (==> <gtrans> remember <rememberp>)
+;; Sets or resets memoryless mode.  Argument <rememberp> is a boolean
+;; specifying if it is useful to remember the result of the next calls to the
+;; method <build> of the transformer.
+
+(defmethod GTrans remember(remp)
+  ((-bool-) remp)
+  (error "Transformer does not support <remember>") 
+  t )
+
+
+#? (==> <gtrans> reset)
+;; Resets the data remembered by the transformer for a possible 
+;; call of method <bprop>.
+
+(defmethod GTrans reset()
+  t )
+
+
+
+
+;;; ========================================
+;;; COPY A GRAPH
+;;; ========================================
+
+
+#? (g-copy <graph> <ngraph> <nstart> <nend>)
+;;
+;; Copies graph <graph> between nodes <nstart> and <nend> of a new graph
+;; <ngraph>.  This function only considers the nodes and links that we can
+;; reach from both the starting node and the end node. The other nodes and
+;; link are not copied.
+;;
+;; WARNING: This function merely copies the <data> pointers. The corresponding
+;; data are not copied into the new pool. You can change these data pointer
+;; within a new pass.
+
+
+(de g-copy(graph ngraph nstart nend)
+    ((-obj- (GGraph)) graph ngraph)
+    ((-obj- (GNode)) nstart nend)
+    (let ((nnodm (gptr-array :graph:nnodes))
+	  (nnodf (byte-array :graph:nnodes)) )
+      ;; Compute nodes reachable from end node
+      (g-mark-up :graph:endnode nnodf)
+      ;; Call recursive subroutine
+      (nnodm :graph:startnode:id (gptr nstart))
+      (nnodm :graph:endnode:id (gptr nend))
+      (g-copy-sub graph :graph:startnode ngraph nstart nnodm nnodf)
+      ;; Return new graph
+      ngraph ) )
+
+(de g-mark-up(node nodf)
+    ;; Mark node reachable upstream of node <node>.
+    ((-obj- (GNode)) node)
+    ((-idx1- (-byte-)) nodf)
+    (nodf :node:id 1)
+    (all-uplink (link node)
+      (let ((node2 :link:upnode))
+	(when (= 0 (nodf :node2:id))
+	  #{ C_g_mark_up($node2,$nodf) #} 
+	  t ) ) ) )
+
+(de g-copy-sub(graph node ngraph nnode nnodm nnodf)
+    ((-obj- (GNode)) node nnode)
+    ((-obj- (GGraph)) graph ngraph)
+    ((-idx1- (-gptr-)) nnodm)
+    ((-idx1- (-byte-)) nnodf)
+    ;; Loop on all downstream links
+    (all-downlink (link node)
+      (let* ((tnode :link:downnode)
+	     (gn (nnodm :tnode:id)) )
+	(if gn
+	    ;; Node already exist
+	    (let ((tnnode (obj GNode gn)))
+	      (==> ngraph linkm nnode tnnode
+		   :link:cost :link:label :link:meaning :link:data) )
+	  ;; Node does not exist but is reachable from end node
+	  (if (<> 0 (nnodf :tnode:id))
+	      (let ((tnnode (==> ngraph newnode (gptr ()))))
+		(nnodm :tnode:id (gptr tnnode))
+		;; Use C to do a recursive call...
+		;; (This function should not have temporaries!)
+                (ifcompiled
+                 ;; C version
+                 #{ C_g_copy_sub($graph,$tnode,$ngraph,$tnnode,$nnodm,$nnodf); #}
+                 ;; else interpreted lisp version
+                 (g-copy-sub graph tnode ngraph tnnode nnodm nnodf))
+		(==> ngraph linkm nnode tnnode 
+		     :link:cost :link:label :link:meaning :link:data) 
+		) ) ) ) )
+    t )
+		     
+
+
+
+
+
+
+;;; ========================================
+;;; TRANFORM A GRAPH
+;;; ========================================
+
+
+
+#? (g-transform <graph> <trans>)
+;;
+;; Transforms graph <graph> according to transformer <trans>. The resulting
+;; graph is bu1ild by calling method <build> of the transformer for all links
+;; in the initial graph for which method <check> returns true.
+;;
+;; This function ideally should only builds the nodes and the links which are
+;; reachable from both the startnode and the endnode.  Yet function
+;; <g-tranform> may build extra nodes and links if the final graph has
+;; cycle(s) or if the transformer method <build> builds unecessary nodes.
+;;
+;;.SEE (new GTrans)
+
+(de g-transform(graph trans)
+    ((-obj- (GGraph)) graph)
+    ((-obj- (GTrans)) trans)
+    (let ((ngraph (new GGraph))
+	  (nnodm (gptr-array :graph:nnodes)) 
+	  (nnodf (byte-array :graph:nnodes)) )
+      ;; Initialize node tables
+      (nnodm :graph:startnode:id (gptr :ngraph:startnode))
+      (nnodm :graph:endnode:id (gptr :ngraph:endnode))
+      ;; Call recursive subroutine
+      (g-transform-sub trans :graph:startnode ngraph nnodm nnodf)
+      ;; Return transformd graph
+      ngraph ) )
+
+(de g-transform-sub(trans node ngraph nnodm nnodf)
+    ((-obj- (GTrans))  trans)
+    ((-obj- (GNode))   node)
+    ((-obj- (GGraph))  ngraph)
+    ((-idx1- (-gptr-)) nnodm)
+    ((-idx1- (-byte-)) nnodf)
+    ;;DBG;; (printf "(%d)\n" :node:id)
+    (let ((reachable 0))
+      ((-int-) reachable)
+      ;; Loop on all links
+      (all-downlink (link node)
+	  ;;; When transformer says OK
+	(if (==> trans check link link)
+	    (let* ((tnode :link:downnode)
+		   (gnd (nnodm :tnode:id)) 
+		   (gndf (nnodf :tnode:id)) )
+	      ;;DBG;; (printf "(%d) -> (%d) [%d,%d] ?\n" 
+	      ;;DBG;;         :node:id :tnode:id (int (if gnd 1 0)) (int gndf))
+		(when (= 2 gndf) 
+		  ;; Create node when a cycle is detected. 
+		  (when (not gnd)
+		    (setq gnd (gptr (==> ngraph newnode (gptr ())))) 
+		    (nnodm :tnode:id gnd) )
+		  (nnodf :tnode:id 0) )
+		(when (and (not gnd) (= gndf 0))
+		  ;; This node does not exist yet...
+		  (nnodf :tnode:id 2)
+		  ;; Recursive call (no temporaries)
+                  (let*((res
+                         (ifcompiled
+                          ;; C version
+                          (int #{ C_g_transform_sub($trans,$tnode, 
+                                                    $ngraph,$nnodm,$nnodf ) #})
+                          ;; interpreted lisp version
+                          (g-transform-sub trans tnode ngraph nnodm nnodf)
+                          )))
+                    (if (= 0 res)
+                        (nnodf :tnode:id 1)
+                      (nnodf :tnode:id 0)
+                      (setq gnd (nnodm :tnode:id )) ) ))
+		;; If this node is worth creating
+		(when gnd
+		  (let ((gnu (nnodm :node:id)))
+		    (when (not gnu)
+		      (setq gnu (gptr (==> ngraph newnode (gptr ()))))
+		      (nnodm :node:id gnu) )
+		    (let ((nu (obj GNode gnu))
+			  (nd (obj Gnode gnd)) )
+		      ;;DBG;; (printf "(%d) -> (%d) [%d->%d]\n" 
+		      ;;DBG;;         :node:id :tnode:id :nu:id :nd:id )
+		      (==> trans build ngraph nu nd link link) 
+		      (setq reachable 1) ) ) ) ) ) )
+      ;;DBG;; (printf "(%d) returns %d\n" :node:id reachable)
+      reachable ) )
+
+
+
+
+
+
+;;; ========================================
+;;; COMPOSE TWO GRAPHS
+;;; ========================================
+
+
+
+#? (g-compose <graph1> <graph2> <trans>)
+;; Composes graphs <graph1> and <graph2> according to transformer <trans>. The
+;; resulting graph is build by calling method <build> of the transformer between
+;; all nodes of the product graph for which method <check> returns true.
+;;
+;; This function ideally should only builds the nodes and the links which are
+;; reachable from both the startnode and the endnode.  Yet function
+;; <g-compose> may build extra nodes and links if the final graph has cycle(s)
+;; or if the transformer method <build> builds unecessary nodes.
+;;
+;;.SEE (new GTrans)
+
+(de g-compose(graph1 graph2 trans)
+    ((-obj- (GGraph)) graph1 graph2)
+    ((-obj- (GTrans)) trans)
+    (let ((ngraph (new GGraph))
+	  (nnodm (gptr-array :graph1:nnodes :graph2:nnodes)) 
+	  (nnodf (byte-array :graph1:nnodes :graph2:nnodes)) )
+      ;; Initialize node tables
+      (nnodm :graph1:startnode:id :graph2:startnode:id (gptr :ngraph:startnode))
+      (nnodm :graph1:endnode:id :graph2:endnode:id (gptr :ngraph:endnode))
+      ;; Call recursive subroutine
+      (g-compose-sub trans :graph1:startnode :graph2:startnode ngraph nnodm nnodf)
+      ;; Return composed graph
+      ngraph ) )
+
+(de g-compose-sub(trans node1 node2 ngraph nnodm nnodf)
+    ((-obj- (GTrans)) trans)
+    ((-obj- (GNode)) node1 node2)
+    ((-obj- (GGraph)) ngraph)
+    ((-idx2- (-gptr-)) nnodm)
+    ((-idx2- (-byte-)) nnodf)
+    ;;DBG;; (printf "(%d %d)\n" :node1:id :node2:id)
+    (let ((reachable 0))
+      ((-int-) reachable)
+      ;; Loop on all pair of links
+      (all-downlink (link1 node1)
+	(all-downlink (link2 node2)
+	  ;;; When transformer says OK
+	  (if (==> trans check link1 link2)
+	      (let* ((tnode1 :link1:downnode)
+		     (tnode2 :link2:downnode) 
+		     (gnd (nnodm :tnode1:id :tnode2:id)) 
+		     (gndf (nnodf :tnode1:id :tnode2:id)) )
+		;;DBG;; (printf "(%d %d) -> (%d %d) [%d,%d] ?\n" 
+		;;DBG;;         :node1:id :node2:id :tnode1:id :tnode2:id 
+		;;DBG;;         (int (if gnd 1 0)) (int gndf) )
+		(when (= 2 gndf) 
+		  ;; Create node when a cycle is detected. 
+		  (when (not gnd)
+		    (setq gnd (gptr (==> ngraph newnode (gptr ())))) 
+		    (nnodm :tnode1:id :tnode2:id gnd) )
+		  (nnodf :tnode1:id :tnode2:id 0) )
+		(when (and (not gnd) (= gndf 0))
+		  ;; This node does not exist yet...
+		  (nnodf :tnode1:id :tnode2:id 2)
+		  ;; Recursive call (no temporaries)
+                  (let*((res
+                         (ifcompiled
+                          ;; C version
+                          (int #{ C_g_compose_sub($trans,$tnode1,$tnode2,
+                                                  $ngraph,$nnodm,$nnodf ) #})
+                          (g-compose-sub trans tnode1 tnode2 ngraph nnodm nnodf))))
+                    (if (= 0 res)
+		      (nnodf :tnode1:id :tnode2:id 1)
+		    (nnodf :tnode1:id :tnode2:id 0)
+		    (setq gnd (nnodm :tnode1:id :tnode2:id)) ) ))
+		;; If this node is worth creating
+		(when gnd
+		  (let ((gnu (nnodm :node1:id :node2:id)))
+		    (when (not gnu)
+		      (setq gnu (gptr (==> ngraph newnode (gptr ()))))
+		      (nnodm :node1:id :node2:id gnu) )
+		    (let ((nu (obj GNode gnu))
+			  (nd (obj Gnode gnd)) )
+		      ;;DBG;; (printf "(%d %d) -> (%d %d) [%d->%d]\n" 
+		      ;;DBG;;         :node1:id :node2:id :tnode1:id 
+		      ;;DBG;;         :tnode2:id :nu:id :nd:id )
+		      (==> trans build ngraph nu nd link1 link2) 
+		      (setq reachable 1) ) ) ) ) ) ) )
+      ;;DBG;; (printf "(%d %d) returns %d\n" :node1:id :node2:id reachable)
+      reachable ) )
+
+
+
+
+
+;;; ========================================
+;;; MAKE
+;;; ========================================
+
+
+(dhc-make-sf "gtransform"
+
+	  (gtrans check vcost fcost build bprop remember reset)
+	  g-mark-up g-copy-sub g-copy 
+	  g-transform-sub g-transform
+	  g-compose-sub g-compose  )
+
+
+
+ 
+

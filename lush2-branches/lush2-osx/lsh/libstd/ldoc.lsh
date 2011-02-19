@@ -1,0 +1,283 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; A set of classes for hyper-documents and books
+;; Yann LeCun, May 2002.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; this includes HTML-like text rendering as well as hyperlinks.
+
+(libload "libstd/brace")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; LDOC
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; guess the type of an entry from the synopsis
+(de entry-guess-type (name)
+  (let ((type ()))
+    (cond
+     ((regex-match "\\(==> .*\\)" name)
+      (setq type "MSG") )
+     ((regex-match "\\(new .*\\)" name)
+      (setq type "CLASS") )
+     ((regex-match "\\([-a-zA-Z0-9+*/<>=]+( .*)?\\)" name)
+      (let ((symb (regex-subst "\\(([-a-zA-Z0-9+*/<>=]+)( .*)?\\)" "%0" name)))
+	(setq symb (apply scope (list (namedclean symb))))
+	(when symb 
+	  (setq symb (pname (classname (classof symb))))
+	  (setq type (regex-subst "\\|(.*)\\|" "%0" symb))))))
+    type))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ldoc class
+
+;; an ldoc is essentially a container object for a brace list.
+;; it contains a brace list, a metadata brace list,
+;; and a file name from which the brace list should be read.
+;; It also contains several metadata slots which are filled
+;; with values extracted from the <meta> tag of the brace list.
+;; Ldocs can be rendered to the terminal, a graphic window,
+;; an HTML document or a LaTeX document.
+(defclass ldoc object
+  doc					; * the actual brace code
+  ;; meta-entry				; the metadata from the entry line
+  meta-doc				; metadata from doc
+  file					; file where the text resides
+  lastread				; date/time at which doc was read
+  name				        ; name/entry for headline display
+
+  ;; metadata used for searching and headline display
+  ;; the actual metadata displayed in the header (from 
+  ;; which this is derived) is in the meta slot
+  author				; author
+  symbol				; lisp symbol being described
+  location				; location of the object described
+  keywords				; keyword list
+  date					; date of last modification
+  desc				        ; one-line description
+  title					; a title (by default, same as name)
+  type					; type of object (e.g. "file" "dmd")
+)
+
+(defmethod ldoc read-when () lastread)
+
+(defmethod ldoc clear-slots ()
+  (setq doc () meta-doc () file () lastread () name ()
+	author () symbol () location () keywords ()
+	date () desc () title () type ()))
+
+(defmethod ldoc getdata () this)
+
+(defmethod ldoc set (lname fname brace)
+  (==> this clear-slots)
+  (setq file (or (relative-fname lushdir fname) fname))
+  (setq name lname)
+  (setq doc brace))
+
+(defmethod ldoc set-file-not-found (fname lname)
+  (==> this clear-slots)
+  (setq file (or (relative-fname lushdir fname) fname))
+  (setq name lname)
+  (setq doc (list '<div> 
+                  (sprintf "<< document file '%s' not found >>" fname))))
+
+(defmethod ldoc set-entry-not-found (fname lname)
+  (==> this clear-slots)
+  (setq file (or (relative-fname lushdir fname) fname))
+  (setq name lname)
+  (setq doc (list '<div> 
+                  (sprintf "<< document entry '%s' not found >>" lname))))
+
+;; read the body of a help text from the current
+;; point in the file (presumably right after the 
+;; the entry header line.
+;; <ext> must be the type of the file:
+;; ".lsh" for a Lush program where the text is behind 
+;; semi-columns (lisp comments), or ".hlp" for normal 
+;; documentation files
+;; <fname> is a file name (for display purpose only)
+;; and <lname> the help entry/title.
+(defmethod ldoc read-help-body (fname lname ext &optional readtime)
+  (==> this clear-slots)
+  (setq file (or (relative-fname lushdir fname) fname))
+  (setq name lname)
+  (setq lastread (if readtime readtime (now)))
+  (setq doc '(<div>))
+  ;; Go reading
+  (let ((regex (selectq ext
+		 (".lsh"  "^;+[ ]?(.*)$")
+		 (t      "(.?|[^#].*|#[^?].*)")))
+	(stop ())
+	(tmpfile (tmpname))
+	(newstylep ())
+	(oldstylep ()))
+    (writing tmpfile 
+      (while (and (not stop) (<> "\e" (skip-char "")))
+	(let ((line (read-string)))
+	  (if (or (= (str-left line 2) "#?")
+		  (and (= ext ".lsh") (<> (str-left line 2) ";;"))
+		  (and (= ext ".lsh") (= line "")))
+	      (setq stop t)
+	    (when (<> "" line)
+	      (setq line (regex-subst regex "%0" 
+				   (regex-subst "%" "%%%%" line)))
+	      (when (regex-match "^\\.[A-Z]" (str-left line 2)) (setq oldstylep t))
+	      (when (regex-seek "{<" line) (setq newstylep t))
+	      (printf line))
+	    (when (<> "\e" (skip-char "")) (read-string 1))
+	    (printf "\n")))))
+    (cond
+     ;; new style document
+     ((not oldstylep)
+      (let ((brace (list '<div>)))
+	(reading tmpfile (brace.read-body brace))
+	(==> this set-doc (brace.read-concat-strings brace))))
+     ;; old style document
+     ((and (not newstylep) oldstylep)
+      (let ((brace (list '<div>)))
+	(reading tmpfile (brace.read-old-body brace))
+	(==> this set-doc (brace.read-concat-strings brace))))
+     (t (error "document uses a mixture of dot-tags and brace-tags")))
+    (unlink tmpfile)
+    doc))
+
+
+;; updates the metadata slots with the meta-doc
+;; and the computed metadata (date etc).
+(defmethod ldoc update-metadata ()
+  (let ((tmp ()))
+    ;; ok this should set the keyword field of the help-node
+    (setq keywords 			; list
+	  (alist-get '<keywords> meta-doc))
+    (setq symbol 			; string
+	  (cond 
+	   ((setq tmp (alist-get '<symbol> meta-doc)) (car tmp))
+	   ((and (setq tmp (car (regex-extract "\\([ ]*([^ ]+)(\\)| ).*" name)))
+		 (stringp tmp) (<> "==>" tmp)) tmp)))
+    (setq location 			; string
+	  (cond
+	   ((setq tmp (alist-get '<location> meta-doc)) (car tmp))
+	   ((= ".lsh" (setq tmp (regex-subst ".*(\\.[a-z]+)$" "%0" file)))
+	    file)))
+    (setq title 			; string
+	  (cond
+	   ((setq tmp (alist-get '<title> meta-doc)) (car tmp))
+	   (t name)))
+    (setq desc				; list
+	  (cond
+	   ((setq tmp (alist-get '<desc> meta-doc)) tmp)))
+    (setq type				; string
+	  (cond
+	   ((setq tmp (alist-get '<type> meta-doc)) (car tmp))
+	   ((setq tmp (entry-guess-type name)) tmp)))
+    (setq author 			; list
+	  (cond
+	   ((setq tmp (alist-get '<author> meta-doc)) tmp)))
+    (setq date				; string
+	  (when (and location (filep location))
+	     (concat
+	      "Last Modified: "
+	      (date-to-string 
+	       (alist-get 'mtime (fileinfo location))
+	       "%Y-%m-%d %H:%M:%S"))))))
+
+
+;; set the doc slot with the brace list argument
+;; then splice out the metadata brace list and set 
+;; the meta slot with it. Also set the metadata slot 
+;; with the data extracted from the meta brace list.
+;; The metadata slots are purely used for search and headline
+;; display, not for rendering. (the meta brace list is used
+;; for rendering the header).
+(defmethod ldoc set-doc (brace)
+  (setq doc brace)
+  (brace.splice-ul doc)
+  (setq meta-doc (list '<meta>))
+  (brace.extract-metadata doc meta-doc brace.meta-tags)
+  (==> this update-metadata))
+
+;; DEBUG  
+(defvar *ldoc* ())
+
+(defmethod ldoc render-text (&optional (f "$stdout") (section-number "") 
+				       (lmargin 0) (rmargin 72))
+  ;; DEBUG
+  (setq *ldoc* this)
+  (writing f
+    (==> *brace-text* render 
+	 (list '<meta> author symbol location keywords date desc title type)
+	 lmargin rmargin)
+    (==> *brace-text* render doc lmargin rmargin)
+    (printf "\n")))
+
+(defmethod ldoc render-html (&optional (f "$stdout") 
+				       (section-number "") (anchors ()))
+  (let ((real-title 
+	 (cond 
+	  ((and section-number (<> section-number "") title)
+	   (concat section-number ". " title))
+	  (t " "))))
+    (writing f
+      (when (<> section-number "")
+	(printf "<a name=\"%s\"></a>\n" section-number))
+      (==> *brace-html* render 
+	   (list '<meta> author symbol location 
+		 keywords date desc real-title type)
+	   0 72)
+      (==> *brace-html* render doc 0 72)
+      (printf "\n"))))
+
+(defmethod ldoc render-brace (&optional (f "$stdout") 
+				       (section-number "") (anchors ()))
+  (writing f
+    (==> *brace-brace* render 
+	 (list '<meta> author symbol location keywords date desc title type)
+	 0 72)
+    (==> *brace-brace* render doc 0 72)
+    (printf "\n")))
+
+(defmethod ldoc render-latex (section-number)
+  (==> *brace-latex* render 
+       (cons
+	(car doc)
+	(cons
+	 (list '<meta> author symbol location keywords date desc title type)
+	 (cdr doc)))
+       section-number)
+  (printf "\n"))
+
+(defmethod ldoc render-ogre (&optional (w 400) section-number anchors)
+  ;; the render method returns the rectangle effectively used
+  (==> *brace-ogre* render 
+	 (cons
+	  (car doc)
+	  (cons
+	   (list '<meta> author symbol location keywords date desc title type)
+	   (cdr doc)))
+	 w))
+

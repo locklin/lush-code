@@ -1,0 +1,128 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar gsl-libgsl ())
+(defvar gsl-libgslcblas ())
+(defvar gsl-version ())
+(defvar gsl-libgsl-loaded ())
+(defvar gsl-cpheader-cmd ())
+
+
+(when (not gsl-libgsl-loaded)
+
+  ;; find gsl library
+  (cond
+   ;; gsl-lib was already defined, don't touch it
+   (gsl-libgsl t)
+   ;; look for dynamic libgsl.so installed through packages
+   ((progn
+      (let* ((lib (find-shared-library "libgsl")))
+        (when (and lib (filep lib)) (setq gsl-libgsl lib)))))
+   ;; look for static libgsl.a installed through packages
+   ((progn
+      (let* ((lib (find-static-library "libgsl")))
+        (when (and lib (filep lib)) (setq gsl-libgsl lib)))))
+   ;; couldn't find it, complain loudly.
+   (t (printf "Neither the libgsl.so not libgsl.a could be found\n")
+      (printf "You should install the libgsl and libgsl-devel\n")
+      (printf "packages from your operating system distribution.\n")
+      (printf "Alternatively, you can download GSL from\n")
+      (printf "http://sources.redhat.com/gsl, compile it,\n")
+      (printf "and install it by hand (e.g. in /usr/local/lib).\n")
+      (printf "If you have installed GSL and still get this message, type:\n")
+      (printf "    (defparameter gsl-libgsl \"yourgsllibrary\")\n")
+      (printf "before loading this file.\n")      
+      (printf "(see %s for more details)\n" file-being-loaded)
+      (error "cannot configure GSL")))
+
+  
+  ;; find the gslcblas library
+  (cond
+   ;; gsl-libgslcblas was already defined, don't touch it
+   (gsl-libgslcblas t)
+   ;; look for dynamic libgslcblas.so installed through packages
+   ((progn
+      (let* ((lib (find-shared-library "libgslcblas")))
+        (when (and lib (filep lib)) (setq gsl-libgslcblas lib)))))
+   ;; look for static libgslcblas.a installed through packages
+   ((progn
+      (let* ((lib (find-static-library "libgslcblas")))
+        (when (and lib (filep lib)) (setq gsl-libgslcblas lib)))))
+   ;; couldn't find it, complain loudly.
+   (t (printf "neither the libgslcblas.so not libgslcblas.a could be found\n")
+      (printf "You should install the libgsl and libgsl-devel")
+      (printf "packages from your operating system distribution.\n")
+      (printf "Alternatively, you can download GSL from\n")
+      (printf "http://sources.redhat.com/gsl, compile it,\n")
+      (printf "and install it by hand (e.g. in /usr/local/lib).\n")
+      (printf "If you have installed GSL and still get this message, type:\n")
+      (printf "    (defparameter gsl-libgslcblas \"yourgslcblaslibrary\")\n")
+      (printf "before loading this file.\n")      
+      (printf "(see %s for more details)\n" file-being-loaded)
+      (error "cannot configure GSLCBLAS") ) ) 
+  
+  
+  ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  (libload "libc/shell")
+  
+  (let ((dlist c-include-path)
+        (hlist ()))
+    (while (and dlist (not hlist))
+      (setq hlist (glob ".*\\.h" (ls (concat-fname (car dlist) "gsl"))))
+      (setq dlist (cdr dlist)))
+    (if (not hlist)
+        (progn
+          (printf "Could not find GSL include files\n") ;
+          (printf "please make sure you have installed the\n")
+          (printf "GSL development packages\n")
+          (error "cannot find GSL header files"))
+      (setq gsl-cpheader-cmd
+            (cons 'progn
+                  (append
+                   '((cpheader "#include <gsl/gsl_math.h>"))
+                   '((cpheader "#include <gsl/gsl_math.h>"))
+                   (all ((x hlist))
+                     (when (not (regex-match "gsl_wavelet.*" x)) ;; incompatible with fft
+                       (list 'cpheader (sprintf "#include <gsl/%s>" x)) ) ) ) ) ) ) ) 
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; define gsl-version
+  (de gsl-version ()
+    (cpheader "#include <gsl/gsl_version.h>")
+    (to-double #{ atof(GSL_VERSION) #}) )
+  (dhc-make "gsl_version" gsl-version)
+  (setq gsl-version (gsl-version)) 
+
+  ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; load libraries
+  ;; THIS IS COMPLETELY WRONG
+  ;; THE INTERFACE SHOULD USE DHC-MAKE-WITH-LIBS INSTEAD OF THIS HACK
+  (mod-load gsl-libgslcblas)
+  (mod-load gsl-libgsl)
+  (setq gsl-libgsl-loaded t)
+)
+

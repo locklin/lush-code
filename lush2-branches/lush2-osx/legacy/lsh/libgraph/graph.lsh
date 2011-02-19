@@ -1,0 +1,530 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; This file contains the basic graph classes.
+
+
+#? *** Manipulating Graphs
+
+(libload "dynamic.lsh")
+
+
+;;; ========================================
+;;; CLASS GBAG
+;;; ========================================
+
+#? * Gbag Class
+;; a useful Lisp class to handle dynamically allocated data structures.
+
+#? (new Gbag)
+;; Allocates a new collection of GPTRs. The housekeeping data structures
+;; will be allocated on pool specified with method <add>. 
+;; The following messages are supported:
+;;.SEE (==> <gbag> add <pool> <gptr>)
+;;.SEE (==> <gbag> rem <gptr>)
+;;.SEE (==> <gbag> test <gptr>)
+;;.SEE (==> <gbag> size)
+
+(defclass Gbag Object
+  ((-int-) size)			; the number of elements
+  ((-gptr- "struct GbagElt *") p) )	; the data array
+
+
+(defmethod Gbag Gbag()
+  (cheader "struct GbagElt { gptr data; struct GbagElt *next;};")
+  (setq size 0)
+  (setq p (gptr ())) )
+
+
+
+#? (==> <gbag> size)
+;; Returns the number of elements in the bag <gbag>.
+
+(defmethod Gbag size()
+  size )
+
+
+#? (==> <gbag> add <pool> <gptr>)
+;; Adds a new element GPTR in the bag <gbag>. Memory will be allocated from
+;; pool <pool>. It is safer to always use the same pool with a given bag. This
+;; pool, as well as the data pointed to by <gptr> *must* outlive the bag.
+(defmethod Gbag add (pool gp)
+  ((-obj- (MemoryPool)) pool)
+  ((-gptr-) gp)
+  (let ((tb (==> pool alloc (to-int #{ sizeof(struct GbagElt) #}))))
+    (declare (-gptr- "struct GbagElt *") tb)
+    #{
+    $tb->next = $this->p;
+    $tb->data = $gp;
+    $this->p = $tb;
+    #}
+    (incr size)
+    gp))
+
+
+#? (==> <gbag> test <gptr>)
+;; Tests if element <gptr> belongs to bad <gbag>.
+
+(defmethod Gbag test(gp)
+  ((-gptr-) gp)
+  #{
+     struct GbagElt *tb = $this->p;
+     while (tb && tb->data!=$gp)
+       tb = tb->next;
+  #}
+  (gptr #{ (tb ? $gp : 0) #}) )
+  
+
+#? (==> <gbag> rem <gptr>)
+;; Remove all occurences of element <gptr> in the bag <gbag>.
+;; This function also resets the iterator.
+
+(defmethod Gbag rem(gp)
+  ((-gptr-) gp)
+  #{
+     struct GbagElt *tb, **tbp = &($this->p);
+     while ((tb = *tbp)) 
+      if (tb->data!=$gp) {
+        tbp = &((*tbp)->next);
+      } else {
+        *tbp=tb->next;
+	$size -= 1;
+      }
+  #}
+  size )
+
+
+#? (==> <gbag> empty)
+;; Removes all elements in a bag
+
+(defmethod Gbag empty()
+  (setq size 0)
+  (setq p (gptr ()))
+  size )
+
+
+
+#? (gbagelt-peek-data <gptr>)
+;; Peek data in a gbag element.
+
+(de gbagelt-peek-data(p)
+    ((-gptr- "struct GbagElt *") p)
+    (gptr #{ $p->data #}) )
+
+#? (gbagelt-peek-next <gptr>)
+;; Peek next gbag element.
+
+(de gbagelt-peek-next(p)
+    ((-gptr- "struct GbagElt *") p)
+    (gptr #{ $p->next #}) )
+
+
+
+#? (all-bag (<var> <bag>) <...prog...>)
+;; Iterate <prog> with <var> taking all values in <bag>.
+
+(dm all-bag(fn (var bag) . prog)
+    (ifcompiled  
+     `(let ((_tmp :,bag:p)
+            (,var (gptr ())) )
+        ((-gptr- "struct GbagElt *") _tmp)
+        (cheader "struct GbagElt { gptr data; struct GbagElt *next;};")
+        (while _tmp
+          (cinline "(%s)=((struct GbagElt *)%s)->data;" ,var _tmp)
+          (cinline "(%s)=((struct GbagElt *)%s)->next;" _tmp _tmp)
+          ,@prog ) )
+     ;; Interpreted mode version
+     `(let ((_tmp :,bag:p) (,var (gptr ())))
+        (while _tmp
+          (setq ,var (gbagelt-peek-data _tmp)
+                _tmp (gbagelt-peek-next _tmp) )
+          ,@prog) ) ) )
+    
+
+
+;;; ========================================
+;;; CLASS GGRAPH
+;;; ========================================
+
+#? * GGraph Class
+
+#? (new GGraph)
+;; Class <GGraph> defines the functions for handling graphs. Graphs are
+;; handled via two other classes of objects.
+;;.IP
+;; Class <GNode> represent nodes of the graph.
+;;.IP
+;; Class <GLink> represent arcs of the graph.
+
+#? :<graph>:apool
+;; Slot <apool> in a graph contains the pool used for storing all objects
+;; depending on the graph. This pool is created when you create the graph
+;; object. You may use this pool to allocate objects stored in the <data>
+;; slots of the nodes and the links.
+
+#? :<graph>:nnodes
+;; Slot <nnodes> in a graph contains the number of nodes allocated in a graph.
+
+#? :<graph>:startnode
+;; Slot <startnode> in a graph contains the start node of the graph. This node
+;; is created when the graph is created.
+
+#? :<graph>:endnode
+;; Slot <endnode> in a graph contains the final node of the graph. This node
+;; is created when the graph is created.
+
+#? :<node>:id
+;; Slot <id> in a node contains the ordinal number of the node. This number was
+;; allocated when you created the node. You should not change it.
+
+#? :<node>:data
+;; Slot <data> of a node contains an arbitrary GPTR. This GPTR is not used
+;; by the graph library and is available for you. You must of course 
+;; take the usual precautions with GPTRs.
+
+#? :<link>:upnode
+;; Slot <downnode> of a link contains the upstream node of the link.
+
+#? :<link>:downnode
+;; Slot <downnode> of a link contains the downstream node of the link.
+
+#? :<link>:cost
+;; Slot <cost> of a link is a floating point number for storing the cost
+;; associated with a link. Costs are real number (both positive and
+;; negative). The smaller the cost the better the link. You can view these
+;; costs as <-log(probability)>.
+
+#? :<link>:dcost
+;; Slot <dcost> of a link is a floating point number intended for storing the
+;; derivative of the global cost with respect to the contents of the slot
+;; <cost>. This slot is set by functions <g-clear-gradients> and
+;; <g-forward-backward>.
+
+#? :<link>:label
+;; Slot <label> of a link contains an arbitrary integer. This integer is not
+;; used by the graph library and is available for you.
+
+#? :<link>:data
+;; Slot <data> of a link contains an arbitrary GPTR. This GPTR is not used
+;; by the graph library and is available for you. You must of course 
+;; take the usual precautions with GPTRs.
+
+
+;;; ----------------------------------------
+
+#? * GNode Class
+
+(defclass GNode object
+  ((-int-)  id)				; node identifier 
+  ((-gptr-) data) 			; app dependent data
+  ((-flt-) acost)			; accrued cost (forward)
+  ((-flt-) dacost)			; grad of accrued cost (backward)
+  ((-obj- (Gbag)) uplink)		; bag of upstream links
+  ((-obj- (Gbag)) downlink) )		; bag of downstream links
+
+
+(defmethod GNode gnode(a-id a-data)
+  ((-int-) a-id)
+  ((-gptr-) a-data)
+  (setq id a-id)
+  (setq data a-data)
+  (setq acost 0)
+  (setq dacost 0)
+  (setq uplink (new Gbag))
+  (setq downlink (new Gbag)) )
+
+
+
+
+;;; ----------------------------------------
+
+#? * GLink Class
+
+(defclass GLink object
+  ((-flt-)  cost)			; link cost
+  ((-flt-)  dcost)			; link gradient
+  ((-int-)  meaning)			; link interpretation
+  ((-int-)  label)			; link code
+  ((-gptr-) data ) 			; app dependent data
+  ((-obj- (GNode)) upnode)		; upstream node
+  ((-obj- (GNode)) downnode) )		; downstream node
+
+
+(defmethod GLink glink(node1 node2 a-cost a-label a-data)
+  ((-obj- (GNode)) node1)
+  ((-obj- (GNode)) node2)
+  ((-flt-) a-cost)
+  ((-int-) a-label)
+  ((-gptr-) a-data)
+  (setq dcost 0)
+  (setq cost a-cost)
+  (setq meaning a-label)
+  (setq label a-label)
+  (setq data a-data)
+  (setq upnode node1)
+  (setq downnode node2)
+  this )
+
+
+
+;;; ----------------------------------------
+
+(defclass GGraph object
+  ((-obj- (MemoryPool)) apool) 		; Pool for the graph structure
+  ((-int-)         nnodes)		; Number of nodes
+  ((-bool-)        frozen) 		; Flag for frozen graph
+  ((-obj- (Gbag))  nodes)		; Bag of nodes
+  ((-obj- (GNode)) startnode)		; Starting node
+  ((-obj- (GNode)) endnode) )		; Final node
+
+
+
+;;; -------- moving in the graph
+
+
+#? (all-nodes (<var> <graph>) <...prog...>)
+;; Iterate <prog> with <var> being all nodes in graph <graph>.
+
+(dm all-nodes(fn (var graph) . prog)
+    (ifcompiled 
+     `(let ((_tmp :,graph:nodes:p)
+            (,var (unprotect (obj GNode (gptr ())))) )
+        (cheader "struct GbagElt { gptr data; struct GbagElt *next;};")
+        (while _tmp
+          (cinline "(%s)=((struct GbagElt *)%s)->data;" ,var _tmp)
+          (cinline "(%s)=((struct GbagElt *)%s)->next;" _tmp _tmp)
+          ,@prog ) )
+     ;; Interpreted mode version
+     `(let ((_tmp :,graph:nodes:p) (,var ()))
+        (while _tmp
+          (setq ,var (obj (gbagelt-peek-data _tmp))
+                _tmp (gbagelt-peek-next _tmp) )
+          ,@prog) ) ) )
+
+
+
+#? (all-downlink (<var> <node>) <...prog...>)
+;; Iterate <prog> with <var> being all links downstream of <node>.
+
+(dm all-downlink(fn (var node) . prog)
+    (ifcompiled 
+     `(let ((_tmp :,node:downlink:p)
+            (,var (unprotect (obj GLink (gptr ())))) )
+        (cheader "struct GbagElt { gptr data; struct GbagElt *next;};")
+        (while _tmp
+          (cinline "(%s)=((struct GbagElt *)%s)->data;" ,var _tmp)
+          (cinline "(%s)=((struct GbagElt *)%s)->next;" _tmp _tmp)
+          ,@prog ) )
+     ;; Interpreted mode version
+     `(let ((_tmp :,node:downlink:p) (,var ()))
+        (while _tmp
+          (setq ,var (obj (gbagelt-peek-data _tmp))
+                _tmp (gbagelt-peek-next _tmp) )
+          ,@prog) ) ) )
+
+
+#? (all-uplink (<var> <node>) <...prog...>)
+;; Iterate <prog> with <var> being all links upstream of <node>.
+
+(dm all-uplink(fn (var node) . prog) 
+    (ifcompiled 
+     `(let ((_tmp :,node:uplink:p)
+            (,var (unprotect (obj GLink (gptr ())))) )
+        ((-gptr- "struct GbagElt *") _tmp)
+        (cheader "struct GbagElt { gptr data; struct GbagElt *next;};")
+        (while _tmp
+          (cinline "(%s)=((struct GbagElt *)%s)->data;" ,var _tmp)
+          (cinline "(%s)=((struct GbagElt *)%s)->next;" _tmp _tmp)
+          ,@prog ) )
+     ;; Interpreted mode version
+     `(let ((_tmp :,node:uplink:p) (,var ()))
+        (while _tmp
+          (setq ,var (obj (gbagelt-peek-data _tmp))
+                _tmp (gbagelt-peek-next _tmp) )
+          ,@prog) ) ) )
+
+
+
+;;; -------- building a graph
+
+
+#? (==> <graph> newnode <data>)
+;; Creates a new node in the graph.  The new node points to data GPTR
+;; <data>. All data pointed to by <data> MUST outlive the graph. You can for
+;; instance allocate this data on the pool <:graph:apool>.
+
+(defmethod GGraph newnode(data)
+  ((-gptr-) data)
+  (when frozen 
+	(error "newnode: graph is frozen") )
+  (setq nnodes (1+ nnodes))
+  (let ((node (in-pool apool (new GNode (1- nnodes) data ))))
+    (==> nodes add apool (gptr node))
+    node ) )
+
+
+#? (==> <graph> link <node1> <node2> <cost> <label> <data>)
+;; Creates a new arc in the graph between nodes <node1> and <node2>.  The new
+;; arc is assigned a cost <cost>, an integer interpretation <label> and the
+;; data pointed to by the GPTR <data>. All data pointed to by <data> MUST
+;; outlive the graph. You can for instance allocate this data on the pool
+;; <:graph:apool>.
+
+(defmethod GGraph link(node1 node2 cost label data)
+  ((-obj- (GNode)) node1)
+  ((-obj- (GNode)) node2)
+  ((-flt-) cost)
+  ((-int-) label)
+  ((-gptr-) data) 
+  (when frozen
+    (error "link: graph is frozen") )
+  (when (= node1 :this:endnode)
+    (error "link: cannot start a link on the terminal node") )
+  (let ((link (in-pool apool (new GLink node1 node2 cost label data))))
+    (==> :node1:downlink add apool (gptr link))
+    (==> :node2:uplink add apool (gptr link))
+    link ) )
+
+
+#? (==> <graph> linkm <node1> <node2> <cost> <label> <meaning> <data>)
+;;.SEE (==> <graph> link <node1> <node2> <cost> <label> <data>)
+;; A link creation function which also sets the <meaning> field.
+;; The default creation function store the same value in both
+;; the <label> and <meaning> fields
+
+(defmethod GGraph linkm(node1 node2 cost label meaning data)
+  ((-obj- (GNode)) node1)
+  ((-obj- (GNode)) node2)
+  ((-flt-) cost)
+  ((-int-) label meaning)
+  ((-gptr-) data) 
+  (let ((link (==> this link node1 node2 cost label data)))
+    (setq :link:meaning meaning)
+    link ) )
+
+
+#? (==> <graph> cut <link>)
+;; Removes arc <link> from the graph. 
+;; No memory is reclaimed. Links may be
+;; cut in a frozen graph.
+
+(defmethod GGraph cut(link)
+  ((-obj- (GLink)) link)
+  (let* ((upbag  :link:upnode:downlink)
+	 (downbag :link:downnode:uplink) )
+    (==> upbag rem (gptr link))
+    (==> downbag rem (gptr link)) )
+  link )
+
+
+#? (==> <graph> freeze)
+;; Forbids any further alteration of the graph.
+
+(defmethod GGraph freeze()
+  (setq frozen t) )
+
+
+
+;; ---------- Creating graph
+
+(defmethod Ggraph ggraph()
+  (setq apool (new MemoryPool)) 
+  (setq nodes (in-pool apool (new Gbag)))
+  (setq nnodes 0)
+  (setq frozen ())
+  (setq startnode (==> this newnode (gptr ())))
+  (setq endnode (==> this newnode (gptr ()))) )
+
+
+
+;;; ========================================
+;;; PRETTY PRINT
+;;; ========================================
+
+#? (==> <graph> dump)
+;; Dumps a graph on the standard output.
+
+(defmethod GGraph dump()
+  (printf "GRAPH (%d nodes)\n" nnodes)
+  (all-nodes (node this)
+    (printf "  N%02d\t\t(acost=%f, dacost=%f)\n"
+	    :node:id :node:acost :node:dacost )
+    (all-downlink (lnk node)
+      (printf "    N%02d->N%02d\t(label=%d/%d, cost=%f, dcost=%f)\n"
+	      :lnk:upnode:id :lnk:downnode:id
+	      :lnk:label :lnk:meaning :lnk:cost :lnk:dcost  ) ) )
+  (printf "END GRAPH\n") )
+
+
+
+
+;;; ========================================
+;;; MAKE
+;;; ========================================
+
+
+(dhc-make-sf "graph"  
+             (Gbag gbag size add test rem empty)
+             gbagelt-peek-data
+             gbagelt-peek-next
+             (GNode gnode) 
+             (GLink glink)
+             (GGraph newnode link linkm cut freeze ggraph dump ) )
+
+
+
+
+;;; ========================================
+;;; TEST GRAPHS
+;;; ========================================
+
+
+(de test-graph-1()
+    (let* ((g (new GGraph))
+	   (n0 :g:startnode)
+	   (n1 :g:endnode)
+	   (n2 (==> g newnode (gptr ())))
+	   (n3 (==> g newnode (gptr ())))
+	   (n4 (==> g newnode (gptr ()))) )
+
+      (==> g link n0 n2 1 1002 ())
+      (==> g link n0 n3 4 4003 ())
+      (==> g link n2 n3 1 1023 ())
+      (==> g link n3 n1 1 1031 ())
+      (==> g link n2 n1 4 4021 ())
+      (==> g link n2 n4 1 1024 ())
+      (==> g link n4 n1 2 2041 ())
+      (==> g link n2 n4 2 2024 ()) 
+      g ) )
+
+(de test-graph-2()
+    (let* ((g (new GGraph))
+	   (n0 :g:startnode) 
+	   (n1 :g:endnode) )
+      (==> g link n0 n0 0 0 ())
+      (==> g link n0 n1 0 0 ())
+      g ) )

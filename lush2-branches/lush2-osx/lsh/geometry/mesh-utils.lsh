@@ -1,0 +1,155 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defmacro number-of-points () `(length points))
+(defalias nth-point identity)
+
+#? (with-point <p> . <body>)
+;; Establish an environment with the following bindings:
+;; point-<p> - point <p> (a two element vector)
+;; <p>x      - x component of point <p>
+;; <p>y      - y component of point <p>
+;;
+;; This macro refers to variable 'points'.
+(defmacro with-point (p . body)
+  (when (not (symbolp p))
+    (error "point argument must be a variable (a symbol)") )
+  (let ((point-p (symbol-concat 'point- p))
+	(px (symbol-concat p 'x))
+	(py (symbol-concat p 'y)) )
+    `(let* ((,point-p (idx-select points 0 ,p))
+	    (,px (,point-p 0))
+	    (,py (,point-p 1)) )
+       ,@body) ))
+
+#? (with-points (<p0> <p1> .. <pi> ..) . <body>)
+;; Establish an environment with the following bindings for each point <pi>:
+;; point-<pi> - point <pi> (a two element vector)
+;; <pi>x      - x component of point <pi>
+;; <pi>y      - y component of point <pi>
+;;
+;; This macro refers to variable 'points'.
+(defmacro with-points (ps . body)
+  (when (not (consp ps)) (error "with-points: syntax error"))
+  (let ((decls ()))
+    (dolist (p (reverse ps))
+      (when (not (symbolp p))
+	(error "point arguments must be variables (symbols)"))
+      (setq decls (cons (list (symbol-concat p 'y)
+			      (list (symbol-concat 'point- p) 1) )
+			decls))
+      (setq decls (cons (list (symbol-concat p 'x)
+			      (list (symbol-concat 'point- p) 0) )
+			decls))
+      (setq decls (cons (list (symbol-concat 'point- p)
+			      `(idx-select points 0 ,p) )
+			decls)) )
+    `(let* (,@decls)
+       ,@body)
+    ))
+
+#? (do-points <p> . <body>)
+;; Loop over all points. 
+;; The loop may be broken by setting <continue> to false.
+(defmacro do-points (p . body)
+  (when (not (symbolp p)) (error "do-points: syntax error"))
+  (let ((i (gensym)) (np (gensym)))
+    `(let ((,i 0) (,np (number-of-points)) (continue t))
+       (declare (-int-) ,i ,np)
+       (declare (-bool-) continue)
+       (while (and continue (< ,i ,np))
+	 (let ((,p (nth-point ,i)))
+	   (declare (-int-) ,p)
+	   ,@body)
+	 (incr ,i)))
+    ))
+
+#? (do-points* <p> . <body>)
+;; Expands to {<code> (do-points <p> (with-point <p> . <body>))} 
+(defmacro do-points* (p . body)
+  `(do-points ,p (with-point ,p ,@body))
+  ) 
+
+
+#? (with-edges (<e0> <e1> .. <ei> ..) . <body>)
+;; Establish an environment with the following bindings for each edge <ei>:
+;; edge-<ei> - edge <ei> (a two element vector)
+;; <ei>.p0   - point 0 of edge <ei>
+;; <ei>.p1   - point 1 of edge <ei>
+;;
+;; This macro refers to variable 'edges'.
+(defmacro with-edges (es . body)
+  (when (not (consp es)) (error "with-edges: syntax error"))
+  (let ((decls ()) (tdecls ()))
+    (dolist (e (reverse es))
+      (when (not (symbolp e))
+       (error "edge arguments must be variables (symbols)"))
+      (setq decls (cons (list (symbol-concat e '.p1)
+                             (list (symbol-concat 'edge- e) 1) )
+                       decls))
+      (setq decls (cons (list (symbol-concat e '.p0)
+                             (list (symbol-concat 'edge- e) 0) )
+                       decls))
+      (setq decls (cons (list (symbol-concat 'edge- e)
+                             `(idx-select edges 0 ,e) )
+                       decls))
+      (setq tdecls (cons (symbol-concat e '.p0) (cons (symbol-concat e '.p1) tdecls))) )
+    `(let* (,@decls)
+       (declare (-int-) ,@tdecls)
+       ,@body)
+    ))
+
+#? (do-edges* <e> . <body>)
+;; Expands to {<code> (do-edges <e> (with-edge <e> . <body>))}
+(defmacro do-edges* (e . body)
+  `(do-edges ,e (with-edges (,e) ,@body))
+  ) 
+
+#? (edge-length <e>)
+;; Return length of edge <e>.
+(defmacro edge-length (e)
+  `(let ((e ,e))
+     (with-edges (e)
+       (with-points (e.p0 e.p1)
+         (euclidean-distance point-e.p0 point-e.p1) )))
+  )
+
+#? (edge-midpoint <e> [<result>])
+;; Return midpoint of edge <e> as vector.
+(defmacro edge-midpoint (e &optional result)
+  (let ((args `((e ,e))))
+    (when (null result) (setq result `(double-array 2)))
+    (when (not (symbolp result))
+      (setq args (cons `(result ,result) args) result 'result) )
+    `(let* (,@args)
+       (with-edges (e)
+         (with-points (e.p0 e.p1)
+           (,result 0 (/ (+ e.p0x e.p1x) 2))
+           (,result 1 (/ (+ e.p0y e.p1y) 2)) ))
+       ,result)
+    ))

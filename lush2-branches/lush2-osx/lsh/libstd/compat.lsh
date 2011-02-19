@@ -1,0 +1,433 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; ----------------------------------------
+;;; Backward compatibility with Lush 1.x
+
+(defalias idx-dim  idx-shape)
+(defalias idx-mod  idx-modulo)
+
+(defalias len      str-len)  ; this one also needs to be deprecated
+(defalias val      str-val)
+(defalias concat   str-cat)
+
+(defmacro defcconst (s v)
+  `(defconstant ,(named s), v)
+  )
+
+;; things that have a different name in lush 2
+(defnamespace lush1-
+  '((matrix           double-array)
+    (idx-transclone   idx-transpose)
+    (idx-ptr          idx-base)
+    (idx-redim        idx-reshape)
+    (letslot          with-object)
+    (check==>         getmethod)
+    (atomp            atom)
+    (double           to-double)
+    (to-real          to-double)
+    (to-flt           to-float)
+    (flt              to-float)
+    (float            to-float)
+    (float-matrix     float-array)
+    (double-matrix    double-array)
+    (int-matrix       int-array)
+    (short-matrix     short-array)
+    (byte-matrix      char-array)
+    (ubyte-matrix     uchar-array)
+    (gptr-matrix      gptr-array)
+    (is-of-class      isa)
+    (gptr             to-gptr)
+    (byte-storage     char-storage)
+    (ubyte-storage    uchar-storage)
+    (left             str-left)
+    (right            str-right)
+    (strins           str-insert)
+    ))
+
+(in-namespace lush1-
+
+(defmacro strdel (s n l)
+  `(str-del ,s (- ,n 1) ,l)
+  )
+
+(defmacro mid (s n &rest args)
+  `(str-mid ,s (- ,n 1) ,@args)
+  )
+
+(dm packed-storage (_ &optional (n 0)) 
+  (error "packed-storage not supported") )
+
+(defmacro narrow (idx d n o)
+  `(let ((__m (copy-index ,idx))) (idx-trim! __m ,d ,o ,n) __m ))
+
+(defmacro idx-clear (m)
+  `(array-clear ,m 0) )
+
+(defmacro idx-copy args
+  (selectq (length args)
+    (1 `(copy-array ,@args))
+    (2 `(array-copy ,@args))
+    t (error "invalid number of arguments") ))
+
+(dm declare.autoreplace args
+  (cons 'declare args) )
+
+(domapc ((fn (mapfor (i 0 +MAXDIMS+) (named (sprintf "-idx%d-" i)))))
+  (eval `(dm ,fn (_ . args) declare.autoreplace)) )
+
+(domapc ((fn '(-any- -bool- -ubyte- -byte- -short- -int- -flt- -real-
+		     -obj- -gptr- -srg- -str- -list- -func- -method-)))
+  (eval `(dm ,fn (_ . args) declare.autoreplace)) )
+
+(defvar -float- -flt-)
+(defvar -double- -real-)
+
+;(defmacro inf l `(apply min ,@l)) ; does not work since 'inf' is a number
+(defmacro sup l `(apply max ,@l))
+
+(defmacro progn-without-fpe body
+  `(with-fpu-env (fpu-untrap 'all)
+    ,@body)
+  )
+
+(defmacro qexpmx (n)
+  `(exp (- (abs ,n))) )
+
+(defmacro qexpmx2 (n)
+  `(exp (- (** ,n 2))) )
+
+(dmd sup-mat(m)
+  `((idx-sup ,m)) )
+
+(dmd inf-mat(m)
+  `((idx-inf ,m)) )
+
+(de mean-mat(m)
+  (let ((r (matrix))
+        (n (idx-nelems m)) )
+    (idx-sum m r)
+    (/ (r) n) ) )
+
+(de sdev-mat(m)
+  (let ((r  (matrix))
+        (r2 (matrix))
+        (n  (idx-nelems m)) )        
+    (idx-sum m r)
+    (idx-sumsqr m r2)
+    (- (/ (r2) n) (let ((s (/ (r) n))) (* s s))) ) )
+
+;; moved here from graphen.lsh
+(de draw-mat (m &optional x y)
+  (when ~window (new-window!))
+  (when ~x (setq x 10))
+  (when ~y (setq y 10))
+  (let* ((a (mean-mat m))
+	 (d (sdev-mat m)) )
+    (gray-draw-matrix x y m (- a (* 2 d)) (+ a (* 2 d)) 1 1) ) )
+
+
+
+) ; namespace lush1-
+
+(defmacro dhc-make-sf args
+  `(with-namespace lush1- (dhc-make ,@args))
+  )
+
+;;(de matrixp (arg) (and (indexp  arg) (idx-numericp arg)))
+
+;;; ----------------------------------------
+;;; Miscellaneous
+
+;; From SN3
+(defvar mload libload)
+(defvar map-pmatrix map-matrix)
+(defvar save-flt-matrix save-matrix)
+
+;; From SN1
+(dm dim(f v . l) `(setq :,v (float-matrix ,@l)))
+
+;; From SN1ATT
+(defvar += incr)
+(defvar << setq)
+(defvar diff-lists diff-listes)
+(defvar add-lists add-listes)
+
+
+
+;;; ----------------------------------------
+;;; Yann-isms
+
+(de load-matrix-into (f x) 
+  (let ((m (load-matrix f))) (array-copy m x)))
+
+(dmd idx-m2timesm2 (a b c)
+  `(let ((aa ,a)) (idx-eloop ((bi ,b) (ci ,c)) (idx-m2dotm1 aa bi ci)))))
+
+
+;;; ----------------------------------------
+;;; Pascal-isms
+
+(dm c-include (fn filename)
+  (when (not (stringp filename))
+    (error 'c-include "Not a string" filename))
+  (let ((dirs (path)))
+    (when (<> file-being-loaded "$stdin")
+      (setq dirs (cons (dirname file-being-loaded) dirs)) )
+    (setq dirs (cons "." dirs))
+    (setq filename (find-file dirs filename '("" ".h"))) )
+  `(cheader ,(concat "#include \"" filename "\"\n")) )
+
+(de cc-load(cfile &optional moreflags)
+  (when (not (functionp dhc-make-o-maybe))
+    (error 'cc-load "This function requires dh-compile.lsh" ()) )
+  (let ((dirs (path)))
+    (when (<> file-being-loaded "$stdin")
+      (setq dirs (cons (dirname file-being-loaded) dirs)) )
+    (setq dirs (cons "." dirs))
+    (setq cfile (find-file dirs cfile '("" ".c"))) )
+  (let* ((dhc-make-lushflags dhc-make-lushflags))
+    (when moreflags
+      (setq dhc-make-lushflags (concat dhc-make-lushflags " " moreflags)) )
+    (let ((obj (dhc-make-o-maybe cfile)))
+      (mod-load obj)
+      obj ) ) )
+
+(de c++-load(cfile &optional moreflags)
+  (when (not (functionp dhc-make-o-maybe))
+    (error 'cc-load "This function requires dh-compile.lsh" ()) )
+  (let ((dirs (path)))
+    (when (<> file-being-loaded "$stdin")
+      (setq dirs (cons (dirname file-being-loaded) dirs)) )
+    (setq dirs (cons "." dirs))
+    (setq cfile (find-file dirs cfile '("" ".cpp" ".cc" ".C"))) )
+  (let* ((dhc-make-lushflags dhc-make-lushflags)
+         (dhc-make-overrides dhc-make-overrides) )
+    (when moreflags
+      (setq dhc-make-lushflags (concat dhc-make-lushflags " " moreflags)) )
+    (let ((cxx (or (alist-get "CXX" dhc-make-overrides)
+                   (getconf "CXX") (getenv "CXX") ) ))
+      (if (and (stringp cxx) (<> cxx ""))
+          (setq dhc-make-overrides (alist-add "CC" cxx dhc-make-overrides))
+        (error 'c++-load "Cannot find C++ compiler" ()) ) )
+    (let ((obj (dhc-make-o-maybe cfile)))
+      (mod-load obj)
+      obj ) ) )
+
+(defvar gcc-load cc-load)
+(defvar g++-load c++-load)
+
+
+
+;;; ----------------------------------------
+;; SN3 backquote
+
+;; (progn
+;;   (unlock-symbol |'|)
+;;   (dmc |'|
+;;        (backquote-subst
+;;         (let* ((|'|
+;;                 (lambda()
+;;                   (list (quote quote) (read)) ) )
+;;                (|`| 
+;;                 (lambda() 
+;;                   (printf "*** Warning\007: old style backquote macro : %l\n"
+;;                           (basename file-being-loaded) )
+;;                   (backquote-macro) ) ) )
+;;           (read) ) ) )
+;;   (lock-symbol |'|) )
+
+
+
+;;; ----------------------------------------
+;;; TL3 statistics on lists
+;;; (complete source file 'classify.c')
+
+(de y_estimate((a b r) x)
+  (+ (* x a) b) )
+(de x_estimate((a b r) y)
+  (/ (- y b) a) )
+(dm mean_sup_dist (f r1 . r2)
+  `(let ((r ,r1)) (/ (sup_dist r ,@r2) (length r))) )
+(dm mean_abs_dist (f r1 . r2)
+  `(let ((r ,r1)) (/ (abs_dist r ,@r2) (length r))) )
+(dm mean_sqr_dist (f r1 . r2)
+  `(let ((r ,r1)) (/ (sqr_dist r ,@r2) (length r))) )
+(dm mean_hamming_dist (f r1 . r2)
+  `(let ((r ,r1)) (/ (hamming_dist r ,@r2) (length r))) )
+(dm mean_quadrant_dist (f r1 . r2)
+  `(let ((r ,r1)) (/ (quadrant_dist r ,@r2) (length r))) )
+
+
+;;; ----------------------------------------
+;;; SN3 idx-m[012a]{xxx} functions
+
+(mapc (lambda(name)
+        (let* ((pn (pname name))
+               (new-name (named (concat "idx-" pn)))
+               (code `(list 'progn (cons ,(list 'quote new-name) l))))
+          (eval `(dmd ,(named (concat "idx-m0" pn)) l ,code))
+          (eval `(dmd ,(named (concat "idx-m1" pn)) l ,code))
+          (eval `(dmd ,(named (concat "idx-m2" pn)) l ,code))
+          (eval `(dmd ,(named (concat "idx-ma" pn)) l ,code)) ) )
+      '(clear
+        copy sum sumacc sumsqrt sumsqrtacc sqrdist sqrdistacc
+        dotm0 dotm0acc addm0 addmoacc
+        add sub mul div
+        minus abs sqrt qtanh qdtanh 
+        stdsigmoid dstdsigmoid expmx dexpmx 
+        sin cos atan log exp ) )
+
+(mapc (lambda(name)
+        (let* ((pn (pname name))
+               (new-name (named (concat "idx-" pn)))
+               (code `(list 'progn (cons ,(list 'quote new-name) l))))
+          (eval `(dmd ,(named (concat "idx-m0" pn "m0")) l ,code))
+          (eval `(dmd ,(named (concat "idx-m1" pn "m1")) l ,code))
+          (eval `(dmd ,(named (concat "idx-m2" pn "m2")) l ,code))
+          (eval `(dmd ,(named (concat "idx-ma" pn "ma")) l ,code)) ) )
+      '(dot) )
+
+(mapc (lambda(name)
+        (let* ((pn (pname name))
+               (new-name (named (concat "idx-" pn)))
+               (code `(list 'progn (cons `(list 'quote new-name) l))))
+          (eval `(dmd ,(named (concat "idx-m0" pn "m0acc")) l ,code))
+          (eval `(dmd ,(named (concat "idx-m1" pn "m1acc")) l ,code))
+          (eval `(dmd ,(named (concat "idx-m2" pn "m2acc")) l ,code))
+          (eval `(dmd ,(named (concat "idx-ma" pn "maacc")) l ,code)) ) )
+      '(dot) )
+
+
+
+;;; ----------------------------------------
+;;; SN1 SN2 and TL3 matrix functions
+
+(de clone-matrix (mat)
+   (let* ((n   (idx-nelems mat))
+          (sto (new-storage/managed 'float n nil)) )
+     (new-index sto (shape mat))))
+
+(defvar matrix-print index-print)
+(defvar copy-any-matrix copy-matrix)
+
+(dmd dot-product (a b)
+  `(let ((r (double-array)))
+     (idx-dot ,a ,b r)
+     (r)))
+
+(de m*m (a b &optional c)
+  (if (= (idx-rank a) 1)
+      (if (= (idx-rank b) 1)
+          (if (= 1 (idx-dim b 0))
+              (if c (let ((-dh-b (double-array))
+                          (-dh-a a)
+                          (-dh-c c))
+                      (-dh-b (b 0))
+                      (idx-dotm0 -dh-a -dh-b -dh-c)
+                      -dh-c)
+                (let* ((-dh-b (double-array))
+                       (-dh-a a)
+                       (-dh-c (clone-matrix -dh-a)))
+                  (-dh-b (b 0))
+                  (idx-dotm0 -dh-a -dh-b -dh-c)
+                  -dh-c))
+            (error "m*m: idx 2 must have 1 element"))
+        (if (= 1 (idx-dim b 0))
+            (if c
+                (let* ((-dh-b (select b 0 0))
+                       (-dh-a a)
+                       (-dh-c c))
+                  (idx-m1extm1 -dh-a -dh-b -dh-c)
+                  -dh-c)
+              (let* ((-dh-b (select b 0 0))
+                     (-dh-a a)
+                     (-dh-c (double-array (idx-dim -dh-a 0) (idx-dim -dh-b 0))))
+                (idx-m1extm1 -dh-a -dh-b -dh-c)
+                -dh-c))
+          (error "m*m: idx 2 have bad dimensions")))
+    (if (= 1 (idx-rank b))
+        (if c
+            (let ((-dh-c c)) (idx-m2dotm1 a b -dh-c) -dh-c)
+          (let* ((-dh-a a)
+                 (-dh-b b)
+                 (-dh-c (double-array (idx-dim -dh-a 0))))
+            (idx-m2dotm1 a -dh-b -dh-c) -dh-c))
+      (if c
+          (let ((-dh-c c))
+            (idx-eloop ((-dh-x b) (-dh-y -dh-c)) 
+              (idx-m2dotm1 a -dh-x -dh-y))
+            -dh-c)
+        (let* ((-dh-a a)
+               (-dh-b b)
+               (-dh-c (double-array (idx-dim -dh-a 0) (idx-dim -dh-b 1))))
+          (idx-eloop ((-dh-x -dh-b) (-dh-y -dh-c)) 
+            (idx-m2dotm1 -dh-a -dh-x -dh-y))
+          -dh-c)))))
+
+(de m+m (a b &optional c)
+  (if ~c (setq c (clone-matrix b)))
+  (idx-add a b c)
+  c)
+
+(de mxm (a b &optional c)
+  (if ~c (setq c (clone-matrix b)))
+  (idx-mul a b c)
+  c)
+
+(de m/m (a b &optional c)
+  (if ~c (setq c (clone-matrix b)))
+  (idx-div a b c)
+  c)
+
+(de m-m (a b &optional c)
+  (let ((b b))
+    (if ~c (setq c (clone-matrix b)))
+    (idx-sub a b c)
+    c))
+
+(de m*c (a b &optional c)
+  (if ~c (setq c (clone-matrix a)))
+  (let ((d (double-array)))
+    (d b)
+    (idx-dotm0 a d c)
+    c))
+
+(de m+c (a b &optional c)
+  (if ~c (setq c (clone-matrix a)))
+  (let ((d (double-array)))
+    (d b)
+    (idx-addm0 a d c)
+    c))
+
+(de transpose (m)
+  (error "transpose is deprecated") )
+
+(dmd convolve(mat sx sy kernel &optional res)
+  (error 'convolve "Compatibility function not implemented" ()) )
+
+(defvar clone-matrix nil) ;; remove local definition

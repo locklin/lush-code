@@ -1,0 +1,454 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "datatypes/iterable-datatype")
+(libload "datatypes/stack")
+(libload "iterator")
+
+(deftemplate TreeNode object
+  ((-mptr-) left)
+  ((-mptr-) right)
+  ((-double-) key)
+  ((-any-)  item) )
+
+(in-namespace (class TreeNode)
+
+(defmacro nullp (p)
+  `(= ,p NULL) )
+
+(defmacro to-node (p)
+  `(to-obj (classof this) ,p)
+  )
+) ; in-namespace
+
+(defmethod TreeNode TreeNode ()
+  (setq left NULL)
+  (setq right NULL)
+  ())
+
+(defmethod TreeNode clear ()
+  (setq left NULL)
+  (setq right NULL)
+  ()) 
+
+(defmethod TreeNode clear-tree ()
+  (declare (-method- (TreeNode) () (-bool-)) clear-tree)
+  (when (not (nullp left))
+    (==> (to-node left) clear-tree)
+    (setq left NULL) )
+  (when (not (nullp right))
+    (==> (to-node right) clear-tree)
+    (setq right NULL) )
+  ())
+           
+(defmethod TreeNode clone ()
+  (error "abstract method") 
+  (new TreeNode) )
+
+(defmethod TreeNode copy-item-from (tn)
+  (declare (-obj- (TreeNode)) tn)
+  (error "abstract method")
+  () )
+
+(defmethod TreeNode copy-tree ()
+  (declare (-method- (TreeNode) () (-obj- (TreeNode))) copy-tree)
+  (let ((tn (==> this clone)))
+    (==> tn copy-item-from this)
+    (when (not (nullp left))
+      (setq :tn:left (to-mptr (==> (to-node left) copy-tree))) )
+    (when (not (nullp right))
+      (setq :tn:right (to-mptr (==> (to-node right) copy-tree))) )
+    tn))
+
+(defmethod TreeNode swap-items (tn)
+  (declare (-obj- (TreeNode)) tn)
+  (error "abstract method")
+  () )
+
+;; count number of nodes in tree with this node as root
+(defmethod TreeNode count ()
+  (declare (-method- (TreeNode) () (-int-)) count)
+  (let ((n 1))
+    (declare (-int-) n)
+    (when (not (nullp left))
+      (incr n (==> (to-node left) count)) )
+    (when (not (nullp right))
+      (incr n (==> (to-node right) count)) )
+    n))
+
+;; height of tree
+(defmethod TreeNode height ()
+  (declare (-method- (TreeNode) () (-int-)) height)
+  (let ((l (if (nullp left)  0 (+ 1 (==> (to-node left)  height))))
+        (r (if (nullp right) 0 (+ 1 (==> (to-node right) height)))) )
+    (declare (-int-) l r)
+    (max l r) ))
+
+(defmethod TreeNode rotate-right ()
+  (when (nullp left) (error "no left node"))
+  (let ((ln (unprotect (to-node left))))
+    (setq left :ln:right)
+    (setq :ln:right (to-mptr this))
+    ln))
+    
+(defmethod TreeNode rotate-left ()
+  (when (nullp right) (error "no right node"))
+  (let ((rn (unprotect (to-node right))))
+    (setq right :rn:left)
+    (setq :rn:left (to-mptr this))
+    rn))
+
+;; find first in tree
+(defmethod TreeNode symmetric-order-first ()
+  (let ((tn this))
+    (while (not (nullp :tn:left))
+      (setq tn (to-node :tn:left)) )
+    tn))
+
+;; find first in tree, write path to stack
+(defmethod TreeNode symmetric-order-first* (st)
+  (declare (-idx1- (-mptr-)) st)
+  (let ((tn this))
+    (push st (to-mptr tn))
+    (while (not (nullp :tn:left))
+      (push st :tn:left)
+      (setq tn (to-node :tn:left)) )
+    tn))
+
+;; find last in tree
+(defmethod TreeNode symmetric-order-last ()
+  (let ((tn this))
+    (while (not (nullp :tn:right))
+      (setq tn (to-node :tn:right)) )
+    tn))
+
+;; find last in tree, write path to stack
+(defmethod TreeNode symmetric-order-last* (st)
+  (declare (-idx1- (-mptr-)) st)
+  (let ((tn this))
+    (push st (to-mptr tn))
+    (while (not (nullp :tn:right))
+      (push st :tn:right)
+      (setq tn (to-node :tn:right)) )
+    tn))
+
+
+;; find predecessor of node
+;; when <unlink> is true remove the node from tree
+(defmethod TreeNode symmetric-order-predecessor (unlink)
+  (declare (-bool-) unlink)
+  (when (nullp left) (error "node has no predecessor"))
+  (let ((pn this) (tn (to-node left)))
+    (while (not (nullp :tn:right))
+      (setq pn tn  tn (to-node :tn:right)) )
+    (when unlink
+      (if (== this pn)
+	  (setq :pn:left :tn:left)
+	(setq :pn:right :tn:left) ))
+    tn))
+    
+;; find successor of node
+;; when <unlink> is true remove the node from tree
+(defmethod TreeNode symmetric-order-successor (unlink)
+  (declare (-bool-) unlink)
+  (when (nullp right) (error "node has no successor"))
+  (let ((pn this) (tn (to-node right)))
+    (while (not (nullp :tn:left))
+      (setq pn tn  tn (to-node :tn:left)) )
+    (when unlink
+      (if (== this pn)
+	  (setq :pn:right :tn:right)
+	(setq :pn:left :tn:right) ))
+    tn))
+
+;; tree compression. 
+;; Reference
+;; Q.F. Stout, B.L. Warren: "Tree Rebalancing in Optimal Time and Space",
+;; Communications of the ACM 29(9), pp 902-908, 1986.
+
+;; convert tree to vine, return number of nodes in tree
+(defmethod TreeNode tree-to-vine ()
+  (assert (nullp left))  ; this must be the pseudo-root
+  (let ((tail this) (rem right) (n 0))
+    (declare (-int-) n)
+    (while (not (nullp rem))
+      (let ((r (to-node rem)))
+        (if (nullp :r:left)
+            (setq tail r  rem :r:right  n (+ n 1))
+          (setq r (==> r rotate-right))
+          (setq rem (to-mptr r)  :tail:right rem) )))
+    n))
+
+(defmethod TreeNode vine-count ()
+  (let ((tail this) (n 0))
+    (declare (-int-) n)
+    (while (not (nullp :tail:right))
+      (setq tail (to-node :tail:right))
+      (incr n))
+    n))
+
+;; compress <n> spine nodes in the tree 
+(defmethod TreeNode v2t-compress (n)
+  (declare (-int-) n)    ; number of nodes to compress
+  (let ((s this) (c this))
+    (for* (i 0 n)
+      (declare (-int-) i)
+      (assert (not (nullp :s:right)))
+      (setq c (to-node :s:right))
+      (assert (not (nullp :c:right)))
+      (setq :s:right :c:right)
+      (setq s (to-node :s:right))
+      (setq :c:right :s:left)
+      (setq :s:left (to-mptr c)) ))
+  ())
+
+;; convert vine to tree, return height of tree
+(defmethod TreeNode vine-to-tree (n)
+  (declare (-int-) n)    ; number of nodes
+  (assert (nullp left))  ; this must be the pseudo-root
+  (let* ((h 0)
+         (n1 (+ n 1))
+         (n0 (- n1 (** 2 (log2 (floor n1))))) )
+    (declare (-int-) h n0)
+    (==> this v2t-compress n0)
+    (decr n n0)
+    (while (> n 1)
+      (setq n (div n 2))
+      (incr h)
+      (==> this v2t-compress n) )
+    h))
+
+;; #? (rebalance-tree! <r>)
+;; Rebalance tree rooted at <r>.
+(defmacro rebalance-tree! (r)
+  (when (not (symbolp r))
+    (error "root argument must be a variable"))
+  `(let ((tn (==> ,r clone)))
+     (setq :tn:right (to-mptr ,r))
+     (==> tn vine-to-tree (==> tn tree-to-vine))
+     (setq ,r (to-obj (classof ,r) :tn:right))
+     ())
+  )
+
+;; symmetric order tree iterator
+
+(deftemplate TreeNodeIterator DatatypeIterator
+  ((-idx1- (-mptr-)) stack)
+  ((-obj- (TreeNode)) tn) ; dummy, just for the type
+  ((-any-) next-item) )
+
+(in-namespace (class TreeNodeIterator)
+(import (nullp) from (class TreeNode))
+(defmacro to-node (p)
+  `(to-obj (classof tn) ,p) 
+  )
+)
+
+(defmethod TreeNodeIterator TreeNodeIterator (obj st)
+  (declare (-obj- (IterableDatatype)) obj)
+  (declare (-idx1- (-mptr-)) st)
+  (unprotect) ; don't warn about tn not being initialized
+  (==> this DatatypeIterator obj)
+  (setq stack st)
+  ())
+
+(defmethod TreeNodeIterator -make-next-stack ()
+  (assert (not (emptyp stack)))
+  (setq tn (to-node (pop stack)))
+  (let ((tn tn))
+    (when (not (nullp :tn:right))
+      (push stack :tn:right)
+      (setq tn (to-node :tn:right))
+      (while (not (nullp :tn:left))
+        (push stack :tn:left)
+        (setq tn (to-node :tn:left)) )))
+  ())
+
+(defmethod TreeNodeIterator -destructor ()
+  (clear-stack* stack)
+  () )
+
+(dhc-make-class () TreeNode
+                (TreeNodeIterator TreeNodeIterator -make-next-stack -destructor)
+                )
+
+;; template methods for TreeNode
+
+(defmethod TreeNode clone ()
+  (new (-classof- this)) )
+
+(defmethod TreeNode copy-item-from (tn)
+  (declare (-obj- (TreeNode)) tn)
+  (let ((tn (to-node tn)))
+    (setq item :tn:item)
+    (setq key :tn:key) )
+  ())
+
+(defmethod TreeNode swap-items (tn)
+  (declare (-obj- (TreeNode)) tn)
+  (let ((tn (to-node tn)))
+    (rotatef item :tn:item)
+    (rotatef key :tn:key) )
+  ())
+
+;; Search tree in symmetric order for item <i> and return <t>
+;; on success. Write path to node to stack <st>. 
+;; 
+;; When <trav> is true, write to stack the stack state of a 
+;; symmetric-order traversal on (when node exists) or after 
+;; visiting the node with item <i>.
+(defmethod TreeNode find (i st trav)
+  (declare (-typeof- item) i)
+  (declare (-idx1- (-mptr-)) st)
+  (declare (-bool-) trav)
+  (when (not (emptyp st))
+    (error "stack not empty") )
+  (let ((m this) (pm (to-mptr this)))
+    (while (not (nullp pm))
+      (push st pm)
+      (cond
+       ((eq i :m:item)
+        (setq pm NULL))
+       ((lt i :m:item)
+        (if (nullp :m:left) 
+            (setq pm NULL)
+          (setq pm :m:left  m (to-node :m:left)) ))
+       ((gt i :m:item)
+        (when trav (pop st))
+        (if (nullp :m:right)
+            (setq pm NULL)
+          (setq pm :m:right  m (to-node :m:right)) ))
+       (t
+        (error "items neither lt, gt, nor eq") )))
+    (eq i :m:item) ))
+
+
+;; Search tree in symmetric order for item <i> with top-down splaying.
+;; If found return the item node and otherwise any other node as new root.
+;; When not found and <link> is <t>, link node <n> with item <i> into tree.
+;;
+;; Reference
+;; D.D. Sleator, R.E. Tarjan: "Self-Adjusting Binary Search Trees",
+;; Journal of the ACM, Vol 32(3), pp 652-686.
+(defmethod TreeNode find-and-splay (i n link)
+  (declare (-typeof- item) i)
+  (declare (-typeof- this) n)
+  (declare (-bool-) link)
+
+  ;; search and splay
+  (setq :n:item i)
+  (let ((l n) (m this) (r n))
+    (while (not (eq i :m:item))
+      (cond
+       ((lt i :m:item)
+	(if (nullp :m:left)
+	    (setq :r:left (to-mptr m)  r m  m n)
+	  (let ((ml (to-node :m:left)))
+	    (cond
+	     ((lt i :ml:item)
+	      (==> m rotate-right)
+	      (setq :r:left (to-mptr ml)  r ml)
+	      (setq m (if (nullp :ml:left) n (to-node :ml:left))) )
+	     ((gt i :ml:item)
+	      (setq :r:left (to-mptr m)  r m  :l:right (to-mptr ml)  l ml)
+	      (setq m (if (nullp :ml:right) n (to-node :ml:right))) )
+	     (t
+	      (setq :r:left (to-mptr m)  r m  m ml) )))))
+       ((gt i :m:item)
+	(if (nullp :m:right)
+	    (setq :l:right (to-mptr m)  l m  m n)
+	  (let ((mr (to-node :m:right)))
+	    (cond
+	     ((gt i :mr:item)
+	      (==> m rotate-left)
+	      (setq :l:right (to-mptr mr)  l mr)
+	      (setq m (if (nullp :mr:right) n (to-node :mr:right))) )
+	     ((lt i :mr:item)
+	      (setq :l:right (to-mptr m)  l m  :r:left (to-mptr mr)  r mr)
+	      (setq m (if (nullp :mr:left) n (to-node :mr:left))) )
+	     (t
+	      (setq :l:right (to-mptr m)  l m  m mr) )))))
+
+       (t
+	(error "items neither lt, gt, nor eq") )))
+
+    ;; assemble tree
+    (if (== m n)
+        (if (not link)
+            (cond
+             ((not (== l n))
+              (setq :l:right :n:left  :r:left NULL  m (to-node :n:right)) )
+             ((not (== r n))
+              (setq :r:left :n:right  :l:right NULL  m (to-node :n:left)) )
+             (t
+              (error "internal error (should never get here")) )
+          (setq :l:right NULL  :r:left NULL)
+	  (rotatef :m:left :m:right) )
+      (setq :l:right :m:left  :r:left :m:right)
+      (setq :m:left :n:right  :m:right :n:left) )
+    m))
+
+
+;; template methods for TreeNodeIterator
+
+(defmethod TreeNodeIterator -make-next ()
+  (setq next-item-valid ())
+  (when (not (emptyp stack))
+    (==> this -make-next-stack) ; sets tn to top of current stack
+    (setq next-item :tn:item)
+    (setq next-item-valid t) )
+  ())
+
+
+;; functions dealing with trees
+
+;;#? (def-treenode <prefix> <item-type> <lt> <gt> <eq>)
+;; Define TreeNode class for type <item-type> along
+;; with auxiliary classes and functions and return the
+;; list of (names of) the objects defined.
+(df def-treenode (pfx type lt gt eq)
+  (when (not (symbolp pfx))
+    (error "not a symbol" pfx) )
+  (let* ((nclsym (symbol-concat pfx 'TreeNode))
+         (iclsym (symbol-concat pfx 'TreeNodeIterator))
+         (type (if (consp type) type (list type))) )
+    (eval
+     `(defclass ,nclsym TreeNode 
+        (,type item) )
+     )
+    (eval
+     `(in-namespace (class ,nclsym)
+        (defparameter lt ,lt)
+        (defparameter gt ,gt)
+        (defparameter eq ,eq) )
+     )
+    (eval
+     `(defclass ,iclsym TreeNodeIterator
+        (specialize (-obj- (,nclsym)) tn)
+        (,type next-item) )
+     )
+    (list nclsym iclsym) ))

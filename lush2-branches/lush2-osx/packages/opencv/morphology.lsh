@@ -1,0 +1,111 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/cv-config")
+(libload "opencv/cv-arrays")
+
+#? ** Morphological Operations
+
+(in-namespace cv-
+
+(defun -erode! (img sel niter)
+  (declare (-obj- (CvMat)) img)
+  (declare (-idx2- (-int-)) sel)
+  (declare (-int-) niter)
+  (cv-cpheader)
+  (assert (contiguousp sel))
+  (let ((selp (to-gptr NULL))
+        (ax (floor (/ ($ sel 1) 2)))
+        (ay (floor (/ ($ sel 0) 2))) )
+    (declare (-gptr- "IplConvKernel*") selp)
+    (declare (-int-) ax ay)
+    #{ $selp = cvCreateStructuringElementEx($($ sel 1), $($ sel 0), $ax, $ay, CV_SHAPE_CUSTOM, $(idx-base sel)); #}
+    (with-check-error
+     (let ((ip :img:p))
+       #{ cvErode($ip, $ip, $selp, $niter); #}
+       ))
+    #{ cvReleaseStructuringElement(&$selp); #}
+    )
+  ())
+
+(defun -dilate! (img sel niter)
+  (declare (-obj- (CvMat)) img)
+  (declare (-idx2- (-int-)) sel)
+  (declare (-int-) niter)
+  (cv-cpheader)
+  (assert (contiguousp sel))
+  (let ((selp (to-gptr NULL))
+        (ax (floor (/ ($ sel 1) 2)))
+        (ay (floor (/ ($ sel 0) 2))) )
+    (declare (-gptr- "IplConvKernel*") selp)
+    (declare (-int-) ax ay)
+    #{ $selp = cvCreateStructuringElementEx($($ sel 1), $($ sel 0), $ax, $ay, CV_SHAPE_CUSTOM, $(idx-base sel)); #}
+    (with-check-error
+     (let ((ip :img:p))
+       #{ cvDilate($ip, $ip, $selp, $niter); #}
+       ))
+    #{ cvReleaseStructuringElement(&$selp); #}
+    )
+  ())
+
+
+#? (cv-erode! <img> <sel> [<niter>])
+;; Erode image <img> in-place with structuring element <sel>.
+;;
+;; The structuring element is an int-matrix. The erosion is
+;; repeated <niter> times. <Cv-erode!> returns nothing.
+(defmacro erode! (in sel &optional (niter 1))
+  `(-erode! (make-cvmat ,img) ,sel ,niter)
+  )
+
+
+#? (cv-dilate! <img> <sel> [<niter>])
+;; Dilate image <img> in-place with structuring element <sel>.
+;;
+;; The structuring element is an int-matrix. The dilation
+;; is repeated <niter> times. <Cv-dilate!> returns nothing.
+(defmacro dilate! (in sel &optional (niter 1))
+  `(-dilate! (make-cvmat ,img) ,sel ,niter)
+  )
+
+) ; in-namespace    
+
+(dhc-make-cv "opencv_morphology"
+             cv--erode!
+             cv--dilate!
+             )
+
+(defun test-dilate ()
+  (let ((img (float-array 11 11))
+        (sel (int-array 5 5)) )
+    (img 1 1 1)
+    (img 5 5 1)
+    (sel 2 2 1) (sel 1 1 1) (sel 3 3 1)
+    (pretty sel)
+    (cv-dilate! img sel)
+    (image-disp img () 10)
+    ))

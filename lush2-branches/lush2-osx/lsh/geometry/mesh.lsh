@@ -1,0 +1,850 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libidx/idx-double")
+(libload "datatypes/graph")
+(libload "geometry/geometry-utils")
+(libload "overload")
+
+#? *** Planar Meshes
+;; <Mesh> objects represent points in the plane and edges between 
+;; pairs of points. Class <Mesh> is a light-weight class imposing
+;; no constraints on points and edges. It's main purpose is to 
+;; provide visualization capabilities for other geometry classes
+;; (methods <plot> and <display>).
+
+(defclass Mesh IGraph
+  ((-idx2- (-double-)) points) )    ; list of points in the plane (Px2)
+
+(in-namespace (class Mesh)
+(libload "geometry/mesh-utils" Mesh)
+)
+
+#? (new Mesh <points> <edges>)
+;; Create a <Mesh> object, do not copy the argument arrays. If there
+;; are P points and E edges, then <points> is a Px2 double array 
+;; containing the point's coordinates, and <edges> is an <Ex2> integer
+;; array containing pairs of indices into the point array.
+;; The adjacency matrix is initially empty.
+(defmethod Mesh Mesh (points edges)
+  (declare (-idx2- (-double-)) points)
+  (declare (-idx2- (-int-)) edges)
+  (when (<> (idx-dim points 1) 2) (error "first argument must have shape Px2"))
+  (when (<> (idx-dim edges 1) 2) (error "second argument must have shape Ex2"))
+
+  (unprotect)
+  (==> this IGraph (length points) edges)
+  (setq :this:points points)
+
+  ;; validate edges
+  (let ((np (number-of-points)))
+    (declare (-int-) np)
+    (do-edges* e
+      (when (or (< e.p0 0) (>= e.p0 np) (< e.p1 0) (>= e.p1 np))
+	(error "invalid index value in edge list") )))
+  )
+
+
+#? (==> <Mesh> bounding-rect-mesh)
+;; Return a new <Mesh> that represents your bounding rectangle.
+;; The resulting <Mesh> objects consists of four points and four
+;; edges.
+(defmethod Mesh bounding-rect-mesh ()
+  (let ((xmin 0) (xmax 0) (ymin 0) (ymax 0)
+        (ps (double-array 4 2)) 
+        (es (int-array 4 2)) )
+    (do-points* p
+      (setq xmin (min xmin px)  xmax (max xmax px))
+      (setq ymin (min ymin py)  ymax (max ymax py)) )
+    (ps 0 0 xmin) (ps 0 1 ymin)
+    (ps 1 0 xmin) (ps 1 1 ymax)
+    (ps 2 0 xmax) (ps 2 1 ymax)
+    (ps 3 0 xmax) (ps 3 1 ymin)
+    (es 0 0 0) (es 0 1 1)
+    (es 1 0 1) (es 1 1 2)
+    (es 2 0 2) (es 2 1 3)
+    (es 3 0 3) (es 3 1 0)
+    (new Mesh ps es)))
+
+
+#? (==> <Mesh> bounding-rect)
+;; Return bounding rectangle as <(x y w h)>.
+(defmethod Mesh bounding-rect ()
+  (let* ((m (==> this bounding-rect-mesh))
+         (ps :m:points) )
+    (list (ps 0 0) (ps 0 1) (- (ps 2 0) (ps 0 0)) (- (ps 1 1) (ps 0 1))) ))
+
+
+(defmethod Mesh remove-vertex (v)
+  (declare (-int-) v)
+  (when (==> this (IGraph . remove-vertex) v)
+    (array-copy (idx-select points 0 nv) (idx-select points 0 v))
+    (idx-trim! points 0 0 nv) )
+  t)
+
+
+#? (==> <Mesh> edge-length e)
+;; Return length of edge <e>.
+(defmethod Mesh edge-length (e)
+  (declare (-int-) e)
+  (edge-length e) )
+
+
+#? (==> <Mesh> edges-length)
+;; Return length for all edges as a vector.
+(defmethod Mesh edges-length ()
+  (let ((els (double-array (length edges))))
+    (do-edges* e
+      (els e (edge-length e)) )
+    els))
+
+#? (==> <Mesh> edges-vector)
+;; Return all edges as vectors (result is a Ex2 double array).
+(defmethod Mesh edges-vector ()
+  (let ((evs (double-array (length edges) 2)))
+    (do-edges* e
+      (evs e 0 (- (points e.p1 0) (points e.p0 0)))
+      (evs e 1 (- (points e.p1 1) (points e.p0 1))) )
+    evs))
+
+#? (==> <Mesh> weight)
+;; Sum of Euclidean edge lengths.
+(defmethod Mesh weight ()
+  (let ((w 0))
+    (do-edges e (incr w (edge-length e)))
+    w))
+
+#? (==> <Mesh> translate <x> <y>)
+;; Add (<x> <y>) to all point coordinates, return <()>.
+(defmethod Mesh translate (x y)
+  (declare (-double-) x y)
+  (let ((xs (idx-select points 1 0))
+        (ys (idx-select points 1 1)))
+     (idx-d1addc xs x xs)
+     (idx-d1addc ys y ys))
+  ())
+
+
+#? (==> <Mesh> rotate <phi>)
+;; Rotate points by <phi> in counter-clockwise direction,
+;; return <()>.
+(defmethod Mesh rotate (phi)
+  (declare (-double-) phi)
+  (let ((cp (cos phi))
+        (sp (sin phi))
+        (tpxy (double-array 2))
+        (rotm (double-array 2 2)) )
+    (rotm 0 0 cp)
+    (rotm 0 1 (- sp))
+    (rotm 1 0 sp)
+    (rotm 1 1 cp)
+    (idx-bloop ((pxy points))
+      (idx-m2dotm1 rotm pxy tpxy)
+      (pxy 0 (tpxy 0))
+      (pxy 1 (tpxy 1)) ))
+  ())
+
+
+#? (==> <Mesh> rotate-about <phi> <x> <y>)
+;; Rotate points by <phi> about point (<x> <y>), return <()>.
+(defmethod Mesh rotate-about (phi x y)
+  (declare (-double-) phi x y)
+  (==> this translate (- x) (- y))
+  (==> this rotate phi)
+  (==> this translate x y)
+  ())
+
+#? (==> <Mesh> scale <s>)
+;; Rescale coordinates by factor <s>, return <()>.
+;; The scale factor <s> must be positive.
+(defmethod Mesh scale (s)
+  (declare (-double-) s)
+  (when (not (> s 0))
+    (error "invalid scale factor") )
+  (for* (i 0 nv)
+    (declare (-int-) i)
+    (points i 0 (* s (points i 0)))
+    (points i 1 (* s (points i 1))) )
+  ())
+
+(dhc-make-class () Mesh)
+
+;;
+;; Plotting Auxiliaries
+;;
+
+;(libload "gnuplot/gnuplot")
+
+(de -plot-ranges (points &optional (margin 0.0))
+  (let* ((xr (idx-d1range (idx-select points 1 0)))
+	 (yr (idx-d1range (idx-select points 1 1)))
+	 (dx (- (xr 1) (xr 0)))
+	 (dy (- (yr 1) (yr 0))) )
+
+    (let ((xmargin (.v (* dx (- margin)) (* dx margin)))
+	  (ymargin (.v (* dy (- margin)) (* dy margin))) )
+      (cons (idx-add xr xmargin) (idx-add yr ymargin)) )))
+
+;; get rid of NaNs and infinite points array
+(defun -take-finite (points)
+  (let ((finites ($- (where (isfinite (idx-select points 1 0))))))
+    (array-take points 0 finites) ))
+
+
+;;#? (transform-points-for-display <points> <xrange> <yrange> <scale> <origin>)
+;; Helper for Mesh display methods (see source for details).
+(defun transform-points-for-display (ps xrange yrange scale origin)
+  (selectq origin
+    ('NW (* (- ps (.v (xrange 0) (yrange 0))) scale))
+    ('SW (* (- ps (.v (xrange 0) (yrange 1)))      
+	    (.v scale (- scale))))
+    (t   (error "invalid value for option 'origin'" origin)) ))
+
+
+;;#? (transform-points-for-display-window <points> <window>)
+;; Helper for Mesh display methods (see source for details).
+(defmacro transform-points-for-display-in-window (ps win)
+  `(transform-points-for-display ,ps (getp ,win 'xrange) (getp ,win 'yrange) (getp ,win 'scale) (getp ,win 'origin))
+  )
+
+#? (==> <Mesh> display <...kwdargs...>)
+;; Render the mesh using Lush graphics, return the window object.
+;; Many aspects of the rendering may be controlled using optional
+;; keyword arguments:
+;;.VP
+;; -----------------------------------------------------------------
+;; Keyword      | Meaning
+;; -----------------------------------------------------------------
+;; edge-color   | edge color (default is 'blue)
+;; edge-colors  | array of color numbers (see <alloccolor>; default is nil)
+;;              | an edge will not be displayed when its color number is -1
+;; edge-width   | edge width (default is 1)
+;; point-color  | point color (default is 'black'
+;; point-colors | array of color numbers (see <alloccolor>; default is nil)
+;;              | a point will not be displayed when its color number is -1
+;; point-size   | point marker size (default is 1)
+;; point-sizes  | array of point sizes
+;; plot-points  | if true, plot points (default is t)
+;; plot-edges   | if true, plot edges (default is t)
+;; plot-arrows  | plot edges as arrows (default is nil)
+;; window       | window instance to use for display (default is ())
+;; xrange       | interval on x-axis (e.g., [0 1], default is () or from window)
+;; yrange       | interval on y-axis (e.g., [0 1], default is () or from window)
+;; origin       | either 'NW or 'SW (default is 'SW or from window)
+;; scale        | factor for point coordinates (default is 1 or from window)
+;; margin       | margin around display region in percent of extent 
+;;              | (default is 0.05)
+;;.PP
+;; When <(Mesh . display)> creates a new window, it stores the values
+;; for options <xrange>, <yrange>, <origin>, <scale>, and <margin> with it.
+;; If the window is passed to <(Mesh . display)> again in a subsequent call
+;; (using option <window>), it takes the stored values as defaults for
+;; these options.
+;; Origin <NW> is useful when using array indices as coordinates.
+(defmethod Mesh display kwdargs
+  (let* ((opt (parse-kwdargs kwdargs 
+		'edge-color   'blue  
+		'edge-colors  ()
+		'edge-width   1
+		'point-color  'black
+		'point-colors ()
+		'point-size   1
+                'point-sizes  ()
+		'plot-points  t
+		'plot-point-numbers ()
+		'plot-edges   t
+                'plot-edge-numbers ()
+                'plot-arrows  ()
+		'xrange       ()
+		'yrange       ()
+		'origin       ()
+		'scale        ()
+                'margin       ()
+		'window       () ))
+	 (ecn ()) ;; need open a window first
+	 (pcn ())
+	 (win (opt 'window))
+	 ;; if we use a given window, see if it has infos on
+	 ;; 'xrange, 'yrange, 'origin and 'scale attached
+	 (origin (or (opt 'origin)
+		     (and win (getp win 'origin))
+                     'SW))
+	 (scale  (or (opt 'scale)
+		     (and win (getp win 'scale))
+		     1))
+         (margin (or (opt 'margin)
+                     (and win (getp win 'margin))
+                     0.05))
+	 (xr (or (opt 'xrange) 
+		 (and win (getp win 'xrange)) 
+		 (car (-plot-ranges points margin)) ))
+	 (yr (or (opt 'yrange) 
+		 (and win (getp win 'yrange)) 
+		 (cdr (-plot-ranges points margin)) ))
+         (edge-numbers ())
+         (point-numbers ()) 
+         (sizes (if (opt 'point-sizes)
+                    (opt 'point-sizes)
+                  (array-clear (int-array (length points)) (opt 'point-size)) )))
+         
+    (when (<> (length sizes) (length points))
+      (error "length of point-size table does not match number of points") )
+
+    (let ((points (transform-points-for-display points xr yr scale origin)))
+      
+      (when (null win)
+	(let ((w (* (- (xr 1) (xr 0)) scale))
+	      (h (* (- (yr 1) (yr 0)) scale)) )
+	  (setq win (new-window 0 0 w h)) ))
+      ;; store some option values with the window
+      (putp win 'xrange xr)
+      (putp win 'yrange yr)
+      (putp win 'origin origin)
+      (putp win 'scale scale)
+      (putp win 'margin margin)
+      (putp win 'plot-points points)
+      
+      (let ((window win) (ew (opt 'edge-width)))
+
+
+	(color-stdmap) ;; this establishes/updates *color-to-colornumber*
+	(setq ecn (or (*color-to-colornumber* (opt 'edge-color))
+		      (error "invalid value for keyword 'edge-color'") ))
+	(setq pcn (or (*color-to-colornumber* (opt 'point-color))
+		      (error "invalid value for keyword 'point-color'") ))
+
+	(when (opt 'plot-edges)
+	  ;; define line style for edges
+
+	  (if (opt 'edge-colors)
+	      (let ((colors (opt 'edge-colors)))
+                (when (= (length colors) 1)
+                  (setq colors (idx-expand colors 0 (length edges) )) )
+		(when (<> (length colors) (length edges))
+		  (error "size of color table does not match number of edges"))
+		(graphics-batch
+		 (if (opt 'plot-arrows)
+		     (idx-bloop ((edge edges) (ec colors))
+		       (when (<> (ec) -1)
+			 (let* ((p0 (idx-select points 0 (edge 0)))
+				(p1 (idx-select points 0 (edge 1)))
+				(v (- p1 p0))
+				(tv (* 6 ew (tangent-vector* v)))
+				(nv (* 4 ew (normal-vector* v))) )
+			   ;; calculate arrow and arrow-head coordinates 
+			   (let (((x0 y0) (p0 ()))
+				 ((x1 y1) (p1 ()))
+				 ((x2 y2) ((+ p1 nv (- tv)) ()))
+				 ((x3 y3) ((+ p1 (- nv) (- tv)) ())) )
+			     (color (ec))
+			     (draw-line x0 y0 x1 y1)
+			     (fill-polygon x1 y1 x2 y2 x3 y3) ))))
+		   (idx-bloop ((edge edges) (ec colors))
+		     (when (<> (ec) -1)
+		       (let (((x0 y0) (points (edge 0) ()))
+			     ((x1 y1) (points (edge 1) ())) )
+			 (color (ec))
+			 (if (= ew 1)
+			     (draw-line x0 y0 x1 y1) 
+			   (let* ((v (vector (- x1 x0) (- y1 y0)))
+				  (nv (* ew 0.5 (normal-vector* v))) )
+			     (let ((x1 (+ x0 (nv 0))) (y1 (+ y0 (nv 1)))
+				   (x4 (- x0 (nv 0))) (y4 (- y0 (nv 1)))
+				   (x2 (+ x1 (nv 0))) (y2 (+ y1 (nv 1)))
+				   (x3 (- x1 (nv 0))) (y3 (- y1 (nv 1))) )
+			       (fill-polygon x1 y1 x2 y2 x3 y3 x4 y4) )))))))
+
+		 (when (opt 'plot-edge-numbers)
+		   (if (indexp (opt 'plot-edge-numbers))
+		       (setq edge-numbers (opt 'plot-edge-numbers))
+		     (setq edge-numbers (arange* (length edges))) )
+		   (for* (i 0 (length edges))
+		     (when (<> (colors i) -1)
+		       (let (((x0 y0) (points (edges i 0) ()))
+			     ((x1 y1) (points (edges i 1) ())) 
+			     (n (edge-numbers i)) )
+			 (color (colors i))
+			 (draw-text (2/ (+ x0 x1)) (2/ (+ y0 y1)) (str n)) )))) ))
+	    ;; plot with single color
+	    (graphics-batch
+	     (color ecn)
+	     (if (opt 'plot-arrows)
+		 (idx-bloop ((edge edges))
+		   (let* ((p0 (idx-select points 0 (edge 0)))
+			  (p1 (idx-select points 0 (edge 1)))
+			  (v (- p1 p0))
+			  (ew (opt 'edge-width))
+			  (tv (* 6 ew (tangent-vector* v)))
+			  (nv (* 4 ew (normal-vector* v))) )
+		     ;; calculate arrow and arrow-head coordinates 
+		     (let (((x0 y0) (p0 ()))
+			   ((x1 y1) (p1 ()))
+			   ((x2 y2) ((+ p1 nv (- tv)) ()))
+			   ((x3 y3) ((+ p1 (- nv) (- tv)) ())) )
+		       (draw-line x0 y0 x1 y1)
+		       (fill-polygon x1 y1 x2 y2 x3 y3) )))
+	       (idx-bloop ((edge edges))
+		 (let (((x0 y0) (points (edge 0) ()))
+		       ((x1 y1) (points (edge 1) ())) )
+		   (if (= ew 1)
+		       (draw-line x0 y0 x1 y1) 
+		     (let* ((v (vector (- x1 x0) (- y1 y0)))
+			    (nv (* ew 0.5 (normal-vector* v))) )
+		       (let ((x1 (+ x0 (nv 0))) (y1 (+ y0 (nv 1)))
+			     (x4 (- x0 (nv 0))) (y4 (- y0 (nv 1)))
+			     (x2 (+ x1 (nv 0))) (y2 (+ y1 (nv 1)))
+			     (x3 (- x1 (nv 0))) (y3 (- y1 (nv 1))) )
+			 (fill-polygon x1 y1 x2 y2 x3 y3 x4 y4) ))))))
+	     (when (opt 'plot-edge-numbers)
+	       (if (indexp (opt 'plot-edge-numbers))
+		   (setq edge-numbers (opt 'plot-edge-numbers))
+		 (setq edge-numbers (arange* (length edges))) )
+	       (for* (i 0 (length edges))
+		 (let (((x0 y0) (points (edges i 0) ()))
+		       ((x1 y1) (points (edges i 1) ())) 
+		       (n (edge-numbers i)) )
+		   (draw-text (2/ (+ x0 x1)) (2/ (+ y0 y1)) (str n)) ))))
+	    )) ; if (opt 'edge-colors)
+        
+	(when (opt 'plot-points)
+          ;; plot with individual colors
+	  (if (opt 'point-colors)
+	      (let ((colors (opt 'point-colors)))
+                (when (= (length colors) 1)
+                  (setq colors (idx-expand colors 0 (length points) )) )
+		(when (<> (length colors) (length points))
+		  (error "length of color table does not match number of points"))
+		(graphics-batch
+		 (if (opt 'plot-point-numbers)
+		     (progn
+		       (if (indexp (opt 'plot-point-numbers))
+			   (setq point-numbers (opt 'plot-point-numbers))
+			 (setq point-numbers (arange* (length points))) )
+		       (let ((good-points ($- (where (isfinite (idx-select points 1 0))))))
+			 (setq points (array-take points 0 good-points))
+			 (setq point-numbers (array-take point-numbers 0 good-points))
+                         (idx-bloop ((point points) (n point-numbers) (c colors))
+                           (let (((x y) (point ())))
+                             (color (c))
+                             (draw-text x y (str (n))) ))))
+                   (idx-bloop ((point (-take-finite points)) (c colors) (s sizes))
+                     (let (((x y) (point ())))
+                       (color (c))
+                       (fill-circle x y (s))) ))))
+
+	    ;; plot with a single color
+	    (graphics-batch
+	     (if (opt 'plot-point-numbers)
+		 (progn
+		   (if (indexp (opt 'plot-point-numbers))
+		       (setq point-numbers (opt 'plot-point-numbers))
+		     (setq point-numbers (arange* (length points))) )
+		   (let ((good-points ($- (where (isfinite (idx-select points 1 0))))))
+		     (setq points (array-take points 0 good-points))
+		     (setq point-numbers (array-take point-numbers 0 good-points))
+                     (color pcn)
+                     (idx-bloop ((point points) (n point-numbers))
+                       (let (((x y) (point ())))
+                         (draw-text x y (str (n))) ))))
+               (color pcn)
+               (idx-bloop ((point (-take-finite points)) (s sizes))
+                 (let (((x y) (point ())))
+                   (fill-circle x y (s))) )))))))
+    win))
+       
+
+;; create a gnuplot plot
+(defmethod Mesh -gnuplot (plot-cmd . kwdargs)
+  (let* ((opt (parse-kwdargs kwdargs
+                             'debug     ()
+                             'plotter   ()
+                             'preamble  ()
+                             'plot-args ()
+                             'plot-data () ))
+         (gp (opt 'plotter)) )
+    (when (or (null *gnuplot-version*) (null Gnuplot))
+      (error "gnuplot not found") )
+    (setq plot-cmd (concat plot-cmd " "))
+    (when (opt 'debug)
+      (printf "command send to gnuplot:\n")
+      (printf "------------------------\n")
+      (dolist (line (opt 'preamble))
+        (printf "%s\n" line) ))
+    (apply gp (opt 'preamble))
+    (gp (concat plot-cmd (str-join "," (opt 'plot-args))))
+    (when (opt 'debug) 
+      (printf (concat plot-cmd (str-join "," (opt 'plot-args))))
+      (printf "\n")
+      (dolist (l (opt 'plot-data))
+        (dolist (d l)
+          (if (< (length d) 15)
+              (print-array d)
+            (printf "%s " (pname d)) ))
+        (printf "\n") ))
+    (dolist (pd (opt 'plot-data)) 
+      (apply gp pd) )
+    gp))
+
+
+(defmethod Mesh -plot-arguments kwdargs
+  (let* ((points (-take-finite points)) ;; remove NaNs and infinites
+	 (opt (parse-kwdargs kwdargs 
+                'debug        ()
+		'edge-color   'blue  
+		'edge-width   1
+		'point-color  'black
+		'point-size   1
+		'point-shape  'filled-circle
+		'plot-points  t
+		'plot-point-numbers ()
+		'plot-edges   t
+                'plot-edge-numbers ()
+		'xrange       ()
+		'yrange       ()
+		'scale        1
+                'margin       0.05
+		'plotter      () 
+                'linestyle    0
+		'preamble     ()
+                'plot-args    ()
+                'plot-data    () ))
+	 (elc (opt 'edge-color))
+	 (plc (opt 'point-color))
+	 (pt  (*gnuplot-shape-to-pointtype* (opt 'point-shape)))
+	 (xr  (opt 'xrange))
+	 (yr  (opt 'yrange))
+	 (gp  (opt 'plotter))
+	 (edge-numbers ())
+	 (point-numbers ())
+         (preamble (opt 'preamble))
+         (linestyle (+ (or (getp gp 'linestyle) (opt 'linestyle)) 1))
+	 (plot-args (opt 'plot-args))
+	 (plot-data (opt 'plot-data)) )
+         
+    (when (null (*gnuplot-colors* elc))
+      (error "invalid value for keyword 'edge-color'" elc) )
+    (when (null (*gnuplot-colors* plc))
+      (error "invalid value for keyword 'point-color'" plc) )
+    (when (null pt)
+      (error "invalid value for keyword 'point-shape'" (opt 'point-shape)) )
+
+    ;; send preamble
+    (when (null gp)
+      (when (null xr) (setq xr (car (-plot-ranges points (opt 'margin)))) )
+      (when (null yr) (setq yr (cdr (-plot-ranges points (opt 'margin)))) )
+      (setq gp (new Gnuplot 'interactive ())) ; 'logfile "gnuplot.log"))
+      (when (not (listp preamble))
+        (setq preamble (list preamble)) )
+      (setq preamble (nconc1 preamble "set size square; unset autoscale; unset key"))
+      (setq preamble (nconc1 preamble
+                             (sprintf "set xrange [%f:%f]; set yrange [%f:%f];"
+                                      (xr 0) (xr 1) (yr 0) (yr 1) ))))
+    
+    (when (idx-emptyp edges) (opt 'plot-edges ()))
+    (when (idx-emptyp points) (opt 'plot-points ()))
+	  
+    (when (opt 'plot-edges)
+      (when (opt 'plot-edge-numbers)
+	(if (indexp (opt 'plot-edge-numbers))
+	    (setq edge-numbers (opt 'plot-edge-numbers))
+	  (setq edge-numbers (arange* (length edges))) )
+	(let* ((template "set label '%d' at %f,%f tc rgb '%l' nopoint")
+	       (commands (domapcar ((l (range* (length edges))))
+			   (let (((x0 y0) (points (edges l 0) ()))
+				 ((x1 y1) (points (edges l 1) ())) )
+			     (sprintf template (edge-numbers l)
+				      (2/ (+ x0 x1)) (2/ (+ y0 y1))
+				      elc) ))))
+	  (setq preamble (nconc1 preamble (str-join "\n" commands))) ))
+      ;; define line style for edges
+      (setq preamble (nconc1 preamble
+                             (sprintf "set style line %d lc rgb '%l' lw %1.2f" linestyle elc (opt 'edge-width)) ))
+      ;; make list of edge coordinates and plot it
+      (let ((edge-xys ()))
+	(idx-bloop ((edge (idx-reverse edges 0)))
+	  (setq edge-xys (cons (array-take points 0 edge) edge-xys)) )
+	(setq plot-args (nconc1 plot-args (sprintf "'-' with lines ls %d" linestyle)))
+        (setq plot-data (nconc1 plot-data edge-xys) )))
+      
+    (when (opt 'plot-points)
+      (if (opt 'plot-point-numbers)
+	  (progn
+	    (if (indexp (opt 'plot-point-numbers))
+		(setq point-numbers (opt 'plot-point-numbers))
+	      (setq point-numbers (arange* (length points))) )
+	    (let* ((template "set label '%d' at %f,%f left tc rgb '%l' point pt -1 ps %1.2f")
+		   (ps (opt 'point-size))
+		   (commands (domapcar ((l (range* (length points))))
+			       (sprintf template (point-numbers l)
+					(points l 0) (points l 1) plc ps) )))
+              (setq preamble (nconc1 preamble (str-join "\n" commands)))
+              (setq plot-args (nconc1 plot-args (sprintf "'-' with points lc rgb '%l' pt %d ps %1.2f" plc pt ps)))
+              (setq plot-data (nconc1 plot-data (list points))) ))
+        (setq plot-args (nconc1 plot-args (sprintf "'-' with points lc rgb '%l' pt %d ps %1.2f" plc pt (opt 'point-size))))
+        (setq plot-data (nconc1 plot-data (list points))) ))
+    (putp gp 'linestyle linestyle)
+    (list 'plotter gp  'preamble preamble  'debug (opt 'debug)
+          'plot-args plot-args  'plot-data plot-data) ))
+
+
+#? (==> <Mesh> plot . <kwdargs>)
+;; Render the mesh using Gnuplot, return the plotter object.
+;; <Plot> creates a 2D plot of the mesh. Many aspects of the
+;; plot may be controlled using optional keyword arguments:
+;;.VP
+;; -----------------------------------------------------------------
+;; Keyword      | Meaning
+;; -----------------------------------------------------------------
+;; edge-color   | edge color (default is 'blue)
+;; edge-width   | edge width (default is 1)
+;; point-color  | point color (default is 'black')
+;; point-shape  | point marker shape (default is 'circle)
+;; point-size   | point marker size (default is 1)
+;; plot-points  | if true, plot points (default is t)
+;; plot-edges   | if true, plot edges (default is t)
+;; xrange       | interval on x-axis (e.g., [0 1], default is ())
+;; yrange       | interval on y-axis (e.g., [0 1], default is ())
+;; margin       | margin around plotting region in percent of extent
+;;              | (default is 0.05)
+;; plotter      | gnuplot instance to use for plotting (default is ())
+;; preamble     | command string that gets sent to gnuplot instance 
+;;              | prior to anything else (default is ())
+(dfmethod Mesh plot kwdargs
+  (let ((args (==> this -plot-arguments . kwdargs)))
+    (==> this -gnuplot "plot" . args)))
+
+;; generate preamble, splot arguments, data and a gnuplot object
+(defmethod Mesh -splot-arguments kwdargs
+  (let* ((points (-take-finite points)) ;; remove NaNs and infinites
+	 (opt (parse-kwdargs kwdargs 
+                'debug        ()
+		'edge-color   'blue  
+		'edge-width   1
+		'point-color  'black
+		'point-size   1
+		'point-shape  'filled-circle
+		'plot-points  t
+		'plot-point-numbers ()
+		'plot-edges   t
+                'plot-edge-numbers ()
+		'xrange       ()
+		'yrange       ()
+		'zdata        ()
+		'zrange       ()
+		'scale        1
+                'margin       0.05
+		'plotter      () 
+                'linestyle    0
+		'preamble     ()
+                'plot-args    ()
+                'plot-data    () ))
+	 (elc (opt 'edge-color))
+	 (plc (opt 'point-color))
+	 (pt  (*gnuplot-shape-to-pointtype* (opt 'point-shape)))
+	 (xr  (opt 'xrange))
+	 (yr  (opt 'yrange))
+	 (zr  (opt 'zrange))
+	 (gp  (opt 'plotter))
+	 (edge-numbers ())
+	 (point-numbers ())
+         (preamble  (opt 'preamble))
+         (linestyle (+ (or (getp gp 'linestyle) (opt 'linestyle)) 1))
+	 (plot-args (opt 'plot-args))
+	 (plot-data (opt 'plot-data)) )
+    
+    (when (null (opt 'zdata))
+      (opt 'zdata (double-array (length points)))
+      (when (and (null zr) (null gp))
+	(setq zr [0 1]) ))
+
+    (when (null (*gnuplot-colors* elc))
+      (error "invalid value for keyword 'edge-color'" elc) )
+    (when (null (*gnuplot-colors* plc))
+      (error "invalid value for keyword 'point-color'" plc) )
+    (when (null pt)
+      (error "invalid value for keyword 'point-type'" (opt 'point-shape)) )
+
+    ;; if no plotter was provided, create preamble
+    (when (null gp)
+      (when (null xr) (setq xr (car (-plot-ranges points (opt 'margin)))) )
+      (when (null yr) (setq yr (cdr (-plot-ranges points (opt 'margin)))) )
+      (when (null zr) (setq zr (vector ((idx-inf (opt 'zdata))) ((idx-sup (opt 'zdata))))))
+      (setq gp (new Gnuplot 'interactive ()))
+      (when (not (listp preamble))
+        (setq preamble (list preamble)) )
+      (setq preamble (nconc1 preamble "unset key"))
+      (setq preamble (nconc1 preamble 
+                             (sprintf "set trange [0:1]; set xrange [%f:%f]; set yrange [%f:%f]; set zrange [%f:%f]"
+                                      (xr 0) (xr 1) (yr 0) (yr 1) (zr 0) (zr 1)))) )
+    
+    ;; turn 2D into 3D points
+    (let ((points (mat-catrows points (idx-sink (opt 'zdata) 1))))
+      (when (opt 'plot-edges)
+	(when (opt 'plot-edge-numbers)
+	  (if (indexp (opt 'plot-edge-numbers))
+	      (setq edge-numbers (opt 'plot-edge-numbers))
+	    (setq edge-numbers (arange* (length edges))) )
+	  (let* ((template "set label '%d' at %f,%f,%f tc rgb '%l' nopoint")
+		 (commands (domapcar ((l (range* (length edges))))
+                             (let (((x0 y0 z0) (points (edges l 0) ()))
+                                   ((x1 y1 z1) (points (edges l 1) ())) )
+                               (sprintf template 
+                                        (edge-numbers l) (2/ (+ x0 x1)) (2/ (+ y0 y1)) (2/ (+ z0 z1))
+                                        elc) ))))
+	    (setq preamble (nconc1 preamble (str-join "\n" commands))) ))
+	;; define line style for edges
+	(setq preamble (nconc1 preamble 
+                               (sprintf "set style line %d lc rgb '%l' lw %1.2f" linestyle elc (opt 'edge-width))))
+	;; make list of edge coordinates and plot it
+	(let ((points (idx-lift points 1)) 
+	      (edge-xyzs ()))
+	  (idx-bloop ((edge (idx-reverse edges 0)))
+	    (setq edge-xyzs (cons (array-take points 1 edge) edge-xyzs)) )
+	  (setq plot-args (nconc1 plot-args (sprintf "'-' with lines ls %d" linestyle)))
+	  (setq plot-data (nconc1 plot-data edge-xyzs) )))
+      
+      (when (opt 'plot-points)
+	(if (opt 'plot-point-numbers)
+	    (progn
+	      (if (indexp (opt 'plot-point-numbers))
+		  (setq point-numbers (opt 'plot-point-numbers))
+		(setq point-numbers (arange* (length points))) )
+	      (let* ((template "set label '%d' at %f,%f,%f left tc rgb '%l' point pt -1 ps %1.2f")
+		     (ps (opt 'point-size))
+		     (commands (domapcar 
+				((l (range* (length points))))
+				(sprintf template 
+					 (point-numbers l) (points l 0) (points l 1) (points l 2)
+					 plc ps) )))
+		(setq preamble (nconc1 preamble (str-join "\n" commands)))
+		(setq plot-args (nconc1 plot-args (sprintf "'-' with points pc rgb '%l' pt %d ps %1.2f" plc pt ps)))
+		(setq plot-data (nconc1 plot-data (list points))) ))
+          (setq plot-args (nconc1 plot-args (sprintf "'-' with points pc rgb '%l' pt %d ps %1.2f" plc pt (opt 'point-size))))
+          (setq plot-data (nconc1 plot-data (list points))) )))
+    (putp gp 'linestyle linestyle)
+    (list 'plotter gp  'preamble preamble  'debug (opt 'debug)
+          'plot-args plot-args  'plot-data plot-data) ))
+
+#? (==> <Mesh> splot)
+;; Render the 3d view of mesh using gnuplot, return the plotter object.
+;;.P
+;; <Splot> creates a 3D plot of the mesh. 
+;; In order to enable mouse actions <splot> does not activate 
+;; multiplot mode. To activate multiplot mode either use the
+;; preamble option or provide a plotter object in multiplot
+;; mode (option <plotter>).
+;; Many aspects of the plot may be controlled using optional
+;; keyword arguments:
+;;.VP
+;; -----------------------------------------------------------------
+;; Keyword      | Meaning
+;; -----------------------------------------------------------------
+;; edge-color   | edge color (default is 'blue)
+;; edge-width   | edge width (default is 1)
+;; point-color  | point color (default is 'black'
+;; point-shape  | point marker shape (default is 'circle)
+;; point-size   | point marker size (default is 1)
+;; plot-points  | if true, plot points (default is t)
+;; plot-edges   | if true, plot edges (default is t)
+;; xrange       | interval on x-axis (e.g., [0 1], default is ())
+;; yrange       | interval on y-axis (e.g., [0 1], default is ())
+;; zdata        | z value component for each point (default is zeros)
+;; zrange       | interval on z-axis (e.g., [0 1], default is ())
+;; margin       | margin around plotting region in percent of extent
+;;              | (default is 0.05)
+;; plotter      | gnuplot instance to use for plotting (default is ())
+;; preamble     | command string that gets sent to gnuplot instance 
+;;              | prior to anything else (default is ())
+(dfmethod Mesh splot kwdargs
+  (let ((args (==> this -splot-arguments . kwdargs)))
+    (==> this -gnuplot "splot" . args) ))
+
+;;
+;; mesh functions
+;; 
+
+#? (simplify <Mesh> <p> [<method>])
+;; Create a coarser mesh with a subset of the current set of points.
+;;
+;;.SEE Line simplification
+
+#? (join <Mesh> <Mesh>)
+;; Create a new mesh by joining the two argument meshes.
+(defun join-mesh (m1 m2)
+  (declare (-obj- (Mesh)) m1 m2)
+  (let* ((nv1 (==> m1 number-of-vertices))
+         (nv2 (==> m2 number-of-vertices))
+         (points (double-array (+ nv1 nv2) 2))
+         (ne1 (==> m1 number-of-edges))
+         (ne2 (==> m2 number-of-edges))
+         (edges (int-array (+ ne1 ne2) 2)) )
+    (declare (-int-) nv1 nv2 ne1 ne2)
+    (array-copy :m1:points (idx-trim points 0 0 nv1))
+    (array-copy :m1:edges (idx-trim edges 0 0 ne1))
+    (array-copy :m2:points (idx-trim points 0 nv1))
+    (idx-bloop ((e2 :m2:edges) (e (idx-trim edges 0 ne1)))
+      (e 0 (+ (e2 0) ne1))
+      (e 1 (+ (e2 1) ne1)) )
+    (new Mesh points edges) ))
+ 
+#? (take-mesh <GraphIndicator> <Mesh>)
+;; Create a new Mesh object representing the indicated submesh.
+(defun take-mesh (gi m)
+  (declare (-obj- (Mesh)) m)
+  (declare (-obj- (GraphIndicator)) gi)
+  (when (or (< (==> :gi:vs minimum) 0)
+            (>= (==> :gi:vs maximum) :m:nv))
+    (error "not a valid indicator: vertices out of bounds") )
+  (when (or (< (==> :gi:es minimum) 0)
+            (>= (==> :gi:es maximum) (length :m:edges)))
+    (error "not a valid indicator: edges out of bounds") )
+
+  (let ((vii (int-array* :m:nv))   ; inverse index
+        (points (double-array (==> :gi:vs number-of-items) 2))
+        (edges (int-array* (==> :gi:es number-of-items) 2)) )
+    (array-clear vii -1)
+    (do ((point points) (v :gi:vs) (i (ints)))
+      (assert (= (vii v) -1))
+      (vii v i)
+      (point 0 (:m:points v 0))
+      (point 1 (:m:points v 1)) )
+    (do ((e edges) (ie :gi:es))
+      (declare (-int-) ie)
+      (let ((e0 (vii (:m:edges ie 0))) (e1 (vii (:m:edges ie 1))))
+        (declare (-int-) e0 e1)
+        (when (or (= e0 -1) (= e1 -1))
+          (error (sprintf "invalid edge in graph indicator (%d)" ie)) )
+        (e 0 e0)
+        (e 1 e1) ))
+    
+    (new Mesh points edges) ))
+
+)
+
+(autoload "geometry/simplify" simplify)
+(dhc-make "mesh_functions" join-mesh take-mesh)
+(defoverload join join-mesh)

@@ -1,0 +1,2126 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;; --------- Miscellaneous macro-chars ---------
+
+(dmc |'| (list (quote quote) (read)))
+
+(dmc |~| (list 'null (read)))
+
+(dmc |:| 
+     (when (= (skip-char) ":")
+       (error 'load "Names beginning by :: are reserved" ()) )
+     (let ((ans (list 'scope (read))))
+       (while (= (skip-char "") ":")
+	 (read-string 1)
+	 (setq ans (nconc1 ans (read))) )
+       ans ) )
+
+(dmc |^!| (list 'sys (read-string)))
+
+(dmc |#!|
+     (if (= (read-string "~ !\t\n\e") "/usr/bin/lush2")
+         ;; compatibility for #!/usr/bin/lush.
+         (read-string)
+       ;; multiline comment.
+       (let ((again t))
+         (while again
+           (let ((c1 (read-string 1))
+                 (c2 (skip-char "\e")) )
+             (when (or (= c1 "\e") (= c2 "\e"))
+               (error 'load "Unterminated multiline comment") )
+             (when (and (= c1 "!") (= c2 "#"))
+               (setq again ()) ) ) )
+         (read-string 1) ) )
+     () ) 
+
+(dmc |#.| (list (eval (read))) )
+
+(lock-symbol |'| |~| |:| |#!| |#.| |^!|)
+
+
+;;; --------- Defining variables ---------
+
+;;(dm dmd(f n a . p)
+;;   `(dm ,n |DMD| (displace |DMD| (let ((,a (cdr |DMD|))) ,@p))) )
+
+(dm dmd (f n a . p)
+    (list 'dm n '|DMD| 
+          (list 'displace '|DMD| 
+                (list 'let (list (list a '(cdr |DMD|))) . p) )) )
+
+(dm defvar def
+  (when define-hook (setq def (apply define-hook def)))
+   (let (((_ name &optional value) def))
+    (when (null (symbol-globally-bound-p name))
+      (list 'progn (list 'setq (list 'scope name) value) (list 'quote name)) ) ))
+
+(dm defparameter def
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((_ name value) def))
+    (list 'progn (list 'setq (list 'scope name) value) (list 'quote name)) ))
+
+(dm defalias def
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((_ name value) def))
+    (if (null (symbol-globally-bound-p value))
+	(error 'defalias "symbol not globally bound" value)
+      (list 'progn (list 'setq (list 'scope name) (list 'scope value))
+            (list 'putp (list 'quote name) (list 'quote 'alias) (list 'quote value))
+            (list 'quote name)) )))
+
+(dm defun def 
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((_ name args . body) def))
+    (let ((f (cons 'lambda (cons args body))))
+      (list 'progn (list 'setq (list 'scope name) f) (list 'quote name)) ) ))
+
+(dm defmacro def
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((_ name args . body) def))
+    (let ((f (cons 'mlambda (cons (cons '|__F__| args) body))))
+      (list 'progn (list 'setq (list 'scope name) f) (list 'quote name)) ) ))
+
+(defvar not null)
+(defvar nil ())
+
+(lock-symbol dmd defvar defalias defparameter defun defmacro not nil)
+
+
+;;; --------- Basic Control structures ----------
+
+(dmd dolist ((s l) . body)
+  (list 'progn 
+	(list 'mapc (list 'flambda (list s) . body) l)
+	() ))
+
+(dmd domapc (args . body)
+  (cons 'mapc 
+        (cons 
+         (cons 'flambda (cons (mapcar car args) body))
+         (mapcar cadr args))) ))
+
+(dmd domapcar (args . body)
+  (cons 'mapcar 
+        (cons 
+         (cons 'flambda (cons (mapcar car args) body))
+         (mapcar cadr args))) ))
+
+(dmd domapcan (args . body)
+  (cons 'mapcan 
+        (cons 
+         (cons 'flambda (cons (mapcar car args) body))
+         (mapcar cadr args))) ))
+
+(lock-symbol dolist domapc domapcar domapcan)
+
+
+;;; --------- Toplevel, Break, and Debug  ---------
+
+(de toplevel()
+  (let ((break-hook :nice-break-hook)
+        (debug-hook :nice-debug-hook) )
+    (if (isatty "$stdin")
+        (load "$stdin" "$stdout" "? |  |> ") 
+      (load "$stdin") ) ) )
+
+(defvar debug-action ())
+(defvar break-action ())
+
+(dm on-error (_ p . l)
+  (cons 'let
+	(cons (list (list 'debug-action
+                          (list 'cons (list 'quote p) 'debug-action) ))
+              l)))
+
+(dm on-error-macro (_ m . r)
+  (list 'eval
+	(list 'cons ''on-error (list 'cons m (list 'quote r))) ))
+
+(dm on-break(_ p . l)
+  (cons 'let
+	(cons (list (list 'break-action
+                          (list 'cons (list 'quote p) 'break-action) ))
+              l)))
+
+(dm on-break-macro (_ m . r)
+  (list 'eval
+	(list 'cons ''on-break (list 'cons m (list 'quote r))) ))
+
+(dm on-interrupt (_ p . l)
+  (cons 'let
+	(cons (list (list 'debug-action
+                          (list 'cons (list 'quote p) 'debug-action) )
+                    (list 'break-action
+                          (list 'cons (list 'quote p) 'break-action) ))
+              l)))
+
+(dm on-interrupt-macro (_ m . r)
+  (list 'eval
+	(list 'cons ''on-interrupt (list 'cons m (list 'quote r))) ))
+
+
+(de simple-break-hook()
+    (dolist (action break-action) (eval action))
+    (writing "$stderr" (printf "\n\x07*** %s\n" (errname))) 
+    t )
+
+(de simple-debug-hook()
+    (dolist (action debug-action) (eval action))
+    (writing "$stderr" (printf "\n\x07*** %s\n" (errname)))
+    t )
+
+(de nice-break-hook()
+    (dolist (action break-action) (eval action))
+    (writing "$stderr" (printf "\n\x07*** %s" (errname)))
+    (if (and (isatty "$stdin") 
+             (not (lush-is-quiet))
+             (ask "Break toplevel"))
+	(progn
+	  (writing "$stderr" (btrace 7))
+	  (load "$stdin" "$stdout" "[Break]\n? |  |> ")
+	  (when (not (ask "Resume execution"))
+	    (writing "$stdout" (printf "[Ready]\n"))
+	    t ) )
+      t ) )
+
+(de nice-debug-hook()
+    (dolist (action debug-action) (eval action))
+    (writing "$stderr" (printf "\n\x07*** %s" (errname)))
+    (if (and (isatty "$stdin")
+             (not (lush-is-quiet))
+             (ask "Debug toplevel"))
+	(progn
+	  (writing "$stderr" (btrace 7))
+	  (load "$stdin" "$stdout" "[Debug]\n? |  |> ") 
+	  (writing "$stdout" (printf "[Ready]\n")) )
+      t ) )
+
+(de pause l
+  (writing "$stderr"
+    (printf "\n\x07*** ")
+    (apply printf (or l '("Paused")))
+    (printf "\n") )
+  (load "$stdin" "$stdout" "[Pause] ? ") )
+
+(setq :break-hook simple-break-hook)
+(setq :debug-hook simple-debug-hook)
+
+(lock-symbol toplevel 
+	     break-hook debug-hook pause
+	     nice-break-hook nice-debug-hook 
+	     break-action debug-action
+	     on-error on-break
+	     on-error-macro on-break-macro)
+
+
+
+
+
+
+;;; --------- Trace-Hook  ---------
+
+(df trace-hook(level line expr info)
+  (writing "$stderr"
+    (for (i 1 (abs level)) (printf "-"))
+    (printf "%s %s\n" (if (>= level 0) ">" "<") line)
+    t ) ) 
+(lock-symbol trace-hook)
+
+
+
+
+;;; --------- Tokenise  ---------
+
+(de tokenize(fin &optional fout)
+    (when (not fout)
+      (setq fout (filepath fin ".lsh|.tl|.sn|"))
+      (when (or (not fout) (not (regex-match ".*\\.(lsh|tl|sn)" fout)))
+	(error 'tokenize "Cannot find Lush library file named" fin) )
+      (setq fin fout)
+      (setq fout (str-cat fout "c")) )
+    (let ((tokens (list 'progn)))
+      (reading (open-read fin ".lsh|.tl|")
+	       (while (<> (skip-char) "\e")
+		 (if (= (skip-char) ";")
+		     (read-string)
+		   (nconc1 tokens (read)) ) ) )
+      (writing (open-write fout)
+	       (bwrite tokens) ) )  
+    fout)
+
+
+
+
+;;; --------- Backquote macro ---------
+
+(de backquote-macro()
+    (let ((|,| (lambda() 
+		 (error "Nested comma in a backquoted expression"))))
+      (if (<> (skip-char) "@")
+	  (cons '|,| (read))
+	(read-string 1)
+	(cons '|,@| (read)) ) ) )
+
+(de backquote-subst(l) 
+    (let ((na ())
+	  (nl ())
+	  (nq ()) )
+      
+      (while l
+	(when (consp l)
+	      (when (= (car l) '|,@|)
+		    (error 'read "Misplaced ,@ inside a backquote") )
+	      (when (= (car l) '|,|)
+		    (setq l (list (cons '|,@| (cdr l)))) ) )
+	(cond
+	 ((atom l)
+	  (setq nq (nconc nq l)) 
+	  (setq l ()) )
+	 ((null (consp (car l)))
+	   (setq nq (nconc1 nq (car l))))
+	 ((= (caar l) '|,|)
+	  (setq nl (append nl 
+			   (domapcar ((i nq)) 
+				     (list 'quote i))
+			   (list (cdar l)) ))
+	  (setq nq ()) )
+	 ((= (caar l) '|,@|)
+	  (setq na (append na
+			   (when nl (list (cons 'list nl)))
+			   (when nq (list (list 'quote nq)))
+			   (list (cdar l)) ))
+	  (setq nl ())
+	  (setq nq ()) )
+	 (t
+	  (let ((m (backquote-subst (car l))))
+	    (if (and (consp m) (= (car m) 'quote))
+		(setq nq (nconc1 nq (cadr m)))
+	      (setq nl (nconc nl 
+			      (domapcar ((i nq)) 
+					(list 'quote i))
+			      (list m) ))
+	      (setq nq ()) ) ) ) )
+	
+	(setq l (cdr l)) )
+
+      (if (null na)
+	  (backquote-list nl nq)
+	(append 
+	 (list 'append)
+	 na
+	 (let ((m (backquote-list nl nq)))
+	   (when m (list m)) ) ) ) ) )
+
+(de backquote-list(nl nq)
+    (cond
+     ((null (or nl nq) )
+      ())
+     ((null nl)
+      (list 'quote nq))
+     ((null nq)
+      (cons 'list nl))
+     ((= (length nl) 1)
+      (list 'cons (car nl) (list 'quote nq)) )
+     ((= (length nl) 2)
+      (list 'cons (car nl) (list 'cons (cadr nl) (list 'quote nq))) )
+     (t
+      (list 'nconc (cons 'list nl) (list 'quote nq)) ) ) )
+     
+
+(dmc |,| 
+     (error 'read "Comma outside backquote") )
+
+(dmc |`|
+     (backquote-subst
+      (let* ((|,| backquote-macro)
+             (|'| (lambda() (list (quote quote) (read)))) )
+	(read) ) ) )
+
+(lock-symbol |`| |,| backquote-subst backquote-list backquote-macro)
+
+;;; --------- Usual list manipulation functions ---------
+
+(de caddr(l) (car (cddr l)))
+(de cdddr(l) (cdr (cddr l)))
+(de cdadr(l) (cdr (cadr l)))
+(de caadr(l) (car (cadr l)))
+(de cadar(l) (car (cdar l)))
+(de cddar(l) (cdr (cdar l)))
+(de cdaar(l) (cdr (caar l)))
+(de caaar(l) (car (caar l)))
+
+(de nconc (f . l)
+  (cond
+    (f
+       (prog1 f
+	 (dolist (i l)
+	   (setq f (last f))
+	   (rplacd f i) ) ) )
+    (l
+       (nconc . l) ) ) )
+
+(de nconc1(l s)
+  (if l
+      (rplacd (last l) (list s))
+    (setq l (list s)) )
+  l )
+
+(de alist l
+  (cond ((consp l) 
+         (cons (cons (car l) (cadr l)) (apply alist (cddr l))))
+        (t 
+         ()) ) )
+
+(de flatten* (arg)
+  (if (consp arg)
+      (let (((a . b) arg))
+	(nconc (flatten* a) (flatten* b)) )
+    (list arg) ))
+
+(defmacro copy-list (lst)
+  `(append ,lst ()) )
+
+(de copy-alist (al)
+  (let ((copy-cons (lambda ((x . y)) (cons x y))))
+    (mapcar copy-cons al) ))
+
+(de alist-add (key value alist)
+  (let ((pair (assoc key alist)))
+    (if pair
+        (rplacd pair value)
+      (setq alist (cons (cons key value) alist)) )
+    alist ) )
+
+(de alist-get (key alist)
+  (let ((pair (assoc key alist)))
+    (when pair
+      (cdr pair) ) ) )
+
+(de alist-rm (key alist)
+  (if (null alist)
+      ()
+    (if (= key (caar alist))
+	(cdr alist)
+      (cons (car alist) (alist-rm key (cdr alist))) )))
+
+(de alist-update (al al2)
+  (dolist ((key . val) al2)
+    (setq al (alist-add key val al)) )
+  al)
+
+(de circular-list (&rest items)
+  (let ((l items))
+    (rplacd (last l) l) 
+    l))
+
+(dm proper-list-p (_ l)
+  `(let ((l ,l)) (and (listp l) (null (cdr (last l)))))
+  )
+
+(defun subst (old new tree)
+  (cond
+   ((= old tree) new)
+   ((atom tree) tree)
+   (t (let ((a (subst old new (car tree)))
+            (d (subst old new (cdr tree))) )
+        (if (and (== a (car tree)) (== d (cdr tree)))
+            tree
+          (cons a d) )))))
+
+(defvar |*PROPERTIES| (htable))
+
+(de getp(obj key)
+  (let ((data (|*PROPERTIES| key)))
+    (when data (data obj)) ) )
+
+(de putp (obj key val)
+  (when (symbolp obj)
+    ;; prevent symbols from being reclaimed
+    (when (null (symbol-globally-bound-p obj))
+      (apply setq (list 'scope obj) () ()) ))
+  (let ((data (|*PROPERTIES| key)))
+    (when (not data)
+      (if (symbolp key)
+          (|*PROPERTIES| key (setq data (htable 17 t)))
+        (error 'putp "not a symbol" key) ) )
+    (data obj val)
+    key ) )
+
+
+(dm defconstant def
+  (let (((_ name value) def))
+    (if (and (symbol-globally-bound-p name)
+             (symbol-globally-locked-p name) )
+        `(let ((--v0-- ,name) (--v1-- ,value))
+           (when (<> --v0-- --v1--)
+             (error "constant already defined" (quote ,name)) ))
+      (when define-hook (setq def (apply define-hook def)))
+      `(progn (setq (scope ,name) ,value)
+              (lock-symbol ,name)
+              (quote ,name)) )))
+
+(lock-symbol defconstant)
+
+;;; --------- Easy lambda expressions ---------
+
+(defconstant *lambda-positional-symbol*
+  ((htable) '$1 1 '$2 2  '$3 3  '$4 4  '$5 5  '$6 6  '$7 7  '$8 8  '$9 9) )
+
+(defun lambda-largest-positional-arg (expr)
+  (if (and (consp expr) (<> 'lambda (car expr)))
+      (apply max 0 (mapcar lambda-largest-positional-arg expr))
+    (or (*lambda-positional-symbol* expr) 0) ))
+
+(defun lambda-has-ellipsis (expr)
+  (if (and (consp expr) (<> 'lambda (car expr)))
+      (apply or (mapcar lambda-has-ellipsis expr))
+    (= expr '..) ))
+
+(defun lambda-ellipsify (expr)
+  (if (and (consp expr) (<> 'lambda (car expr)))
+      (let (((head . tail) expr))
+        (if (= head '..)
+            (if tail
+                (error 'lambdafy "syntax-error: ellipsis must terminate s-expression")
+              '..)
+          (cons (lambda-ellipsify head) (lambda-ellipsify tail)) ))
+    expr))
+
+(defun lambdafy (expr)
+  (let ((n (lambda-largest-positional-arg expr)))
+    (if (lambda-has-ellipsis expr)
+        (if (> n 0)
+            (let ((args (domapcar ((i (range n)))
+                          (symbol-concat '$ (named (str i))))))
+              (rplacd (last args) '..)
+              `(lambda ,args ,(lambda-ellipsify expr)) )
+          `(lambda .. ,(lambda-ellipsify expr)) )
+      `(lambda (,@(domapcar ((i (if (= n 0) () (range n))))
+                    (symbol-concat '$ (named (str i)))) )
+         ,expr)
+      )))
+
+(dmc |#\|
+     (list (lambdafy (read))) )
+
+;;; --------- More control structures ---------
+
+(defmacro for* ((i start stop . rest) . body)
+  (if (null rest)
+      `(for (,i ,start (- ,stop 1)) ,@body)
+    (let ((step (gensym)))
+      `(let ((,step ,@rest))
+         (for (,i ,start (- ,stop (sgn ,step)) ,step) ,@body) )
+      )))
+
+(defmacro assert (p &optional error-form)
+  (if error-form
+      `(when (not ,p) (error ,error-form))
+    `(when (not ,p) (error ,(sprintf "assertion failed: %s" (pname p))))
+    ))
+
+(defmacro errorf (msg . args)
+  `(error (sprintf ,msg ,@args))
+  )
+
+(defmacro sysf (msg . args)
+  `(sys (sprintf ,msg ,@args))
+  )
+
+(defmacro each stuff `(domapc ,@stuff))
+(defmacro all stuff `(domapcar ,@stuff))
+(defmacro identity (x) x)
+
+(defun tree-mapcar (fn . lists)
+  (let ((caal (caar lists)))
+    (if (null caal)
+	()
+      (cons (if (consp caal)
+		(apply tree-mapcar fn (mapcar car lists))
+	      (apply fn (mapcar car lists)))
+	    (apply tree-mapcar fn (mapcar cdr lists)) ))))
+
+(de reduce> (func init . seqs)
+  (if (null (car seqs))
+      init
+    (apply reduce> func (apply func init (mapcar car seqs)) (mapcar cdr seqs)) ) )
+
+(de reduce< (func init . seqs)
+  (if (null (car seqs))
+      init
+    (apply func (apply reduce< func init (mapcar cdr seqs)) (mapcar car seqs)) ) )
+
+;; preliminary definition
+(dm sum (_ args)
+  `(apply + ,args) )
+
+(dm prod (_ args)
+  `(apply * ,args) )
+
+
+(dmd mapfor ((var lo hi . step) . body)
+     `(let ((|MAP| ()))
+        (for (,var ,lo ,hi ,@step) (setq |MAP| (cons (progn ,@body) |MAP|)))
+        (reverse |MAP|) ) )
+
+(dmd mapwhile (expr . body)
+     `(let ((|MAP| ()))
+        (while ,expr (setq |MAP| (cons (progn ,@body) |MAP|)))
+        (reverse |MAP|) ) )
+
+(dm let-filter(fn ((fexp dexp)) . body)
+  (let ((f (mlambda(fn f d b)
+             (let ((okay t)
+                   (bindings ())
+                   (match (lambda(f d)
+                            (while (and okay (consp f) (consp d))
+                              (match (car f) (car d))
+                              (setq f (cdr f))
+                              (setq d (cdr d)) )
+                            (cond
+                             ((and okay (symbolp f))
+                              (setq bindings (cons (list f (list 'quote d)) 
+                                                   bindings)) )
+                             ((<> f d)
+                              (setq okay ()) ) ) )) )
+               (match f d)
+               (when okay
+                 `(let ,(reverse bindings) ,@b) ) ) )))
+    `(eval (list ,f ',fexp ,dexp ',body)) ) )
+
+(de sort-list (l comp)
+    (if (cdr l)
+	(let* ((piv ())
+	       (pl ())
+	       (ll ())
+	       (rl ()) )
+	  ;; Choose pivot
+	  (let* ((n (length l))
+		 (p1 (car l))
+		 (lc (nthcdr (div n 2) l))
+		 (p3 (lasta lc)) )
+	    (setq piv (car lc))
+	    (when (comp p1 piv)
+	      (rotatef piv p1) )
+	    (when (comp piv p3)
+	      (rotatef piv p3) )
+	    (when (comp p1 piv)
+	      (rotatef piv p1) ))
+	  ;; Go pivoting for quicksort
+	  (dolist (i l)
+            (cond 
+             ((= i piv)
+              (setq pl (cons i pl)) )
+             ((comp i piv)
+              (setq rl (cons i rl)) )
+             (t 
+              (setq ll (cons i ll)) ) ) )
+	  (nconc (sort-list ll comp) (nconc pl (sort-list rl comp))) )
+      l ) )
+
+(de bsearch.list (l v n)
+  (if (> n 1)
+    (let* ((m   (div n 2))
+           (piv (nth m l)) )
+      (if (>= v piv)
+          (+ m (bsearch.list (nthcdr m l) v (- n m)))
+        (bsearch.list (nfirst m l) v m) ) ) 
+    0) )
+
+(de bsearch (l v)
+  (cond
+   ((consp l)                        ;; l is a list
+    (bsearch.list l v (length l)))
+   ((and (vectorp l) (idx-numericp l))   ;; l is a vector
+    (selectq (idx-element-type l)
+      ('float  (idx-f1bsearch l v))
+      ('double (idx-d1bsearch l v))
+      ('int    (idx-i1bsearch l v))
+      (t       (error 'bsearch 
+                      "bsearch not implemented for element type" 
+                      (idx-element-type l) )) ) )
+   (t                                ;; l is neither
+    (error 'bsearch "first argument must be sorted list or vector" l) ) ) )
+ 
+;;(autoload "libidx/idx-sort" idx-f1bsearch idx-d1bsearch idx-i1bsearch)
+;; deferred to the end
+
+(de filter (p l)
+  (let ((r ()))
+    (dolist (x l)
+      (when (p x)
+        (setq r (cons x r)) ))
+    (reverse r) ))
+
+(de filter* (p l)
+  (let ((r1 ()) (r2 ()))
+    (dolist (x l)
+      (if (p x)
+          (setq r1 (cons x r1))
+        (setq r2 (cons x r2)) ))
+    (list (reverse r1) (reverse r2)) ))
+
+(de hset(l &optional flag)
+  (let ((r (htable)))
+    (dolist (x l)
+      (r x (or (not flag) (1+ (or (r x) 0)))) )
+    r ) )
+
+(de hset-and(ht1 ht2)
+  (let ((r (htable)))
+    (when (< (htable-size ht2) (htable-size ht1))
+      (rotatef ht1 ht2) )
+    (dolist (key (htable-keys ht1))
+      (when (ht2 key)
+	(r key t) ) )
+    r ) )
+
+(de hset-or(ht1 ht2)
+  (let ((r (htable)))
+    (dolist (key (htable-keys ht1))
+      (r key t) )
+    (dolist (key (htable-keys ht2))
+      (r key t) ) 
+    r ) )
+
+(de list-insert (l pos x)
+  (if (= 0 pos)
+      (cons x l)
+    (let* ((w (nthcdr (1- pos) l)))
+      (if (not w)
+          (error "list too short")
+        (rplacd w (cons x (cdr w))) ) ) l ) )
+
+(de list-delete (l pos)
+  (if (= 0 pos)
+      (cdr l)
+    (let* ((w (nthcdr (1- pos) l)))
+      (if (not w)
+          (error "list too short")
+        (rplacd w (cddr w)) ) ) l ) )
+
+(de list-merge (l l2)
+  (cond 
+   ((null l) l2)
+   ((null l2) l)
+   (t
+    (dolist (item l2) 
+      (when (not (member item l)) 
+        (setq l (nconc1 l item)) ))
+    l)))
+
+(de list-split! (l n)
+  (cond 
+   ((< n 0) (error "invalid value for number of elements"))
+   ((= n 0) (cons () l))
+   (t 
+    (let* ((chain (nthcdr (1- n) l))
+           (left l) (right (cdr chain)))
+      (when chain (rplacd chain ()))
+      (cons left right) ))))
+
+(defmacro range args
+  `((array-range ,@args) ()) )
+
+(defmacro range* args
+  `((array-range* ,@args) ()) )
+ 
+
+(lock-symbol for* assert identity
+             caddr cdddr cdadr caadr cadar cddar cdaar caaar
+             nconc nconc1
+             alist alist-get alist-add alist-update
+             |*PROPERTIES| putp getp
+             mapfor mapwhile let-filter sort-list 
+             hset hset-and hset-or
+	     list-insert list-delete list-merge
+             range range*)
+
+;;; ------ memprof/p ----------
+
+(defmacro memprof/p body
+  `(prog1 (memprof ,@body)
+     (printf "\n*** memprof of %s:\n" (first-line (car ',body)))
+     (do (((memtype . n) *memprof-stats*))
+       (when (> n 0)
+         (printf "%16s: %9d\n" memtype n))) )
+  )
+
+;;;; --------- Storage utilities ----------
+
+;; we make these symbols reserved symbols
+(let* ((storage-class-symbols 
+        (list 'bool 'char 'uchar 'short 'int 'float 'double 'gptr 'mptr 'atom))
+       (htlen (* 2 (length storage-classes))) )
+  (defvar storage-class (htable htlen))        ;; map class symbol to class
+  (defvar storage-class-symbol (htable htlen))  ;; map class to class symbol
+  (domapc ((scs storage-class-symbols) (sc storage-classes))
+    (storage-class-symbol sc scs)
+    (storage-class scs sc)
+    (storage-class (named (str-left (pname scs) 1)) sc)
+    ))
+
+(dm atom-storage (_ &optional (n 0)) 
+  (list 'new-storage/managed (dquote atom) n ()) )
+(dm float-storage (_ &optional (n 0))
+  (list 'new-storage/managed (dquote float) n 0.0) )
+(dm double-storage (_ &optional (n 0))
+  (list 'new-storage/managed (dquote double) n 0.0) )
+(dm int-storage (_ &optional (n 0))
+  (list 'new-storage/managed (dquote int) n 0) )
+(dm short-storage (_ &optional (n 0))
+  (list 'new-storage/managed (dquote short) n 0) )
+(dm char-storage (_ &optional (n 0))
+  (list 'new-storage/managed (dquote char) n 0) )
+(dm uchar-storage (_ &optional (n 0))
+  (list 'new-storage/managed (dquote uchar) n 0) )
+(dm gptr-storage (_ &optional (n 0))
+  (list 'new-storage/managed (dquote gptr) n ()) )
+(dm mptr-storage (_ &optional (n 0))
+  (list 'new-storage/managed (dquote mptr) n ()) )
+
+(lock-symbol storage-class)
+
+
+;;;; --------- Arrays utilities ---------
+(de matrix (&optional args) 
+   (error 'matrix "matrix is an obsolete function; replace by 'double-array'"))
+
+;; create XXX-array constructors
+(domapc ((sc storage-classes))
+  (let* ((scs         (storage-class-symbol sc))
+         (func-symbol (named (str-cat (pname scs) "-array")))
+	 (func*-symbol (named (str-cat (pname scs) "-array*")))
+         (init        (if (member scs '(atom gptr mptr)) () 0.0)) )
+    (eval
+     `(progn 
+	(de ,func-symbol (&rest shape)
+          (cond ((null shape)         (make-array ,sc () ,init))
+                ((indexp (car shape)) (make-array ,sc (car shape) ,init))
+                (t                    (make-array ,sc shape ,init)) ))
+	(de ,func*-symbol (&rest shape)
+          (cond ((null shape)         (make-array ,sc () ,init))
+                ((indexp (car shape)) (make-array ,sc (car shape) ,init))
+                (t                    (make-array ,sc shape ,init)) ))
+        (lock-symbol ,func-symbol ,func*-symbol) )
+     )))
+
+(defalias array atom-array)
+
+;;
+;; argument checking functions
+;;
+
+(dm chk-idx (_ arg)
+  `(if (not (indexp ,arg))
+      (error "not an index" ,arg)
+     ,arg) )
+
+(dm chk-idx-numeric (_ arg)
+  `(if (not (idx-numericp ,arg))
+       (error "not a numeric index" ,arg)
+     ,arg) )
+
+(dm chk-idx-contiguous (_ arg)
+  `(if (not (idx-contiguousp ,arg))
+       (error "not a contiguous index" ,arg)
+    ,arg) )
+
+(dm chk-idx-nonempty (_ arg)
+  `(if (= (idx-nelems ,arg) 0)
+       (error "index is empty" ,arg)
+     ,arg) )
+
+(lock-symbol chk-idx chk-idx-numeric chk-idx-contiguous chk-idx-nonempty)
+
+(defmacro validate-dimension (arg d)
+  `(let* ((nd (idx-rank ,arg))
+          (d* (if (< ,d 0) (+ ,d nd) ,d)) )
+     (when (or (< d* 0) (>= d* nd))
+       (error "invalid dimension argument") )
+     d*) )
+
+(defun validate-shape (arg template)
+  (let ((shp  (idx-shape arg))
+	(test (lambda (a b) (or (null b) (= b a) (error "invalid extent" a)))) )
+    (when (<> (length template) (length shp))
+      (error "index does not have expected shape" arg) )
+    (mapc test shp template)
+    shp))
+
+(defun same-shape-p (a1 a2)
+  (= (idx-shape a1) (idx-shape a2)) )
+
+(defmacro scalar (arg)
+  `((double-array) ,arg)
+  )
+
+(defmacro scalarp (idx)
+  `(let ((idx ,idx)) (and (indexp idx) (= (idx-rank idx) 0)))
+  )
+
+(defmacro vector args
+  (let* ((l (length args)) (v (gensym)) (vs (.cl v)))
+    `(let* ((,v (double-array ,l)))
+       ,@(mapcar list vs (range* l) args)
+       ,v)
+    ))
+
+(defmacro vectorp (idx)
+  `(let ((idx ,idx)) (and (indexp idx) (= (idx-rank idx) 1)))
+  )
+
+(defmacro idx-element-type (idx)
+  `(storage-class-symbol (classof (idx-storage ,idx))) 
+  )
+
+;;
+;; printing and reading array literals
+;;
+
+(de print-array (m)
+  (let* ((elt     (idx-element-type m))
+	 (pf-at   (lambda (i) (printf " ") (prin (m i)) ))
+	 (pf-real (lambda (i) (printf "%10.4f\t" (m i))))
+	 (pf-rest (lambda (i) (printf "%10d\t" (m i))))
+	 (pf      (cond 
+		   ((member elt '(atom gptr mptr)) pf-at)
+		   ((member elt '(float double)) pf-real)
+		   (t pf-rest) )))
+    (cond
+     ((= 0 (idx-rank m))   ;; scalar 
+      (prin (m))
+      (print) )
+
+     ((= 1 (idx-rank m))   ;; one dimensional
+      (for (i 0 (1- (idx-shape m 0))) (pf i))
+      (print) )
+
+     (t                    ;; all other
+      (for (i 0 (1- (idx-shape m 0)))
+	   (print-array (idx-select m 0 i)) )
+      (print) ))))
+
+
+(de print-array-literal (this)
+  (let* ((elt     (idx-element-type this))
+	 (begin   (str-cat "[" (str-left (pname elt) 1)))
+	 (end     "]")
+	 (pf-at   (lambda (i) (printf " ") (prin (this i)) ))
+	 (pf-real (lambda (i) (printf " %8.4f" (this i))))
+	 (pf-rest (lambda (i) (printf " %5d" (this i))))
+	 (pf      (cond 
+		   ((member elt '(atom gptr mptr)) pf-at)
+		   ((member elt '(float double)) pf-real)
+		   (t pf-rest) )))
+    (cond
+     ((not (idx-rank this))  ;; unsized storage
+      (printf "%s" (pname this)) )
+ 
+     ((0= (idx-rank this))   ;; scalar 
+      (printf "%s@ " begin)
+      (prin (this))
+      (printf end) )
+
+     ((= 1 (idx-rank this))  ;; one dimensional
+      (printf begin)
+      (for (i 0 (- (idx-shape this 0) 1)) (pf i))
+      (printf end) )
+
+     (t                      ;; all other
+      (printf begin)
+      (let ((tabnow (tab))
+            (len    (- (idx-shape this 0) 1)) )
+	(for (i 0 len)
+	     (print-array-literal (idx-select this 0 i) )
+	     (when (< i len) (print) (tab tabnow)) ))
+      (printf end) ))))
+
+
+(de read-array-literal (idxfun)
+  (let ((l ())
+        (m ())
+        (|]|
+         (cond
+          ((= (skip-char) "@")          ; zero dimensions
+           (read-string 1)
+           (lambda()
+             (when (cdr l) (error 'read "Bad index0 syntax" ()))
+             (setq m ((idxfun) (car l))) ) )
+
+          ((<> (skip-char) "[")         ; one dimension
+           (lambda()
+             (setq m (idxfun (length l)))
+             (m () l) ))
+
+          (t                            ; more dimensions
+           (lambda()
+             (let ((n (length l)))
+               (setq m (apply idxfun (cons n (shape (car l)))))
+               (for (i 0 (1- n))
+		    (array-copy (car l) (idx-select m 0 i))
+                    (setq l (cdr l)) ))))))) 
+
+    (while (not m)
+      (setq l (nconc1 l (read))) )
+    m ))
+
+(dmc |[| 
+     (let* ((c   (named (skip-char)))
+            (sc  (storage-class c))
+            (sc2 (or sc (storage-class 'double))) )
+       (when sc (read-string 1))
+       (read-array-literal (lambda (&rest shp) (make-array sc2 shp ()) ))) ))
+
+(dmc |]|
+     (error 'read "extra ']' found"))
+
+(lock-symbol print-array print-array-literal read-array-literal |[| |]|)
+
+
+	     
+;;; --------- Path functions ---------
+
+(defparameter  libload.data       (htable))
+(defparameter  libload.loading    (htable))
+(defparameter *libload-last-file* ())
+(defparameter  libload.num-tabs    0)
+
+(lock-symbol libload.data libload.loading)
+
+(de libload.search (s)
+  (let ((fname ()))
+    (when (and (stringp file-being-loaded) (<> file-being-loaded "$stdin"))
+      (when (not s) (setq s file-being-loaded))
+      (setq fname (filepath (concat-fname (dirname file-being-loaded) s))) )
+    (when (not fname)
+      (setq fname (filepath s)) )
+    (when (not fname)
+      (error 'libload.search "File not found" s) )
+    fname))
+
+(de libload.add (rname)
+  (when (and (stringp file-being-loaded) (<> file-being-loaded "$stdin"))
+    (let* ((f (or (relative-fname lushdir file-being-loaded) file-being-loaded))
+           (frec (libload.data f)))
+      (when (not frec)
+        (setq frec (cons t ()))
+        (libload.data f frec) )
+      (when (not (member rname (cdr frec)))
+        (rplacd frec (cons rname (cdr frec)))
+        rname))))
+
+(de libload.mtime (rname seen)
+  (seen rname t)
+  (let* ((fname (concat-fname lushdir rname))
+         (frec  (libload.data rname))
+         (mtime (or (libload.loading rname)
+                    (alist-get 'mtime (fileinfo fname))) ))
+    (when (and (null (libload.loading rname)) frec)
+      (domapc ((dep (cdr frec)))
+        (when (not (seen dep))
+          (let ((deptime (libload.mtime dep seen)))
+            (when (and deptime (> deptime mtime))
+              (setq mtime deptime) )))))
+    mtime))
+
+(de libload (s &optional opt)
+  (let* ((fname (libload.search s))
+         (rname (or (relative-fname lushdir fname) fname)) )
+
+    ;; clear registry of files being loaded (just in case)
+    (when (= file-being-loaded "$stdin")
+      (htable-clear libload.loading) )
+
+    ;; record dependency
+    (libload.add rname)
+
+    (when (not (libload.loading rname))
+
+      ;; check if loading is necessary
+      (let ((frec (libload.data rname))
+            (mtime (libload.mtime rname (htable)))
+            (libload.num-tabs (+ libload.num-tabs 1)) )
+        (when (or opt
+                  (null frec)
+                  (and (car frec) (> mtime (car frec))) )
+
+          ;; okay, load it
+          (when (not (lush-is-quiet))
+            (repeat libload.num-tabs
+              (printf "   ") )
+            (cond
+             ((null opt)    (printf " [%s]\n" (basename fname)))
+             ((stringp opt) (printf " [%s] %s\n" (basename fname) opt))
+             (t             (printf " [%s] %l\n" (basename fname) opt)) ))
+          
+          (on-interrupt-macro `(progn
+                                 (:libload.data ,rname ())
+                                 (:libload.loading ,rname ()) )
+              (libload.data rname (list ()))
+              (libload.loading rname mtime)
+              (prog1 (load fname) 
+                (setq *libload-last-file* fname)
+                (libload.loading rname ()) 
+                (rplaca (libload.data rname) (libload.mtime rname (htable))) 
+                )))))))
+
+
+(de libload-dependencies (&optional fname)
+  (setq fname (if fname (or (filepath fname) fname) file-being-loaded))
+  (let* ((rname (or (relative-fname lushdir fname) fname))
+         (frec (libload.data rname)) )
+    (when frec
+      (all ((d (cdr frec)))
+        (concat-fname lushdir d) ) ) ) )
+
+(de libload-add-dependency (s)
+  (let* ((fname (filepath s))
+         (rname (or (relative-fname lushdir fname) fname)) )
+    ;; record dependency
+    (libload.add rname)
+    ;; mark as already loaded
+    (let ((frec (libload.data rname))
+          (mtime (alist-get 'mtime (fileinfo fname))) )
+      (when (not frec)
+        (libload.data rname (list (or mtime (now))))
+        fname ))))
+
+(de reload ()
+  (when *libload-last-file*
+    (libload *libload-last-file*) ))
+
+(dmc |^R| `(reload))
+
+(dm autoload(autoload l . s)
+  (let  ((f  (eval `(mlambda f
+                      (set (car f) ())
+                      (libload ,l "(autoload)")
+                      f) )))
+    `(progn ,@(all ((i s)) `(setq :,i ,f))) ) )
+
+
+(defvar last-loaded-file ())
+
+(dmc |^L| 
+  (let ((f (read-string)))
+    (setq f (regex-subst "^ +" "" f))
+    (setq f (regex-subst " +$" "" f))
+    (if (= f "") 
+	(setq f (or last-loaded-file edit-buffer))
+      (setq last-loaded-file f) )
+    `(libload ,f t) ))
+
+(de path dirs
+  (if (not dirs)
+      (scope |*PATH|)
+    (let ((newpath (list ".")))
+      (dolist (dir dirs)
+        (when (not (stringp dir))
+          (error 'path "Not a string" dir) )
+        (when (<> dir ".")
+          (setq newpath (cons dir newpath)) ) )
+      (setq (scope |*PATH|) (reverse newpath)) ) ) )
+
+(de addpath(dir)
+  (setq dir (concat-fname dir))
+  (let ((oldpath (path))
+        (newpath (list dir)) )
+    (while oldpath
+      (when (<> dir (car oldpath))
+        (setq newpath (nconc1 newpath (car oldpath))) )
+      (setq oldpath (cdr oldpath)) )
+    (apply path newpath) ) )
+
+(lock-symbol libload.add libload.search libload.mtime libload 
+             reload autoload |^L| path addpath )
+
+
+;;; --------- pprin, pprint ----------
+
+(dolist (sym '( progn graphics-batch debug nodebug ))
+  (putp sym 'pprint-type 0) )
+(dolist (sym '( when while do-while for mapfor mapwhile repeat ))
+  (putp sym 'pprint-type 1) )
+(dolist (sym '( lambda flambda mlambda zlambda writing reading ))
+  (putp sym 'pprint-type 1) )  
+(dolist (sym '( de df dm dz dmd defclass dhm-t dhm-c ))
+  (putp sym 'pprint-type 2) )
+(dolist (sym '( defmethod demethod dfmethod dmmethod ))
+  (putp sym 'pprint-type 3) )
+(dolist (sym '( let let* let-filter each all idx-bloop idx-eloop idx-gloop ))
+  (putp sym 'pprint-type '(0 let)) )
+
+(putp 'if        'pprint-type '(1 indent))
+(putp 'prog1     'pprint-type '(0 indent))
+(putp 'cond      'pprint-type '(0 cond))
+(putp 'selectq   'pprint-type '(1 cond))
+
+
+(de pprin--v(l tb)
+    (let ((nl ()))
+      (while (consp l)
+	(setq nl t)
+	(print)
+	(tab tb)
+	(pprin (car l))
+	(setq l (cdr l)) )
+      (when l
+	    (print)
+	    (setq nl t)
+	    (tab (+ tb 2))
+	    (printf ". ")
+	    (pprin l) )
+      (if nl
+	  (printf " )")
+	(printf ")") )
+      nl ) )
+    
+(de pprin--h(l tb)
+    (let ((ok t)
+	  (nl ()) )
+      (while (and ok (consp l))
+	(if (or (<= (tab) tb)
+		(< (+ (tab) (len (pname (car l)))) 78) )
+	    (printf " ")
+	  (print)
+	  (tab tb)
+	  (setq nl t) )
+	(if (not (pprin (car l)))
+	    (setq l (cdr l))
+	  (setq ok ())
+	  (setq nl t)
+	  (pprin--v (cdr l) tb) ) )
+      (when ok
+	    (when l
+		  (if (< (+ (tab) (len (pname l))) 76)
+		      (printf " . ")
+		    (print)
+		    (tab tb)
+		    (setq nl t)
+		    (printf ". ") )
+		  (pprin l) )
+	    (if nl
+		(printf " )")
+	      (printf ")") ) )
+      nl ) )
+
+(de pprin--n(l n)
+  (let ((c ""))
+    (while (and (consp l) (>= n 0))
+      (printf "%s" c)
+      (setq c " ")
+      (pprin (car l))
+      (setq l (cdr l))
+      (setq n (1- n)) )
+    l ) )
+
+(de pprin(l)
+  (let ((tb (tab))
+        (type (and (consp l) (getp (car l) 'pprint-type))) )
+    (when (numberp type)
+      (setq type (cons type ())) )
+    (cond
+     ;; nil
+     ((not l) (prin l) ())
+     ;; method 'pprint' is defined
+     ((and (classof l) (getmethod (classof l) 'pprint))
+      (==> l pprint) )
+     ;; not a list
+     ((not (consp l)) (prin l) ())
+     ;; type is a pair
+     ((consp type)
+      (printf "(")
+      (setq l (pprin--n l (car type)))  ; first arguments in line
+      (when (consp l)
+        (cond                          ; next argument special
+         ((= (cadr type) 'indent)
+            (print)
+            (tab (+ tb 4))
+            (pprin (car l)) 
+            (setq l (cdr l)) )
+         ((= (cadr type) 'cond)
+           (while (consp l)
+             (print)
+             (tab (+ tb 2))
+             (if (not (consp (car l)))
+                 (pprin l)
+               (printf "(")
+               (pprin (caar l))
+               (pprin--v (cdar l) (+ tb 4)) )
+             (setq l (cdr l)) ) )
+         ((= (cadr type) 'let)
+           (printf " ");
+           (if (not (consp (car l)))
+               (pprin (car l))
+             (printf "(")
+             (let ((tb (tab)))
+               (pprin (caar l))
+               (pprin--v (cdar l) tb) ) )
+           (setq l (cdr l)) ) ) )
+      (pprin--v l (+ tb 2)) )
+     ;; macro quote
+     ((and (= (car l) 'quote) (consp (cdr l)) (not (cddr l)))
+      (printf "'")
+      (pprin (cadr l)) )
+     ;; macro scope
+     ((and (= (car l) 'scope) (consp (cdr l)) (not (cdr (last l))))
+      (while (setq l (cdr l))
+        (printf ":")
+        (pprin (car l)) ) )
+     ;; start with symbol
+     ((symbolp (car l))
+      (printf "(")
+      (setq l (pprin--n l 0))
+      (pprin--h l (+ tb 2)) )
+     ;; default
+     (t
+      (printf "(")
+      (setq l (pprin--n l 0))
+      (pprin--h l (+ tb 2)) ) ) ) )
+
+(de pprint(l)
+    (pprin l)
+    (print)
+    t )
+
+(lock-symbol pprin--h pprin--v pprin--n pprin pprint)
+
+
+
+
+
+;;; --------- Pretty printer ---------
+
+(de pretty-print (f &optional name)
+  (when (and (consp f) (consp (cdr f)) (consp (cddr f)))
+    (when (and name (= (car f) 'lambda))
+      (setq f `(de ,name ,@(cdr f))) )
+    (when (and name (= (car f) 'flambda))
+      (setq f `(df ,name ,@(cdr f))) )
+    (when (and name (= (car f) 'mlambda))
+      (setq f `(dm ,name ,@(cdr f))) )
+    (when (and name (= (car f) 'zlambda))
+      (setq f `(dz ,name ,@(cdr f))) )
+    (when (and (= (car f) 'dm) (= (caddr f) '|DMD|))
+      (let ((body (cdr (cdar (cddr (cadr (cddr f))))))
+            (args (caaar (cdadr (cdadr (cddr f))))) )
+        (setq f `(dmd ,(cadr f) ,args ,@body)) ) )
+    (when (and (= (car f) 'de) (macrochp (cadr f)) (null (caddr f)))
+      (let ((body (cdddr f)))
+        (setq f `(dmc ,(cadr f) ,@body)) ) ) )
+  (pprint f) )
+
+(dm pretty(pretty f)
+    (nodebug
+     (if (symbolp f) 
+	 `(nodebug (==> ,f pretty))
+       `(let* ((x ,f) (c (classof x)))
+          (if (and c (getmethod c 'pretty))
+              (==> x pretty)
+            (pretty-print x) ) ) ) ) )
+
+(dmc |^P| `(pretty ,(read)))  
+
+(dm save(save f . l)
+  (when l
+    `(nodebug (writing (open-write ,f "lsh")
+		,@(all ((i l)) (list 'pretty i)) ) ) ) )
+
+(lock-symbol pretty-print pretty save |^P|)
+
+
+;;; --------- Edition Functions ---------
+
+(defvar edit-call ())
+(defvar edit-buffer (tmpname () "lsh"))
+
+(cond
+ ((not wintl3p)
+  ;; unix
+  (setq edit-call (getenv "EDITOR"))
+  (when (= edit-call "")
+    (setq edit-call "vi") ) 
+  (when (= edit-call "dm")
+    (setq edit-call ()) ) )
+ ((wintl3p)
+  ;; windows GUI
+  (setq edit-call ()) )
+ (t
+  ;; windows Console
+  (setq edit-call "edit") ) )
+
+(de edit (fn &optional createp)
+  ;; libload.search raises an error if file not found
+  (when createp
+    (sys (str-cat "touch " fn)) ) ;; this is unix only
+  (let ((fn (or (and (filep fn) fn)
+                (and (filep (libload.search fn)) (libload.search fn))) ))
+    (cond
+     (edit-call  (sys (str-cat edit-call " " fn)) )
+     (xdmc       (xdmc (str-cat "ce " fn)) )
+     (winedit    (winedit fn) )) ))
+
+(de fedit(_s_)
+  (if _s_ 
+      (eval (list 'save edit_buffer _s_)))
+    (edit edit_buffer)
+    (when edit-call
+      (load edit_buffer) ) )
+
+(dmc |^E| `(edit ,(read-string)))
+
+(dmc |^F| `(fedit ',(namedclean (read-string))))
+
+(lock-symbol edit fedit |^E| |^F|)
+
+;;; --------- Strings/Regex ---------
+
+(defun make-string (n c)
+  (let ((s "") (p (ceil (log2 n))))
+    (while (>= p 0)
+      (setq s (str-cat s s (if (testbit n p) c "")))
+      (decr p) )
+    s))
+
+(defmacro str-startswith (s prefix)
+  `(let ((s ,s) (p ,prefix))
+     (= (str-left s (len p)) p)) )
+
+(defmacro str-endswith (s suffix)
+  `(let ((s ,s) (p ,suffix))
+     (= (str-right s (len p)) p)) )
+
+(de str-join (j ss)
+  (if (null ss)
+      ""
+    (let ((args (list (car ss))))
+      (apply str-cat 
+             (prog1 args
+               (dolist (s (cdr ss))
+                 (setq args (last args))
+                 (rplacd args (list j s)) ))))))
+
+(defmacro str-split (s sep)
+  `(regex-split ,sep ,s () () t) )
+
+(de str-strip (s) 
+  (str-stripl (str-stripr s)) )
+
+(de str-stripl(s) 
+  (regex-subst "^( )+" "" s) )
+
+(de str-stripr(s)
+  (regex-subst "( )+$" "" s) )
+
+(de regex-rseek (r s &optional n gr)
+  (setq n (if (numberp n) (max (int n) 0) -1))
+  (let* ((x ()) (i 0) (l (list ())))
+    (while (and (<> 0 n) (setq x (regex-seek r s i)) )
+      (setq i (apply + x))
+      (setq l (cons x l))
+      (incr n -1) )
+    (setq l (when (<= n 0) (cdr (reverse l))))
+    (when (and l gr)
+      (let* ((ll l) (x 1))
+	(while ll
+	  (when (not (regex-match gr (str-mid s x (- (caar ll) x))))
+            (setq l () ll ()) )
+	  (setq x (caar ll))
+	  (setq ll (cdr ll)) )
+	(when (< n 0)
+	  (when ~(regex-match gr (str-mid s (apply + (lasta l))))
+		(setq l () ll ()) ) ) ) )
+    l ))
+
+(de regex-skip (r s &optional n gr neg)
+  (when ~n (setq n 0))
+  (if (<= n 0)
+      s
+    (let* ((l (regex-rseek r s n gr)))
+      (when l (str-mid s (if neg (car (lasta l)) (apply + (lasta l))))))))
+
+(de regex-split (r s &optional n gr neg)
+  (let* ((l (regex-rseek r s n gr)))
+    (if neg
+	(let* ((y 0))
+	  (nconc
+	   (domapcar (((x i) l))
+             (prog1 (str-mid s y (- x y))
+	       (setq y (+ x i)) ))
+	   (if n () (list (str-mid s y)))))
+      (domapcar (((x i) l))
+	(str-mid s x i)) )))
+
+(de regex-count (r s) 
+  (length (regex-rseek r s)) )
+
+(de regex-tail (r s &optional n gr neg)
+  (when ~n (setq n 1))
+  (let* ((i (regex-count r s)))
+    (when (>= i n)
+      (regex-skip r s (if neg (- i n) (1+ (- i n))) gr ~neg))))
+
+(de regex-member (rl s)
+  (while (and rl s)
+    (if (regex-match rl)
+	(setq s ())
+      (setq rl (cdr rl))))
+  (car rl))
+
+(lock-symbol str-stripl str-stripr str-strip)
+
+(lock-symbol regex-rseek regex-skip 
+             regex-split regex-count
+             regex-tail regex-member)
+
+
+
+;;; --------- List of symbols ---------
+
+(de print-symbols p 
+  (if p 
+      (setq p (car p)) 
+    (setq p "") ) 
+  (let ((pos 0)) 
+    (dolist (i (mapcar nameof (symbols)))
+      (when (str-find p i) 
+        (printf "%s" (str-left i 17)) 
+        (setq pos (if (< pos 50) 
+                      (+ pos 19) 
+                    (printf "\n") 
+                    0 )) 
+        (tab pos) ) ) ) 
+  (print) )
+
+(dmc |^S| (list 'print-symbols (read-string)))
+
+(lock-symbol |^S| print-symbols)
+
+
+;;; --------- Shortcuts ----------
+
+(defalias .cl circular-list)
+(defalias .v  vector)
+
+(defparameter 0s (.cl 0))
+(defparameter 1s (.cl 1))
+(defparameter nils (.cl ()))
+(defparameter ts (.cl t))
+
+(lock-symbol .cl .v 0s 1s nils ts)
+
+;;; --------- Numbers ----------
+
+(defalias int to-int)
+
+(defmacro incr (a &optional (b 1))
+  (cond
+   ((symbolp a) ; simple variable increment
+    `(setq ,a (+ ,a ,b)) )
+   ((consp a)   ; scoped scalar or array element increment
+    (cond
+     ((= (car a) 'scope)
+      `(setq ,a (+ ,a ,b)) )
+     ((and (consp (car a)) (= (caar a) 'scope))
+      `(,@a (+ ,a ,b)) )
+     ((not (consp (car a)))
+      `(,@a (+ ,a ,b)) )
+     (t 
+      (error "argument is neither a variable nor an array element") )))))
+
+(defmacro decr (a &optional (b 1))
+  `(incr ,a (- ,b)) )
+
+(defmacro mod (x y)
+  `(let ((x ,x) (y ,y))
+     (- x (* (floor (/ x y)) y)) )
+  )
+
+(defmacro rem (x y)
+  `(let ((x ,x) (y ,y))
+     (- x (* (trunc (/ x y)) y)) )
+  )
+
+(defconstant +pi+  (acos -1))
+(defconstant +2pi+ (+ +pi+ +pi+))
+(defconstant +e+   (exp 1))
+(defconstant +macheps+ (eps 1))
+
+;;; --------- Modules ---------
+
+(de module.hook(what m)
+  (cond
+   ;; ON INIT
+   ((= what 'init)
+    (dolist ((obj . name) (module-defs m))
+      (cond
+       ;; global definition
+       ((symbolp name)
+        (let ((oldobj (eval `(scope ,name))))
+          ;; - save old definition when precious is set
+          (when (and oldobj (getp oldobj 'precious))
+            (putp obj 'saved oldobj)
+            ;; - functions: save source
+            (when (functionp oldobj)
+              (putp obj 'source (funcdef oldobj)) )
+            ;; - classes: copy methods
+            (when (and (classp oldobj) (classp obj))
+              (dolist (m (methods oldobj))
+                (putmethod obj m (getmethod oldobj m)) ))))
+        ;; - perform definition
+        (eval `(setq (scope ,name) ',obj)) )
+       ;; method definiton
+       ((consp name)
+        ;; - perform definition
+        (when (and (classp (car name)) (symbolp (cdr name)))
+          (putmethod (car name) (cdr name) obj) )))))
+   ;; ON UNLINK
+   ((= what 'unlink)
+    (dolist ((obj . name) (module-defs m))
+      (cond
+       ;; global definition
+       ((symbolp name)
+        (let ((oldobj (getp obj 'saved)))
+          (when (and oldobj (== obj (eval `(scope ,name))))
+	    (if (not (and (classp oldobj) (classp obj)))
+		;; non class: undo global definition
+		(eval `(setq (scope ,name) ',oldobj))
+	      ;; class: copy saved methods
+	      (putp obj 'saved ())
+	      (putp obj 'precious (getp oldobj 'precious))
+	      (dolist (mt (methods oldobj))
+		(putmethod obj  mt (getmethod oldobj mt)) ))))))))))
+
+(de mod-search(name)
+  (let ((found ())
+        (n (concat-fname name))
+        (l (module-list)))
+    (dolist (m l)
+      (when (= name (module-filename m))
+        (setq found m) ) )
+    (when (not found)
+      (setq name (basename name))
+      (dolist (m l)
+        (when (= name (basename (module-filename m)))
+          (setq found (cons m found)) ) )
+      (if (and found (not (cdr found)))
+          (setq found (car found))
+        (setq found ()) ) )
+    found ) )
+
+(de mod-list()
+  (mapcar module-filename (module-list)) )
+
+(de mod-status()
+  (dolist (m (module-list))
+    (==> m pretty) ) )
+
+(de mod-inquire(name)
+  (let ((m (mod-search name)))
+    (when m
+      (let ((d (module-defs m))
+            (i (module-initname m))
+            (x (module-executable-p m)) )
+        (cons (cond
+               ((not i) "State: not initializable")
+               ((not d) "State: initializable")
+               (x "State: initialized, executable")
+               (t "State: initialized, partially linked") )
+              (mapcar cdr (module-defs m)) ) ) ) ) )
+
+(de mod-load(name)
+  (module-filename (module-load name module.hook)) )
+
+(de mod-unload(name)
+  (let ((m (mod-search name)))
+    (when (not m)
+      (error 'mod-unload "Unknown module name" name) )
+    (module-unload m) ) )
+
+(defvar mod-dlopen mod-load)
+
+(lock-symbol module.hook 
+             mod-search mod-list mod-status 
+             mod-inquire mod-load mod-unload )
+
+
+
+;;; --------- Declaring types -----------
+
+;; Types have no existence in the interpreter.
+;; This is all compiler support...
+
+;; verify type syntax
+(defvar verify-type-decl-format.table (htable))
+
+(de verify-type-decl-format (source &optional (where declare))
+  (let ((result (verify-type-decl-format.table source)))
+    (when (not result)
+      (when (or (not (consp source))
+                (not (symbolp (car source))) )
+        (error where "invalid type specifier" source) )
+      (let ((chk-type-syntax (getp (car source) 'type-syntax)))
+        (when (not (functionp chk-type-syntax))
+          (error where "invalid type specifier" source) )
+        (setq result (chk-type-syntax where source)) 
+        (when (and (<> type -obj-) (<> type -list-))
+          (verify-type-decl-format.table source result) ) ) )
+    result ) )
+
+;; idx base types
+(putp '-bool-   'srg-type BoolStorage)
+(putp '-int-    'srg-type IntStorage)
+(putp '-short-  'srg-type ShortStorage)
+(putp '-byte-   'srg-type CharStorage)
+(putp '-char-   'srg-type CharStorage)
+(putp '-ubyte-  'srg-type UCharStorage)
+(putp '-uchar-  'srg-type UCharStorage)
+(putp '-flt-    'srg-type FloatStorage)
+(putp '-float-  'srg-type FloatStorage)
+(putp '-real-   'srg-type DoubleStorage)
+(putp '-double- 'srg-type DoubleStorage)
+(putp '-gptr-   'srg-type GptrStorage)
+(putp '-mptr-   'srg-type MptrStorage)
+(putp '-any-    'srg-type storage)
+
+;; no type check
+(putp '-any- 'type-syntax
+      (lambda(where source)
+        (or (let-filter (((fn) source)) =)
+            (error where "Illegal syntax" source) ) ) )
+;; boolean type check
+(putp '-bool- 'type-syntax
+      (lambda(where source)
+        (or (let-filter (((fn) source)) (lambda(x) t))
+            (error where "Illegal syntax in boolean type" source) ) ) )
+;; string type check
+(putp '-str-  'type-syntax
+      (lambda(where source)
+        (or (let-filter (((fn) source)) stringp)
+            (error where "Illegal syntax in string type" source) ) ) )
+;; numeric type check
+(domapc ((fn '(-byte- -char- -ubyte- -uchar- -short- -int- -flt- -float- -real- -double-)))
+  (putp fn 'type-syntax
+        (lambda(where source)
+          (or (let-filter (((fn) source)) numberp)
+              (error where "Illegal syntax in number type" source) ) ) ) )
+;; object type check
+(putp '-obj- 'type-syntax
+      (lambda(where source)
+        (or (let-filter (((fn (classname)) source))
+              (and (symbolp classname) 
+                   (eval `(lambda(x) (isa x ,classname)))) )
+            (error where "Illegal syntax in object type" source) ) ) )
+;; gptr type check
+(putp '-gptr- 'type-syntax
+      (lambda(where source)
+        (let ((gptrp (lambda(x) (or (not x) (isa x Gptr)))))
+          (or (let-filter (((fn) source)) gptrp)
+              (let-filter (((fn arg) source)) (and (stringp arg) gptrp))
+              (let-filter (((fn (arg)) source)) (and (symbolp arg) gptrp))
+              (error where "Illegal syntax in gptr type" source) ) ) ) )
+;; mptr type check
+(putp '-mptr- 'type-syntax
+      (lambda(where source)
+        (let ((mptrp (lambda(x) (or (not x) (isa x Mptr)))))
+          (or (let-filter (((fn) source)) mptrp)
+              (let-filter (((fn arg) source)) (and (stringp arg) mptrp))
+              (let-filter (((fn (arg)) source)) (and (symbolp arg) mptrp))
+              (error where "Illegal syntax in mptr type" source) ) ) ) )
+;; list type check
+(putp '-list- 'type-syntax
+      (lambda(where source)
+        (let ((chk ())
+              (listchk (lambda(x chk)
+                         (let ((okay t))
+                           (while (and okay (consp x) (consp chk))
+                             (setq okay ((car chk) (car x)))
+                             (setq chk (cdr chk))
+                             (setq x (cdr x)) )
+                           (and okay (not x) (not chk)) ) )))
+          (dolist (arg (cdr source))
+            (setq chk (nconc1 chk (verify-type-decl-format arg where))) )
+          (eval `(lambda(x) (,listchk x ',chk))) ) ) )
+;; function type check
+(putp '-func- 'type-syntax
+      (lambda (where source)
+	(or (let-filter (((fn fargs result) source))
+	      (and (verify-type-decl-format `(-list- ,@fargs) where)
+		   (verify-type-decl-format result where)
+		   (eval `(lambda (f) (= (length (cadr (funcdef f))) 
+					 ,(length fargs))))))
+	    (error where "Illegal syntax in function type" source) )))
+;; method type check
+(putp '-method- 'type-syntax
+      (lambda (where source)
+	(or (let-filter (((fn (classname) fargs result) source))
+              (and (symbolp classname) 
+		   (verify-type-decl-format `(-list- ,@fargs) where)
+		   (verify-type-decl-format result where)
+		   (eval `(flambda (f)
+			    (and
+			     (member f (methods ,classname))
+			     (= (length (cadr (funcdef (getmethod ,classname f))))
+				,(length fargs)))) )))
+	    (error where "Illegal syntax in function type" source) )))
+;; idx type check
+(let* ((idxsyntax 
+        (lambda(ndim where source)
+          (let ((idxcheck 
+                 (lambda(x ndim srgtype)
+                   (and (indexp x) (= (idx-rank x) ndim)
+                        (isa (idx-storage x) srgtype) ) ) ))
+            (or (let-filter (((fn (base)) source))
+                  (let ((srgtype (getp base 'srg-type)))
+                    (when (or (not (symbolp base)) (not srgtype))
+                      (error where "Illegal base for index type" source) )
+                    (eval `(lambda(x) (,idxcheck x ,ndim ,srgtype))) ) )
+                (error where "Illegal syntax in index type" source) )))))
+  (for (ndim 0 +MAXDIMS+)
+    (putp (named (sprintf "-idx%d-" ndim)) 'type-syntax
+          (eval `(lambda(where source) 
+                   (,idxsyntax ,ndim where source) ) ))))
+
+;; srg type check
+(putp '-srg- 'type-syntax
+      (lambda(where source)
+	(or (let-filter (((fn (base)) source))
+	      (let ((srgtype (getp base 'srg-type)))
+		(when (or (not (symbolp base)) (not srgtype))
+		  (error where "Illegal base for storage type" source) )
+		(eval `(lambda(x) (,isa x ,srgtype))) ))
+	    (error where "Illegal syntax in storage type" source) )))
+
+;; variable declaration
+(df declare (|Type| . |Syms|)
+  (setq |Type| (verify-type-decl-format |Type|))
+  (dolist (|Sym| |Syms|)
+    (when (not (symbolp |Sym|))
+      (error 'declare "not a symbol" |Sym|) )
+    (when (not (eval (list |Type| |Sym|)))
+      (error 'declare "type mismatch" |Sym|) ) ) )
+
+(lock-symbol verify-type-decl-format 
+             verify-type-decl-format.table declare)
+
+;; backward compatibility
+(storage-class 'b (storage-class 'c))
+(defalias to-byte      to-char)
+(defalias to-ubyte     to-uchar)
+(defalias byte-array   char-array)
+(defalias byte-array*  char-array*)
+(defalias ubyte-array  uchar-array)
+(defalias ubyte-array* uchar-array*)
+
+
+;;; --------- Misc compiler support ---------
+
+(df breakp () 
+  () )
+(dm protect (fn . args)
+  (cons 'progn args) )
+(dm unprotect (fn . args)
+  (cons 'progn args) )
+(de ccall args
+  (error 'ccall "only works in compiled functions" ()) )
+(df cinline args
+  (error 'cinline "only works in compiled functions" ()) )
+(df cheader args
+  (error 'cheader "only works in compiled functions" ()) )
+(df cpheader args
+  (error 'cpheader "only works in compiled functions" ()) )
+(df cinit args
+  (error 'cpheader "only works in compiled functions" ()) )
+(df cidx-bloop args
+  (error 'cidx-bloop "only works in compiled functions" ()) )
+
+(dm ifdef (ifdef |TEST| . |ARGS|)
+  (if (eval |TEST|)
+      `(progn ,(car |ARGS|))
+    `(progn ,@(cdr |ARGS|)) ) )
+
+(dm ifcompiled (fn then . else)
+  (cons 'progn else) )
+
+(de cmacro.read-c()
+  (let ((nextchar (skip-char "")))
+    (cond
+     ((= nextchar "$")
+      (cmacro.read-dollar) )
+     ((= nextchar "#")
+      (read-string 1)
+      (if (<> (skip-char "") "}") "#" (read-string 1) "#}") )
+     ((str-find nextchar " \t\n\r")
+      (read-string " \t\n\r") )
+     ((str-find nextchar "\"'")
+      (cmacro.read-string (read-string 1)) )
+     ((= nextchar "/")
+      (cmacro.read-comment))
+     (t
+      (read-string "~$#\"'/\e") ) ) ) )
+
+(de cmacro.read-comment()
+  (let ((c (read-string 1))
+	(cc (skip-char "")) )
+    (selectq cc
+      ("/" ;; c++ style comment
+       (setq c (str-cat c (read-string "~\n\r") "\n")) )
+      ("*" ;; c style comment
+       (while (and (<> cc "/") (<> cc "\e"))
+	 (setq c (str-cat c (read-string "~*\e") (read-string "*")))
+	 (setq cc (skip-char "")) )
+       (setq c (str-cat c (read-string 1))) ) )
+    c) )
+
+(de cmacro.read-string(delim)
+  (let ((dat (list delim))
+        (str ())
+        (ok t))
+    (while ok
+      (setq str (read-string (str-cat "~\e\\" delim)))
+      (setq dat (nconc1 dat str))
+      (if (= (skip-char "") "\\")
+          (setq dat (nconc1 dat (read-string 2)))
+        (setq ok ()) ) )
+    (if (= (skip-char "") delim)
+        (setq dat (nconc1 dat (read-string 1))) )
+    (apply str-cat dat) ) )
+
+(de cmacro.read-dollar()
+  (read-string 1)
+  (let ((nextchar (skip-char "")))
+    (cond 
+     ((= nextchar "(")
+      (read) )
+     ((= nextchar "{")
+      (read-string 1)
+      (let ((data (read-string "~{}() ;'\"")))
+        (if (<> (read-string 1) "}") 
+            (error "Illegal $-expression in #{ ... #}")
+          (named data) ) ) )
+     ((and (>= (upcase nextchar) "A") (<= (upcase nextchar) "Z"))
+      (namedclean (read-string "A-Za-z0-9_")) )
+     (t
+      (error "Illegal $-expression in #{ .... #}") ) ) ) )
+
+(de cmacro.parse-c (s)
+  (let ((continue t)
+	(exprs ()) 
+	(stmts (list "")) )
+    (reading-string s
+      (while continue
+	(let ((item (cmacro.read-c)))
+	  (when (stringp item)
+	    (setq item (regex-subst "%" "%%%%" item)))
+	  (cond
+	   ((= item "")
+	    (setq continue ()) )
+	   ((stringp item)
+	    (setq stmts (nconc1 stmts item)) )
+	   (t
+	    (setq stmts (nconc1 stmts "(%s)"))
+	    (setq exprs (nconc1 exprs item)) )))))
+    (let ((l (last stmts)))
+      (rplaca l (regex-subst "[ \t\n\r]*$" "" (car l)))
+      `(cinline ,(apply str-cat stmts) ,@exprs) )))
+
+(defmacro defcmacro def
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((name args . ccode) def)
+	(fargs ())
+ 	(substitutor '(lambda (s)))
+ 	(argchk-code ())
+	(bindings ()) ) 
+    ;; process formal arguments
+    (domapcar ((arg args))
+      (setq fargs (cons (gensym) fargs))
+      (cond
+       ((stringp arg)
+	(setq argchk-code (append argchk-code `((when (not (stringp ,(car fargs)))
+						(error "not a string" ,(car fargs)))) ))
+	(setq substitutor (append substitutor `((setq s (regex-subst ,arg ,(car fargs) s))) )))
+       ((symbolp arg)
+	(setq argchk-code (append argchk-code `((when (not (symbolp ,(car fargs)))
+						(error "not a symbol" ,(car fargs)))) ))
+	(setq bindings (cons (list 'list (list 'quote arg) (car fargs)) bindings)) )
+       (t
+	(error "invalid formal argument" arg) )))
+    (setq substitutor (append substitutor '(s)))
+    ;; check macro body
+    (domapcar ((cline ccode))
+      (when (not (stringp cline)) (error "not a string" cline)) )
+    ;; create the macro 
+    `(defmacro ,name (,@(reverse fargs))
+       ,@argchk-code
+       (let ((ccode (mapcar ,substitutor ',ccode)))
+	 (nconc (list 'let (list ,@(reverse bindings)))
+		(domapcar ((cline ccode)) (cmacro.parse-c cline)) )))
+    ))
+
+(dmc |#{|
+  (let ((again t)
+        (expr ()) 
+        (stmt (list "")) )
+    (while again
+      (let ((item (cmacro.read-c)))
+        (when (stringp item)
+          (setq item (regex-subst "%" "%%%%" item)) )
+        (cond
+         ((= item "#}")
+          (setq again ()) )
+         ((= item "\e")
+          (error "unbalanced cmacro #{ #}") )
+	 ((stringp item)
+	  (setq stmt (nconc1 stmt item)) )
+	 (t
+	  (setq stmt (nconc1 stmt "(%s)"))
+	  (setq expr (nconc1 expr item)) ) ) ) )
+    (let ((l (last stmt)))
+      (rplaca l (regex-subst "[ \t\n\r]*$" "" (car l))) )
+    (list  `(cinline ,(apply str-cat stmt) ,@expr)) ) )
+
+(lock-symbol breakp protect unprotect 
+             cinline ifdef ifcompiled
+             cmacro.read-c cmacro.parse-c cmacro.read-string 
+	     cmacro.read-comment cmacro.read-dollar |#{|
+	     defcmacro)
+
+;;; --------- Online Help Support ---------
+
+(defvar |*HELPFILES| ())
+
+(dmc |^A| (list 'apropos (read-string)))
+
+(dmc |#?|
+     (read-string "~\n\r\e")
+     (when (and (<> file-being-loaded "$stdin")
+                (<> file-being-loaded (car |*HELPFILES|)) )
+       (let ((m (member file-being-loaded |*HELPFILES|)))
+         (when m 
+           (rplaca m (car |*HELPFILES|))
+           (setq |*HELPFILES| (cdr |*HELPFILES|)) ) )
+       (setq |*HELPFILES| (cons file-being-loaded |*HELPFILES|)) )
+     () )
+
+(dmc |^H| (helptool))
+
+(de help () 
+  (printf "Enter ^H or (helptool) to open the Lush documentation browser window.\n")
+  (printf "Enter ^A<topic> for console-based topic help.\n"))
+
+
+;;; --------- File searching -----------
+
+(de find-file (dirlist file &optional extlist)
+  (setq extlist (or extlist (list "")))
+  (let ((keepgoing t) (e ()) (d ()) (f ()) (r ()))
+    (while (and keepgoing dirlist)
+      (setq d (car dirlist))
+      (setq e extlist)
+      (while (and keepgoing e)
+        (setq f (concat-fname d (str-cat file (car e))))
+        (when (filep f)
+          (setq r f) (setq keepgoing ()))
+        (setq e (cdr e)))
+      (setq dirlist (cdr dirlist)))
+    r))
+
+(defvar c-include-path      '("/usr/include"))
+(defvar static-library-path '("/usr/lib"))
+(defvar shared-library-path '("/usr/lib"))
+
+(de find-c-include(name) 
+  (find-file c-include-path name '("")) )
+
+(de find-static-library(name &optional extlist)
+  (when (not extlist)
+    (setq extlist '(""))
+    (when (not (str-find "." (basename name)))
+      (setq extlist (list (str-cat "." (or (getconf "AEXT") "a")))) ) )
+  (find-file static-library-path name extlist) )
+
+(de find-shared-library(name &optional extlist)
+  (let ((p shared-library-path))
+    (when (not extlist)
+      (setq extlist '(""))
+      (when (not (str-find "." (basename name)))
+        (setq extlist (list (str-cat "." (or (getconf "SOEXT") "so")))) ) )
+    (when (filep "/etc/ld.so.conf")
+      (reading "/etc/ld.so.conf"
+	(while (<> (skip-char) "\e")
+	  (let ((d (read-string "~\n\r\t\b ")))
+	    (when (and (dirp d) (not (member d p)))
+	      (setq p (cons d p)) ) ) ) ) )
+    (find-file (reverse p) name extlist) ) )
+
+(de find-shared-or-static-library(name &optional extlist)
+  (or (find-shared-library name extlist)
+      (find-static-library name) ) )
+
+(lock-symbol find-c-include
+             find-shared-library  
+             find-static-library  
+             find-shared-or-static-library )
+
+;; -------------
+
+;;; --------- autoload instructions ----------
+
+(autoload "libidx/idx-sort" idx-f1bsearch idx-d1bsearch idx-i1bsearch)
+
+;;; --------- Boostrap startup -----------
+
+
+(dm startup(f . argv)
+  (when argv
+    ;; This is only used to create nice dump files
+    (when (or (<> (length argv) 3) (<> (nth 1 argv) "--"))
+      (writing "$stderr"
+        (printf "Usage: lush2 @sysenv <lushfile> -- <dumpfile>\n") 
+        (exit 10) ) )
+    (let ((file (car argv)))
+      (apply path (path))
+      (setq file (or (filepath file) file))
+      (when (not (filep file))
+        (writing "$stderr"
+          (printf "lush2 @sysenv: cannot locate file '%s'\n" file)
+          (exit 10) ) )
+      `(progn
+         (lush-is-quiet ())
+         (printf "... loading file \"%s\".\n" ,file)
+         (libload ,file)
+         (when (== startup ,startup)
+           (writing "$stderr"
+             (printf "lush2 @sysenv: lush file must define 'startup'.\n")
+             (exit 10) ) )
+         (printf "... dumping to \"%s\" (%d KB).\n"
+                 ,(lasta argv) (/ (dump ,(lasta argv)) 1024) )
+         (exit 0) ) ) ) )
+

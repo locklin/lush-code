@@ -1,0 +1,185 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "datatypes/pairing-heap")
+(libload "datatypes/int-tree-node")
+
+(defclass IntHeap PairingHeap
+  (specialize (-obj- (IntTreeNode)) root)
+  ((-int-) next-item) )         ; not used, but needs to be declared
+
+
+#? (new IntHeap)
+;; Create a new empty min-heap for integers.
+
+(defclass SmallIntHeap iterator
+  ((-obj- (IntHeap))   hp)      ; the actual heap
+  ((-srg- (-double-)) keys)     ; current keys
+  ((-int-)             n)       ; number of items
+  )
+
+(putmethod SmallIntHeap 'peeknext ()) ; otherwise compilation order wrong
+(putmethod SmallIntHeap 'next ())     ;
+
+#? (new SmallIntHeap <n>)
+;; Create a new empty min-heap for integers in the range [0..<n-1>].
+;; 
+;; A <SmallIntHeap> supports deletion (method <remove>) and updating
+;; of item keys. Unlike an <IntHeap>, a <SmallIntHeap> keeps only one
+;; instance of an item in the heap (items are unique). Use method 
+;; <insert> to insert an new item or to change an item's key.
+;;
+;; This heap implementation requires that the possible item values
+;; are in a fixed range [0..<n-1>], where <n> must be specified at
+;; heap creation time. A <SmallIntHeap> uses memory linear in <n>.
+;; Like class <Heap>, <SmallIntHeap> supports the iterator protocol.
+(defmethod SmallIntHeap SmallIntHeap (size)
+  (declare (-int-) size)
+  (setq hp (new IntHeap))
+  (setq keys (double-storage size))
+  (storage-clear keys NAN)
+  (setq n 0)
+  () )
+
+;;#? (==> <SmallIntHeap> insert <k> <i>)
+;; Insert item <i> with key <k> or update item <i>'s key to <k>.
+(defmethod SmallIntHeap insert (k i)
+  (declare (-double-) k)
+  (declare (-int-) i)
+  (when (or (>= i (storage-nelems keys)) (< i 0))
+    (error "item out of range") )
+  (when (<> k (keys i))
+    (==> hp insert k i)
+    (when (nanp (keys i))
+      (incr n) )
+    (keys i k) )
+  ())
+
+;;#? (==> <SmallIntHeap> number-of-items)
+(defmethod SmallIntHeap number-of-items ()
+  n)
+
+;; remove obsolete entries from the heap
+(defmethod SmallIntHeap -update-heap ()
+  (let ((n :hp:n))
+    (declare (-int-) n)
+    ;; drop obsolete entries
+    (while (and (> n 0) (<> :hp:root:key (keys :hp:root:item)))
+      (decr n)
+      (==> hp next)
+      ))
+  ())
+
+;;#? (==> <SmallIntHeap> key)
+;; Return current minimum key.
+(defmethod SmallIntHeap key ()
+  (==> this -update-heap)
+  (==> hp key) )
+
+
+;;#? (==> <SmallIntHeap> peeknext)
+;; Return the minimum-key item without removing it from the heap.
+(defmethod SmallIntHeap peeknext ()
+  (==> this -update-heap)
+  (==> hp peeknext) )
+
+
+;;#? (==> <SmallIntHeap> next)
+;; Remove the minimum-key item from the heap and return it.
+(defmethod SmallIntHeap next ()
+  (==> this -update-heap)
+  (let ((i (==> hp next)))
+    (keys i NAN)
+    (decr n)
+    i))
+
+
+#? (==> <SmallIntHeap> remove <i>)
+;; Remove item <i> from heap, return <t> on success and <()>
+;; when <i> was not in the heap.
+(defmethod SmallIntHeap remove (i)
+  (declare (-int-) i)
+  (if (nanp (keys i))
+      ()
+    (decr n)
+    (keys i NAN)
+    t))
+
+
+;;#? (==> <SmallIntHeap> drop-lt <min-key>)
+;; Remove all items with key strictly less than <min-key> and
+;; return key of new minimum item in heap or <NaN> when heap is
+;; empty.
+(defmethod SmallIntHeap drop-lt (mk)
+  (declare (-double-) mk)
+  (let ((continue t))
+    (while (and (> n 0) continue)
+      (==> this peeknext)
+      (setq continue (< :hp:root:key mk))
+      (when continue
+        (==> this next)
+        (decr n) ))
+  (if (= n 0)
+      NAN
+    :hp:root:key) ))
+
+
+;;#? (==> <SmallIntHeap> clear)
+;; Clear heap. After calling this method the heap object is empty.
+(defmethod SmallIntHeap clear ()
+  (==> hp clear)
+  (storage-clear keys NAN)
+  (setq n 0)
+  ())
+
+
+(defmethod SmallIntHeap -emptyp ()
+  (= n 0) )
+
+
+(defmethod SmallIntHeap -iterate ()
+  this)
+
+
+(dhc-make-class () IntHeap SmallIntHeap)
+
+
+(defun test-heap (&optional (n 10))
+  (let ((h (new IntHeap))
+	(l (domapcar ((i (range n)))
+	     (cons (rand) i)) ))
+    (dolist (p l)
+      (==> h insert (car p) (cdr p))
+      ;(pretty :h:keys) (pretty :h:dir) 
+      )
+
+    (setq l (sort-list l (lambda (a b) (> (car a) (car b)))))
+    ;(print (mapcar car l))
+    (print (mapcar cdr l))
+    (let ((l2 (take n h)))
+      (when (<> l2 (mapcar cdr l))
+	(error "heap sort gave different result:\n" l2)))))

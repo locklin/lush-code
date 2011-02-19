@@ -1,0 +1,338 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; template class for iterators
+(deftemplate iterator object
+  ((-bool-) next-item-valid)
+  ((-any-)  next-item) )
+
+(defmethod iterator iterator ()
+  (setq next-item-valid ()) )
+
+(defmethod iterator -iterate ()
+  this)
+
+(defmethod iterator -make-next ()
+  (error "method '-make-next' not implemented")
+  ())
+
+(defmethod iterator -emptyp ()
+  (when (not next-item-valid) (==> this -make-next))
+  (not next-item-valid) )
+
+(defmethod iterator peeknext ()
+  (when (not next-item-valid) (==> this -make-next))
+  (when (not next-item-valid) (error "No more items"))
+  next-item)
+
+(defmethod iterator next ()
+  (when (not next-item-valid) (==> this -make-next))
+  (when (not next-item-valid) (error "No more items"))
+  (setq next-item-valid ())
+  next-item)
+
+(dhc-make "iterator_base_class" (iterator iterator))
+
+
+;; RangeIterator: iterator returned by function iter-range
+(defclass RangeIterator iterator
+  ((-int-) next-item to step))
+
+(putmethod RangeIterator 'RangeIterator ()) ; remove default constructor from method list
+(defmethod RangeIterator RangeIterator (from to step)
+  (declare (-int-) from to step)
+  (==> this iterator)
+  (setq next-item from  :this:to to  :this:step step)
+  (==> this -make-next)
+  (setq next-item from))
+
+(defmethod RangeIterator -make-next ()
+  (incr next-item step)
+  (setq next-item-valid 
+	(if (> step 0) (<= next-item to) (>= next-item to)) )
+  ())
+
+
+(defclass Range*Iterator RangeIterator)
+
+(defmethod Range*Iterator -make-next ()
+  (incr next-item step)
+  (setq next-item-valid 
+	(if (> step 0) (< next-item to) (> next-item to)) )
+  ())
+
+
+;;; iterator support for builtin types
+
+(defclass FunctionIterator iterator
+  f arg next-item)
+
+(defmethod FunctionIterator FunctionIterator (f arg)
+  (==> this iterator)
+  (setq :this:arg arg  :this:f f) )
+
+(defmethod FunctionIterator -make-next ()
+  (if (null arg)
+      (setq next-item (f))
+    (setq arg (f arg)  next-item arg) )
+  (setq next-item-valid t)
+  ())
+ 
+(defmethod function -iterate (&optional arg)
+  (new FunctionIterator this arg) )
+
+
+
+(defclass ListIterator iterator 
+  l next-item)
+
+(defmethod ListIterator ListIterator (l)
+  (==> this iterator)
+  (setq :this:l l) )
+
+(defmethod ListIterator -make-next ()
+  (when l (setq next-item (car l)  l (cdr l)  next-item-valid t))
+  ())
+
+(defmethod Cons -iterate ()
+  (new ListIterator this))
+
+
+
+(defclass HTableIterator iterator
+  ht keys next-item)
+
+(defmethod HTableIterator HTableIterator (-ht)
+  (==> this iterator)
+  (setq ht -ht)
+  (setq keys (htable-keys ht)) )
+
+(defmethod HTableIterator -make-next ()
+  (when keys
+    (setq next-item (cons (car keys) (ht (car keys)) ))
+    (setq keys (cdr keys))
+    (setq next-item-valid t) )
+  ())
+
+(defmethod HTable -iterate ()
+  (new HTableIterator this) )
+
+
+
+(defclass IndexIterator iterator 
+  m next-item)
+
+(defmethod IndexIterator IndexIterator (m)
+  (==> this iterator)
+  (setq :this:m (copy-index m)) )
+
+(defmethod IndexIterator -make-next ()
+  (when (not (idx-emptyp m))
+    (setq next-item (idx-select m 0 0) next-item-valid t)
+    (idx-trim! m 0 1) )
+  ())
+
+(defmethod Index -iterate ()
+  (new IndexIterator this))
+
+
+
+(defclass StorageIterator iterator 
+  st i next-item)
+
+(defmethod StorageIterator StorageIterator (st)
+  (==> this iterator)
+  (setq :this:st st  i 0) )
+
+(defmethod StorageIterator -make-next ()
+  (when (< i (storage-nelems st))
+    (setq next-item (st i)  next-item-valid t)
+    (incr i))
+  ())
+
+(defmethod storage -iterate ()
+  (new StorageIterator this))
+	   
+
+(defclass FibonacciIterator iterator
+  ((-int-) f)
+  ((-int-) next-item) )
+
+(defmethod FibonacciIterator FibonacciIterator ()
+  (==> this iterator)
+  (setq f 1  next-item 0  next-item-valid t) )
+
+(defmethod FibonacciIterator -make-next ()
+  (let ((g (+ next-item f)))
+    (declare (-int-) g)
+    (setq next-item f  next-item-valid t  f g)
+    ()))
+
+
+(defclass RangeShuffledIterator iterator
+  ((-int-) next-item from to x N A B count) )
+
+(defmethod RangeShuffledIterator RangeShuffledIterator (from to)
+  (declare (-int-) from to)
+  (==> this iterator)
+  (setq :this:from from  :this:to to)
+  (setq N (max 0 (- to from)))
+  (setq count N)
+  (let ((fib (new FibonacciIterator)))
+    (while (< (==> fib peeknext) N) (==> fib next))
+    (setq B (==> fib next))
+    (setq A (==> fib next)) )
+  (setq x 0)
+  ())
+
+(defmethod RangeShuffledIterator -make-next ()
+  (when (> count 0)
+    (do-while (>= x N)
+      (setq x (mod (+ x A) B)) )
+    (setq next-item (+ x from)  next-item-valid t)
+    (decr count) )
+  ())
+
+
+(defclass LinesIterator iterator
+  file next-item)
+
+(defmethod LinesIterator LinesIterator (filename)
+  (==> this iterator)
+  (setq file (open-read filename))
+  (when (null file)
+    (error "could not open file for reading" filename)))
+
+(defmethod LinesIterator -make-next ()
+  (reading file
+    (if (= (skip-char "") "\e")
+        (setq next-item-valid ())
+      (setq next-item (read-string))
+      (let ((c (read-string 1)))
+        (when (and (== c "\r") (= (skip-char "") "\n"))
+            (read-string 1) ))
+      (setq next-item-valid t))
+    ()))
+
+
+(defclass Lines*Iterator iterator
+  ((-gptr- "FILE *") f)
+  ((-gptr- "char *") base)
+  ((-int-) n)
+  ((-idx1- (-ubyte-)) next-item) )
+
+(defmethod Lines*Iterator -mmap-storage (filename srg)
+  (declare (-str-) filename)
+  (declare (-srg- (-ubyte-)) srg)
+  (cheader "#include <sys/mman.h>")
+  (cheader "#include <sys/types.h>")
+  (cheader "#include <stdint.h>")
+  (cheader "#include <errno.h>")
+  (cheader "#include <stdio.h>")
+  #{
+  assert($filename!=NULL);
+
+  $f = fopen($filename, "r");
+  if ($f==NULL)
+    run_time_error("file not found or inaccessible");
+
+  if (fseek($f,0,SEEK_END)==-1) {
+    fclose($f);
+    $f = NULL;      
+    run_time_error("file I/O error");
+  }
+  size_t len = ftell($f);
+  rewind($f);
+
+  if (len>PTRDIFF_MAX)
+    run_time_error("file too big for scanning");
+
+  $base = mmap(0, len, PROT_READ, MAP_SHARED, fileno($f), 0);
+  if ($base==MAP_FAILED) {
+    $srg->data = NULL;
+    run_time_error("error when mmapping file");
+
+  } else {
+    $srg->size = len;
+    $srg->kind = STS_MMAP;
+    $srg->isreadonly = true;
+    $srg->data = $base;
+  }
+  #}
+  ())
+
+(defmethod Lines*Iterator Lines*Iterator (filename)
+  (declare (-str-) filename)
+  (==> this iterator)
+  (setq next-item (ubyte-array 0))
+  (setq n 0)
+  (==> this -mmap-storage filename (idx-storage next-item))
+  ())
+
+(defmethod Lines*Iterator -make-next ()
+  (let ((srg (idx-storage next-item))
+        (ni  next-item)
+        (valid ()) )
+    (declare (-bool-) valid)
+    (when (to-bool #{ ($ni->offset)<($srg->size) #})
+      #{
+        $ni->offset += $n;
+        size_t n = 0;
+        size_t nmax = $ni->offset < $srg->size ? $srg->size - $ni->offset : 0;
+        char *c = $base + $ni->offset;
+        while (n<nmax && c[n]!='\n') n++;
+        $n = (int)(n + 1);
+        $ni->dim[0] = n;
+        $valid = (nmax>0);
+      #} )
+    (if valid
+        (printf "next item valid\n")
+      (printf "next item not valid\n") )
+    (setq next-item-valid valid)
+    () ))
+
+
+(defmethod Lines*Iterator -destructor ()
+  #{ 
+  if ($f) {
+    if (fseek($f,0,SEEK_END)==-1)
+      fprintf(stderr, "file I/O error in destructor");
+    else {
+      size_t len = ftell($f);
+      munmap($base, len);
+      fclose($f); 
+    }
+  }
+  #}
+  ())
+
+(dhc-make-class () 
+                RangeIterator 
+                Range*Iterator 
+                FibonacciIterator
+                RangeShuffledIterator
+                Lines*Iterator)

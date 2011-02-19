@@ -1,0 +1,577 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: svqp.lsh,v 1.4 2004/05/12 17:46:32 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libc/make")
+(libload "idx-double")
+
+
+#? *** SVQP interface.
+;; This is a Lush interface for the SVQP optimizer.
+;; SVQP was initially contributed by AT&T for the Royal Holloway
+;; Support Vector Machine package and known as the 'Bottou' optimizer.
+;; It was then made part of Lush.
+;;
+;; This optimizer solves simple convex programming problems
+;; that are relevant to Support Vector Machines.  It does
+;; not perform any chunking but is intended for being used
+;; on each chunk (and supports features for this purpose.)
+
+
+
+;; ----------------------------------------
+
+;; Compile and load the svqp c++ code.
+
+(let* ((cmd (regex-subst "\\$CC" "$CXX" dhc-make-command))
+       (dir (concat-fname (dirname file-being-loaded) "svqp"))
+       (lm (new LushMake dir)) )
+  (==> lm rule "svqp.o" '("svqp.cpp" "svqp.h") cmd)
+  (==> lm make)
+  (==> lm load) )
+
+
+;; ----------------------------------------
+
+
+#? * ConvexProgram
+;;.TYPE CLASS
+;;  Class <ConvexProgram> is the base class of SVQP.
+;;  Class <ConvexProgram> solves the following problem:
+;;.VP
+;;     Maximize          - f(x)
+;;     with              Cmin_i <= x_i <= Cmax_i
+;;     and (optionally)  sum_i x_i = constant.
+;;.PP
+;;  Function <f> must be a convex function of vector <x>.
+;;  It is defined by methods <compute-gx> and <compute-ggx>
+;;  These methods compute the value of <f>
+;;  on a given point <x>, the gradient of <f> on a given point <x>,
+;;  and the curvature of <f> on point <x> along direction <z>.
+;;
+;;  Specific convex optimization problems are set up
+;;  by subclassing <ConvexProgram> and overloading the
+;;  methods <compute-gx> and <compute-ggx>.  
+;;  The subclass constructor must then:
+;;.IP
+;;  Use the constructor method <ConvexProgram> to setup the vector sizes.
+;;.IP
+;;  Use methods <set-cmin> and <set-cmax> to set <Cmin_i> and <Cmax_i>.
+;;  Optionally use other <set-xxx> methods documented below.
+;;.IP
+;;  Use method <set-x> to set an initial feasible vector,
+;;  method <run> to perform the optimization, 
+;;  and method <get-x> to retrieve the solution.
+
+(defclass ConvexProgram object
+  ((-gptr-) cppobj) )
+
+#? (==> this ConvexProgram <n>)
+;; The constructor of class <ConvexProgram> should be called
+;; by subclass constructor. Argument <n> specifies the dimension
+;; of the input space.
+
+(defmethod ConvexProgram ConvexProgram(n)
+  (declare (-int-) n)
+  (when (to-bool #{ sizeof(svreal) != sizeof(double) #})
+    (error "Type svreal in svqp.h should be defined double") )
+  #{
+     ConvexProgramExt *cpe = new ConvexProgramExt($n); 
+     cpe->backp = $this;
+     $cppobj = (void*)cpe; 
+  #}
+  () )
+
+(defmethod ConvexProgram -destructor()
+  #{ 
+     delete (ConvexProgramExt*)$cppobj; 
+  #}
+  () )
+
+#? (==> <convexprogram> compute-gx <x> <g>)
+;; This function should be redefined by subclasses of <convexprogram>.
+;; Arguments <x> and <g> are both vectors of doubles.  The redefinition should
+;; compute the value and the gradient of function <f> on point <x>. The
+;; gradient should be written into vector <g>.  The value should be returned.
+
+(defmethod ConvexProgram compute-gx(x g)
+  (declare (-idx1- (-double-)) x g)
+  (error "compute-gx should be redefined by a subclass of ConvexProgram")
+  (to-double 0) )
+
+#? (==> <convexprogram> compute-ggx <x> <z>)
+;; This function should be redefined by subclasses of <convexprogram>.
+;; Arguments <x> and <z> are both vectors of doubles.  The redefinition should
+;; compute and return the curvature of function <f> along direction <z> on
+;; point <x>.  In other words, if <H> is the matrix of second derivatives,
+;; this function computes <z'H z>.
+
+(defmethod ConvexProgram compute-ggx(x z)
+  (declare (-idx1- (-double-)) x z)
+  (error "compute-ggx should be redefined by a subclass of ConvexProgram")
+  (to-double 0) )
+
+#? (==> <convexprogram> get-n)
+;;  Returns the dimension of the QP problem inputs.
+(defmethod ConvexProgram get-n()
+  (to-int #{ ((ConvexProgramExt*)$cppobj)->n #} ) )
+
+#? (==> <convexprogram> get-cmin)
+;;  Returns the vector of lower bounds <Cmin_i>.
+
+(defmethod ConvexProgram get-cmin()
+  (let* ((n (to-int #{ ((ConvexProgramExt*)$cppobj)->n #}))
+         (x (double-array n)) )
+    (declare (-int-) n)
+    (cidx-bloop ("i" ("x" x))
+       #{ *x = ((ConvexProgramExt*)$cppobj)->cmin[i]; #} )
+    x ) )
+
+#? (==> <convexprogram> set-cmin <x>)
+;;  Sets the vector of lower bounds <Cmin_i>.
+;;  Argument <x> must be a vector of doubles.
+;;  This is mandatory.  No meaningful default is provided.
+
+(defmethod ConvexProgram set-cmin(x)
+  (declare (-idx1- (-double-)) x)
+  (let* ((n (to-int #{ ((ConvexProgramExt*)$cppobj)->n #})))
+    (declare (-int-) n)
+    (when (<> n (length x))
+      (error "Dimension mismatch") )
+    (cidx-bloop ("i" ("x" x))
+       #{ ((ConvexProgramExt*)$cppobj)->cmin[i] = *x; #} )
+    x ) )
+
+#? (==> <convexprogram> get-cmax)
+;;  Returns the vector of upper bounds <Cmax_i>.
+
+(defmethod ConvexProgram get-cmax()
+  (let* ((n (to-int #{ ((ConvexProgramExt*)$cppobj)->n #}))
+         (x (double-array n)) )
+    (declare (-int-) n)
+    (cidx-bloop ("i" ("x" x))
+       #{ *x = ((ConvexProgramExt*)$cppobj)->cmax[i]; #} )
+    x ) )
+
+#? (==> <convexprogram> set-cmax <x>)
+;;  Sets the vector of upper bounds <Cmax_i>.
+;;  Argument <x> must be a vector of doubles.
+;;  This is mandatory.  No meaningful default is provided.
+
+(defmethod ConvexProgram set-cmax(x)
+  (declare (-idx1- (-double-)) x)
+  (let* ((n (to-int #{ ((ConvexProgramExt*)$cppobj)->n #})))
+    (declare (-int-) n)
+    (when (<> n (length x))
+      (error "Dimension mismatch") )
+    (cidx-bloop ("i" ("x" x))
+       #{ ((ConvexProgramExt*)$cppobj)->cmax[i] = *x; #} )
+    x ) )
+
+#? (==> <convexprogram> get-sumflag)
+;; Gets the flag indicating whether to statisfy
+;; the optional constraint
+;;.VP
+;;    sum_i x_i = constant
+
+(defmethod ConvexProgram get-sumflag()
+  (to-bool #{ ((ConvexProgramExt*)$cppobj)->sumflag #} ) )
+
+#? (==> <convexprogram> set-sumflag <f>)
+;; Sets the flag indicating whether to statisfy
+;; the optional constraint
+;;.VP
+;;    sum_i x_i = constant
+;;.PP
+;; Default value is <t>.
+
+(defmethod ConvexProgram set-sumflag(f)
+  (declare (-bool-) f)
+  #{ ((ConvexProgramExt*)$cppobj)->sumflag = $f; #}
+  f )
+
+#? (==> <convexprogram> get-ktflag)
+;; Gets the flag indicating whether to perform
+;; the Kuhn-Tucker test to restart the optimizer.
+
+(defmethod ConvexProgram get-ktflag()
+  (to-bool #{ ((ConvexProgramExt*)$cppobj)->ktflag #} ) )
+
+#? (==> <convexprogram> set-ktflag <f>)
+;; Sets the flag indicating whether to perform
+;; the Kuhn-Tucker test to restart the optimizer.
+;; The default is <t>.  This is necessary to 
+;; compute the exact solution.  This could be turned
+;; off in a chunking loop because the chunking loop
+;; usually tests the Kuhn-Tucker conditions 
+;; and decides how to restart the underlying optimizer.
+
+(defmethod ConvexProgram set-ktflag(f)
+  (declare (-bool-) f)
+  #{ ((ConvexProgramExt*)$cppobj)->ktflag = $f; #}
+  f )
+
+#? (==> <convexprogram> get-x)
+;; Gets the current solution of the QP problem.
+
+(defmethod ConvexProgram get-x()
+  (let* ((n (to-int #{ ((ConvexProgramExt*)$cppobj)->n #}))
+         (x (double-array n)) )
+    (declare (-int-) n)
+    (cidx-bloop ("i" ("x" x))
+       #{ *x = ((ConvexProgramExt*)$cppobj)->x[i]; #} )
+    x ) )
+
+#? (==> <convexprogram> set-x <x>)
+;; Sets the current solution of the QP problem.
+;; A feasible starting point must always be set 
+;; before calling method <run>. 
+
+(defmethod ConvexProgram set-x(x)
+  (declare (-idx1- (-double-)) x)
+  (let* ((n (to-int #{ ((ConvexProgramExt*)$cppobj)->n #})))
+    (declare (-int-) n)
+    (when (<> n (length x))
+      (error "Dimension mismatch") )
+    (cidx-bloop ("i" ("x" x))
+       #{ ((ConvexProgramExt*)$cppobj)->x[i] = *x; #} )
+    x ) )
+
+#? (==> <convexprogram> get-w)
+;; Gets the current value of <f>.
+
+(defmethod ConvexProgram get-w()
+  (to-double #{ ((ConvexProgramExt*)$cppobj)->w #} ) )
+
+#? (==> <convexprogram> get-error)
+;; Gets the last error message.
+;; This function should be called when <run> returns
+;; a negative number.
+
+(defmethod ConvexProgram get-error()
+  (to-str #{ mm_strdup(((ConvexProgramExt*)$cppobj)->err) #}) )
+
+#? (==> <convexprogram> get-epsgr)
+;; Gets the value of the stopping criterion.
+
+(defmethod ConvexProgram get-epsgr()
+  (to-double #{ ((ConvexProgramExt*)$cppobj)->epsgr #} ) )
+
+#? (==> <convexprogram> set-epsgr <e>)
+;; Sets the value of the stopping criterion.
+;; Optimization stops when the gradient norm
+;; becomes smaller than <epsgr>. Default is <1E-8>.
+
+(defmethod ConvexProgram set-epsgr(e)
+  (declare (-double-) e)
+  #{ ((ConvexProgramExt*)$cppobj)->epsgr = $e; #}
+  e )
+
+#? (==> <convexprogram> get-epskt)
+;; Gets the value of the tolerance for satisfying the constraints.
+
+(defmethod ConvexProgram get-epskt()
+  (to-double #{ ((ConvexProgramExt*)$cppobj)->epskt #} ) )
+
+#? (==> <convexprogram> set-epskt <e>)
+;; Sets the value of the tolerance for satisfying the constraints.
+;; Default value is <1E-20>.
+
+(defmethod ConvexProgram set-epskt(e)
+  (declare (-double-) e)
+  #{ ((ConvexProgramExt*)$cppobj)->epskt = $e; #}
+  e )
+
+#? (==> <convexprogram> get-maxst )
+;; Gets the value of the maximum gradient step.
+
+(defmethod ConvexProgram get-maxst()
+  (to-double #{ ((ConvexProgramExt*)$cppobj)->maxst #} ) )
+
+#? (==> <convexprogram> set-maxst e)
+;; Sets the value of the maximum gradient step.
+;; Default value is <1E+10>. Do not change.
+
+(defmethod ConvexProgram set-maxst(e)
+  (declare (-double-) e)
+  #{ ((ConvexProgramExt*)$cppobj)->maxst = $e; #}
+  e )
+
+#? (==> <convexprogram> get-verbosity )
+;; Gets the value of the maximum gradient step.
+
+(defmethod ConvexProgram get-verbosity()
+  (to-int #{ ((ConvexProgramExt*)$cppobj)->verbosity #} ) )
+
+#? (==> <convexprogram> set-verbosity <n>)
+;; Sets the verbosity level. Zero means silent.
+
+(defmethod ConvexProgram set-verbosity(n)
+  (declare (-int-) n)
+  #{ ((ConvexProgramExt*)$cppobj)->verbosity = $n; #}
+  n )
+
+
+
+#? (==> <convexprogram> run )
+;; Run the optimizer on the QP problem.
+;; Returns the number of iterations performed in the process.
+;; Returns -1 if an error occurs.
+ 
+(defmethod ConvexProgram run()
+  (let ((n 0)) 
+    (declare (-int-) n)
+    #{ $n = ((ConvexProgramExt*)$cppobj)->run(); #}
+    n ) )
+
+
+;; ----------------------------------------
+
+#? * QuadraticProgram
+;;.TYPE CLASS
+;;  This is a subclass of <ConvexProgram>
+;;  for solving the following quadratic program:
+;;.VP
+;;     Maximize          - 1/2 x.A.x + b.x
+;;     with              Cmin_i <= x_i <= Cmax_i
+;;     and (optionally)  sum_i x_i = constant
+;;.PP
+;;  Vector <b> must be set after calling the constructor.
+;;  Matrix <A> is specified by redefining method <compute-Ax>
+;;  in a subclass.
+
+
+(defclass QuadraticProgram ConvexProgram)
+
+#? (==> this QuadraticProgram <n>)
+;; The constructor of class <QuadraticProgram> should be called
+;; by subclass constructor. Argument <n> specifies the dimension
+;; of the input space.  It must then define <b>, call <set-cmin>,
+;; <set-cmax> and <set-x>.
+
+(defmethod QuadraticProgram QuadraticProgram(n)
+  (declare (-int-) n)
+  (when (to-bool #{ sizeof(svreal) != sizeof(double) #})
+    (error "Type svreal in svqp.h should be defined double") )
+  #{
+     QuadraticProgramExt *cpe = new QuadraticProgramExt($n); 
+     cpe->backp = $this;
+     $cppobj = (void*)cpe; 
+  #}
+  () )
+
+#? (==> <quadraticprogram> get-b)
+;;  Returns the vector <b>.
+
+(defmethod QuadraticProgram get-b()
+  (let* ((n (to-int #{ ((QuadraticProgramExt*)$cppobj)->n #}))
+         (x (double-array n)) )
+    (declare (-int-) n)
+    (cidx-bloop ("i" ("x" x))
+       #{ *x = ((QuadraticProgramExt*)$cppobj)->b[i]; #} )
+    x ) )
+
+#? (==> <quadraticprogram> set-b <b>)
+;;  Sets the vector <b>.
+;;  Argument <b> must be a vector of doubles.
+;;  This is mandatory.  No meaningful default is provided.
+
+(defmethod QuadraticProgram set-b(x)
+  (declare (-idx1- (-double-)) x)
+  (let* ((n (to-int #{ ((QuadraticProgramExt*)$cppobj)->n #})))
+    (declare (-int-) n)
+    (when (<> n (length x))
+      (error "Dimension mismatch") )
+    (cidx-bloop ("i" ("x" x))
+       #{ ((QuadraticProgramExt*)$cppobj)->b[i] = *x; #} )
+    x ) )
+
+
+#? (==> <quadraticprogram> compute-arow i r)
+;; This method must be redefined by a subclass of <QuadraticProgram>.
+;; The redefinition should store the <i>th row of matrix <A> into 
+;; the vector of double <r>.
+
+
+(defmethod QuadraticProgram compute-arow(i r)
+  (declare (-int-) i)
+  (declare (-idx1- (-double-)) r)
+  (error "compute-arow should be redefined by a subclass of QuadraticProgram")
+  () )
+
+
+#? (==> <quadraticprogram> run )
+;; Run the optimizer on the QP problem.
+;; Returns the number of iterations performed in the process.
+;; Returns -1 if an error occurs.
+ 
+(defmethod QuadraticProgram run()
+  (let ((n 0)) 
+    (declare (-int-) n)
+    #{ $n = ((QuadraticProgramExt*)$cppobj)->run(); #}
+    n ) )
+
+
+;; ----------------------------------------
+
+#? * SimpleQuadraticProgram
+;;.TYPE CLASS
+;;  This is a subclass of <QuadraticProgram>
+;;  for solving the following quadratic program:
+;;.VP
+;;     Maximize          - 1/2 x.A.x + b.x
+;;     with              Cmin_i <= x_i <= Cmax_i
+;;     and (optionally)  sum_i x_i = constant
+;;.PP
+;;  After creating an instance of this class, the user
+;;  must then fill the slots <a> and <b>, and call methods 
+;;  <set-cmin>, <set-cmax> and <set-x>.
+;;  Calling method <run> then perform the optimization
+
+(defclass SimpleQuadraticProgram QuadraticProgram
+  ((-idx2- (-double-)) a) )
+
+#? (new SimpleQuadraticProgram <n>)
+;; Creates a simple quadratic program object for solving
+;; problems of dimension <n>. The user must then fill the 
+;; slots <a> and <b>, and call methods <set-cmin>, <set-cmax> and <set-x>.
+;; Calling method <run> then perform the optimization.
+
+(defmethod SimpleQuadraticProgram SimpleQuadraticProgram(n)
+  (declare (-int-) n)
+  (setq a (double-array n n))
+  (==> this QuadraticProgram n) )
+
+#? (==> <simplequadraticprogram> compute-ax x y)
+;; Redefined to use slot <a>.
+
+(defmethod SimpleQuadraticProgram compute-arow(i r)
+  (declare (-int-) i)
+  (declare (-idx1- (-double-)) r)
+  (array-copy (select a 0 i) r) 
+  () )
+
+
+
+;; ----------------------------------------
+
+;; Compile and load the svqp lush interface.
+
+(let* ((dir (concat-fname (dirname file-being-loaded) "svqp"))
+       (dhc-make-lushflags (concat dhc-make-lushflags " -I" dir)) )
+  (dhc-make-with-c++ () () 
+      #{
+	       #include "svqp.h" 
+	       struct ConvexProgramExt : public ConvexProgram 
+	       {
+		 struct CClass_ConvexProgram *backp;
+		 ConvexProgramExt(int n) : ConvexProgram(n), backp(0) {};
+		 virtual svreal compute_gx(const svreal *x, svreal *g);
+		 virtual svreal compute_ggx(const svreal *x, const svreal *z);
+	       };
+	       struct QuadraticProgramExt : public QuadraticProgram 
+	       {
+		 struct CClass_QuadraticProgram *backp;
+		 QuadraticProgramExt(int n) : QuadraticProgram(n), backp(0) {};
+		 virtual svreal *compute_Arow(int i, svreal *r);
+	       };
+	    #}
+	    (ConvexProgram ConvexProgram -destructor 
+			   compute-gx compute-ggx 
+			   get-n
+			   get-cmin set-cmin
+			   get-cmax set-cmax
+			   get-sumflag set-sumflag
+			   get-ktflag set-ktflag
+			   get-x set-x get-w 
+			   get-error
+			   get-epsgr set-epsgr
+			   get-epskt set-epskt
+			   get-maxst set-maxst
+			   get-verbosity set-verbosity
+			   run )
+
+	    #{ 
+	       svreal ConvexProgramExt::compute_gx(const svreal *x, svreal *g)
+	       {
+		 storage_t sx, sg;
+		 index_t ix, ig;
+		 sx.flags = sg.flags = STS_STATIC;
+		 sx.type  = sg.type  = ST_DOUBLE;
+		 sx.size  = sg.size  = n;
+		 sx.data  = (void*)x;
+		 sg.data  = (void*)g;
+		 ix.ndim  = ig.ndim  = 1;
+		 ix.offset= ig.offset= 0;
+		 ix.dim[0]= ig.dim[0]= n;
+		 ix.mod[0]= ig.mod[0]= 1;
+		 ix.st    = &sx;
+		 ig.st    = &sg;
+		 return (svreal) (backp->Vtbl->M_compute_gx)(backp, &ix, &ig);
+	       } 
+	       svreal ConvexProgramExt::compute_ggx(const svreal *x, const svreal *z)
+	       {
+		 storage_t sx, sz;
+		 index_t ix, iz;
+		 sx.flags = sz.flags = STS_STATIC;
+		 sx.type  = sz.type  = ST_DOUBLE;
+		 sx.size  = sz.size  = n;
+		 sx.data  = (void*)x;
+		 sz.data  = (void*)z;
+		 ix.ndim  = iz.ndim  = 1;
+		 ix.offset= iz.offset= 0;
+		 ix.dim[0]= iz.dim[0]= n;
+		 ix.mod[0]= iz.mod[0]= 1;
+		 ix.st    = &sx;
+		 iz.st    = &sz;
+		 return (svreal) (backp->Vtbl->M_compute_ggx)(backp, &ix, &iz);
+	       } 
+	    #} 
+	    (QuadraticProgram QuadraticProgram get-b set-b compute-arow run)
+	    #{
+	       svreal *QuadraticProgramExt::compute_Arow(int i, svreal *r)
+	       {
+		 storage_t sr;
+		 index_t ir;
+		 sr.flags = STS_STATIC;
+		 sr.type  = ST_DOUBLE;
+		 sr.size  = n;
+		 sr.data  = (void*)r;
+		 ir.ndim  = 1;
+		 ir.offset= 0;
+		 ir.dim[0]= n;
+		 ir.mod[0]= 1;
+		 ir.st = &sr;
+	         (backp->Vtbl->M_compute_arow)(backp, i, &ir);
+	         return r;
+	       } 
+	    #}
+	    (SimpleQuadraticProgram SimpleQuadraticProgram compute-arow) ) )
+

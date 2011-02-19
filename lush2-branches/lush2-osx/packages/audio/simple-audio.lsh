@@ -1,0 +1,124 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; simple reading and playing of audio files on Linux
+
+#? ** simple-audio: reading, writing, and playing sounds
+;; This is a set of simple functions to read, write
+;; and play audio samples. These functions use the
+;; "sox" command to convert sound files into
+;; something Lush can understand.
+;; Therefore, all audio file formats supported
+;; by sox are supported. This includes ogg, mp3
+;; wav, and such.
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defvar read-sound-cmd "sox %s -s -c 1 -t raw -r %d -s -c 1 -")
+(defvar write-sound-cmd "sox -t s2 -r %d -c 1 - -t wav -c 1 %s")
+(defvar play-sound-cmd "play -t s2 -r %d -c 1 -")
+
+#? (read-sound <f> <r>)
+;; read a sound file and return a vector of doubles with the samples
+;; (using a pipe through sox).
+;; <f> is the audio file to read from, and <r> is the sampling
+;; rate to which the sound will be converted before being read
+;; (e.g. 10000 for 10KHz sampling rate).
+(de read-sound (f r)
+  (let* ((fp (popen (sprintf read-sound-cmd f r) "rb"))
+	 (m (double-matrix 10000))
+	 (i 0))
+    (while (= (idx-dim m 0) (setq i (read-shorts-into-idx fp m i)))
+      ;; (printf "i=%d dim=%d\n" i (idx-dim m 0))
+      (idx-redim m (list (+ 10000 (idx-dim m 0)))))
+    (setq m (narrow m 0 i 0))
+    (pclose fp)
+    m))
+
+#? (write-sound <m> <f> <r>)
+;; write a signal in vector <m>
+;; into a sound file <f> at sampling rate <r>.
+;; The samples are written as shorts, so
+;; they should be between -32768 and 32767.
+(de write-sound (m f r)
+  (let ((fp (popen (sprintf write-sound-cmd r f) "wb")))
+    (write-shorts-idx fp m)
+    (pclose fp)))
+
+#? (play-sound <m> <r>)
+;; play the signal in vector <m>
+;; using sampling rate <r>.
+(de play-sound (m r)
+  (let ((fp (popen (sprintf play-sound-cmd r) "wb")))
+    (write-shorts-idx fp m)
+    (pclose fp)))
+
+#? (read-sound-raw <f>)
+;; read a "raw" sound file from file <f>.
+;; This function simply reads a file with a
+;; bunch of shorts into a matrix of doubles.
+(de read-sound-raw (f)
+  (let* ((fp (fopen f "rb"))
+	 (m (double-matrix 10000))
+	 (i 0))
+    (while (= (idx-dim m 0) (setq i (read-shorts-into-idx fp m i)))
+      ;; (printf "i=%d dim=%d\n" i (idx-dim m 0))
+      (idx-redim m (list (+ 10000 (idx-dim m 0)))))
+    (setq m (narrow m 0 i 0))
+    (pclose fp)
+    m))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; low-level function
+;; if (= i (idx-dim m), call this again.
+(de read-shorts-into-idx (f m i)
+  ((-idx1- (-double-)) m)
+  ((-gptr- "FILE *") f)
+  ((-int-) i)
+  (let* ((z 0) (r 1) (n (idx-dim m 0)))
+    ((-short-) z) ((-int-) r n)
+    (setq r (to-int #{ fread( (void *)&$z, sizeof(short), 1, (FILE *)$f) #}))
+    (while (and (<> 0 (to-int #{ fread( (void *)&$z, sizeof(short), 1, (FILE *)$f) #}))
+		(< i n))
+      ;; (printf "%d " i)
+      (m i (to-double z)) (incr i))
+    i))
+
+;; write the content of an idx1 of doubles to a bunch of shorts in a file
+(de write-shorts-idx (f m)
+  ((-idx1- (-double-)) m)
+  ((-gptr- "FILE *") f)
+  (cidx-bloop ("i" ("m" m)) 
+      #{ { short s; 
+	   register double z = *m;
+           s = (z > 32767) ? 32787 : (z < -32768) ? -32768 : (short)(z); 
+           fwrite(&s, sizeof(short), 1, (FILE *)$f); } #} ()))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make-sf () read-shorts-into-idx write-shorts-idx)

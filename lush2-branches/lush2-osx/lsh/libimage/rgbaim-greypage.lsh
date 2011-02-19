@@ -1,0 +1,349 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Color Segmentation and Quantization on RGBA Images
+;; a set of function for detecting the background and foreground colors
+;; in a document image and for transforming them into grey-level 
+;; images suitable for recognition, segmentation, etc...
+;; essentially sets the background to 0, the foreground to 256,
+;; the rest in the middle.
+
+(libload "libimage/rgbaimage")
+(libload "libimage/color-quantize")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; quick color quantization
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+#? (rgbaim-project-greys <rgbaim> <ubim> <polarity> <bsatur> <fsatur> <colors>)
+;; transforms an rgb image into a grey image
+;; where the foreground is 256, the background is 0,
+;; and the greys in between are between 256 and 0
+;; the resulting image can be used for segmentation
+;; and recognition.
+;; <rgbaim> an idx3 of ubytes containing the input RGBA image.
+;; <ubim> an idx2 of ubytes that will contain the result 
+;;  it should be the same size as <rgbaim>
+;; <polarity> determines the polarity of the image:
+;; 0 means light background and dark foreground,
+;; 1 means dark background and light forground,
+;; -1 should be passed if the polarity is unknown. In that case,
+;; the color cluster with the most numerous pixels is assigned to the
+;; background.
+;; pixel colors in <rgbaim> are projected on a straight segment
+;; between two color prototypes computed with K-means.
+;; The output pixels are given a grey value that depends on their position
+;; along that segment. The function that maps positions on the line to
+;; grey-levels is piece-wise linear saturation-type function.
+;; It is controlled by two points A and B. below A, points are
+;; assigned the value 0, above B they are assigned 256.
+;; in between they are mapped linearly.
+;; the position of point A is determined by the argument <bsatur>
+;; a value of 0 puts A on the background prototype, a value of 0.5 
+;; puts it half way between the 2 prototypes.
+;; Point B is controlled similarly: 0 puts it at the foreground prototype
+;; and 0.5 puts it halfway. <colors> is a 2x3 matrix of rgb color clusters
+;; for the background and foreground respectively.
+(de rgbaim-project-greys (rgbaim ubim polarity bsatur fsatur proto)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx2- (-ubyte-)) ubim)
+    ((-idx2- (-flt-)) proto)
+    ((-int-) polarity)
+    ((-flt-) bsatur fsatur)
+    (when (or (<> (idx-dim rgbaim 0) (idx-dim ubim 0))
+	      (<> (idx-dim rgbaim 1) (idx-dim ubim 1)))
+      (error "input and output images have inconsistent sizes"))
+    (let*((weight (float-array 2))
+          (variance (float-array 2)))
+      ;; do color clustering
+      (rgbaim-cluster-colors rgbaim polarity bsatur fsatur proto weight variance)
+
+      ;; determine polarity: most numerous pixels = background
+      (when (= -1 polarity)
+        (if (> (weight 1) (weight 0)) (setq polarity 0) (setq polarity 1)))
+      ;; now project pixel values on line joining the color prototypes
+      (rgbaim-greyquant rgbaim ubim proto polarity bsatur fsatur))
+    ())
+
+
+#? (rgbaim-project-colors <rgbaim> <rgbaim2> <polarity> <bsatur> <fsatur> <colors>)
+;; project the colors of an image onto a line joining two
+;; center clusters.
+;; <rgbaim> an idx3 of ubytes containing the input RGBA image.
+;; <rgbaim2 contains the result image on output.
+;;  it should be the same size as <rgbaim>
+;; <polarity> determines the polarity of the image:
+;; 0 means light background and dark foreground,
+;; 1 means dark background and light forground,
+;; -1 should be passed if the polarity is unknown. In that case,
+;; the color cluster with the most numerous pixels is assigned to the
+;; background.
+;; pixel colors in <rgbaim> are projected on a straight segment
+;; between two color prototypes computed with K-means.
+;; The output pixels are given a grey value that depends on their position
+;; along that segment. The function that maps positions on the line to
+;; grey-levels is piece-wise linear saturation-type function.
+;; It is controlled by two points A and B. below A, points are
+;; assigned the value 0, above B they are assigned 256.
+;; in between they are mapped linearly.
+;; the position of point A is determined by the argument <bsatur>
+;; a value of 0 puts A on the background prototype, a value of 0.5 
+;; puts it half way between the 2 prototypes.
+;; Point B is controlled similarly: 0 puts it at the foreground prototype
+;; and 0.5 puts it halfway. <colors> is a 2x3 matrix of rgb color clusters
+;; for the background and foreground respectively.
+(de rgbaim-project-colors (rgbaim ubim polarity bsatur fsatur proto)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx3- (-ubyte-)) ubim)
+    ((-idx2- (-flt-)) proto)
+    ((-int-) polarity)
+    ((-flt-) bsatur fsatur)
+    (when (or (<> (idx-dim rgbaim 0) (idx-dim ubim 0))
+	      (<> (idx-dim rgbaim 1) (idx-dim ubim 1)))
+      (error "input and output images have inconsistent sizes"))
+    (let*((weight (float-array 2))
+          (variance (float-array 2)))
+      ;; do color clustering
+      (rgbaim-cluster-colors rgbaim polarity bsatur fsatur proto weight variance)
+
+      ;; determine polarity: most numerous pixels = background
+      (when (= -1 polarity)
+        (if (> (weight 1) (weight 0)) (setq polarity 0) (setq polarity 1)))
+      ;; now project pixel values on line joining the color prototypes
+      (rgbaim-projectcolors rgbaim ubim proto polarity bsatur fsatur))
+    ())
+
+#? (rgbaim-cluster-colors <rgbaim> <ubim> <polarity> <bsatur> <fsatur> <proto> <weight> <variance>)
+;; See rgbaim-project-greys for an explanation of the arguments.
+;; This function performs color clustering, using the K-means algorithm.
+;; Results in <ubim>.
+;;.PP
+;; <proto> : n_colors x 3 matrix = colors of the clusters
+;; <weight> : n_colors vector = weights of the Gaussian mixture for each cluster
+;; <variance> : n_colors vector = variance parameter of each cluster 
+;; Gaussian distribution
+;;
+;;.SEE (rgbaim-greypage <rgbaim> <ubim> <polarity> <bsatur> <fsatur>)
+;;
+(de rgbaim-cluster-colors (rgbaim polarity bsatur fsatur proto weight variance)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx2- (-flt-)) proto)
+    ((-idx1- (-flt-)) weight variance)
+    ((-int-) polarity)
+    ((-flt-) bsatur fsatur)
+    (let ((histo (float-array 32768 3))
+	  (count (float-array 32768))
+	  (label (int-array 2)))
+      (label 0 0) (label 1 1)
+      ;; compute compressed histogram of color values in image
+      (rgbaim-histo32 rgbaim histo count)
+      ;; initialize two color prototypes
+      (cqu-init-proto histo proto)
+      (let ((assign (int-array (idx-dim histo 0)))
+	    (split -1))
+	;; fill assign with split
+	(cinline-idx1loop assign "int" "mp" "i" (cinline "*mp = (%s)" split))
+	;; (assign () split)
+	;; perform k-means
+	(cqu-kmeans histo count assign split proto label weight variance)
+        ())))
+
+                             
+#? (rgbaim-quickquant <rgbaim> <ubim> <ppal> <assign>)
+;; quick color quantization of the pixels in <rgbaim>
+;; to the colors in palette <ppal>. Each pixel in the output 
+;; image is a short whose value is the "label" of the 
+;; palette color that is closest to the input pixel.
+;; <assign> is a vector of ints with the same first
+;; dimension as <ppal> which contains the "label"
+;; for each palette color.
+;; This function is relatively fast, but is approximate
+;; (the palette color associated with an input color
+;;  is not always the closest). In particular, this function
+;; makes little sense if two palette colors are in the
+;; same cell in the 32x32x32 RGB cube (which means <ppal>
+;; should probably have less than 2^15 colors).
+(de rgbaim-quickquant (rgbaim ubim ppal assign)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx2- (-ubyte-)) ubim)
+    ((-idx2- (-flt-)) ppal)
+    ((-idx1- (-int-)) assign)    
+    (when (or (<> (idx-dim rgbaim 0) (idx-dim ubim 0))
+	      (<> (idx-dim rgbaim 1) (idx-dim ubim 1)))
+      (error "input and output images have inconsistent sizes"))
+    ;; first create a 32k map of 5-bit rgb to color labels
+    (when (<> (idx-dim ppal 0) (idx-dim assign 0))
+      (error "histogram and label arrays have different sizes"))
+    (let* ((rgb2label (int-array (* 32 32 32)))
+	   (prgb2label (gptr #{ IDX_PTR($rgb2label, int) #})))
+      (cinline-idx1loop2 ppal "flt" assign "int" "p" "l" "j"
+	#{{ register int offset;
+	offset = (((int)(p[0])&0xf8)<<7) | (((int)(p[1])&0xf8)<<2) | 
+                  ((int)(p[2])>>3) ;	
+	((int*)($prgb2label))[offset] = *l;
+	}#})
+      ;; now quantize the image
+      (cinline-idx2loop2 rgbaim "unsigned char" 
+                         ubim "unsigned char" "p" "s" "i" "j"
+			#{{ register int offset;
+			offset = (((int)(p[0])&0xf8)<<7) | 
+                                  (((int)(p[1])&0xf8)<<2) | ((int)(p[2])>>3) ;	
+			*s = (unsigned char)(((int*)($prgb2label))[offset]);
+			}#})) ())
+
+#? * low-level color quantization functions.
+
+#? (rgbaim-greyquant <rgbaim> <ubim> <proto> <polarity> <bsatur> <fsatur>)
+;; transforms and RGB image into a grey image with uniform foreground and 
+;; background. <proto> is a 2x3 matrix of floats containing two
+;; color prototypes for background and foreground colors.
+;; <rgbaim> an idx3 of ubytes containing the input RGBA image.
+;; <ubim> an idx2 of ubytes that will contain the result 
+;;  it should be the same size as <rgbaim>
+;; <polarity> determines the polarity of the image:
+;; 0 means light background and dark foreground,
+;; 1 means dark background and light forground,
+;; -1 should be passed if the polarity is unknown. In that case,
+;; the color cluster with the most numerous pixels is assigned to the
+;; background.
+;; pixel colors in <rgbaim> are projected on a straight segment
+;; between two color prototypes computed with K-means.
+;; The output pixels are given a grey value that depends on their position
+;; along that segment. The function that maps positions on the line to
+;; grey-levels is piece-wise linear saturation-type function.
+;; It is controlled by two points A and B. below A, points are
+;; assigned the value 0, above B they are assigned 256.
+;; in between they are mapped linearly.
+;; the position of point A is determined by the argument <bsatur>
+;; a value of 0 puts A on the background prototype, a value of 0.5 
+;; puts it half way between the 2 prototypes.
+;; Point B is controlled similarly: 0 puts it at the foreground prototype
+;; and 0.5 puts it halfway. <colors> is a 2x3 matrix of rgb color clusters
+;; for the background and foreground respectively.
+(de rgbaim-greyquant (rgbaim ubim proto polarity bsatur fsatur)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx2- (-ubyte-)) ubim)
+    ((-idx2- (-flt-)) proto)
+    ((-int-) polarity)
+    ((-flt-) bsatur fsatur)
+    (when (>= (+ bsatur fsatur) 0.95) 
+      (error "inconsistent values for bsatur and fsatur"))
+    (when (and (<> 0 polarity) (<> 1 polarity)) (error "invalid polarity value"))
+    (let* ((bg (if (= 0 polarity) 1 0))
+	   (fg (if (= 0 polarity) 0 1))
+	   (ro (proto bg 0)) (go (proto bg 1)) (bo (proto bg 2))
+	   (rv (- (proto fg 0) ro)) (gv (- (proto fg 1) go)) (bv (- (proto fg 2) bo))
+	   (sqnorm 0))
+      ((-int-) bg fg)
+      (incr ro (* bsatur rv))
+      (incr go (* bsatur gv))
+      (incr bo (* bsatur bv))
+      (incr rv (- (* (+ bsatur fsatur) rv)))
+      (incr gv (- (* (+ bsatur fsatur) gv)))
+      (incr bv (- (* (+ bsatur fsatur) bv)))
+      ;; normalize vector so that the projection gives apropriate numbers
+      (setq sqnorm (+ (* rv rv) (* gv gv) (* bv bv)))
+      (when (= 0 sqnorm) (error "prototypes are identical"))
+      (setq rv (/ (* 255 rv) sqnorm))
+      (setq gv (/ (* 255 gv) sqnorm))
+      (setq bv (/ (* 255 bv) sqnorm))
+      ;; project pixels on line
+      (cinline-idx2loop2 rgbaim "unsigned char" ubim "unsigned char" "p" "s" "i" "j"
+			 #{{ register flt r,g,b, c;
+			 r = (flt)(p[0]); g=(flt)(p[1]); b=(flt)(p[2]);
+			 c = (r-$ro)*$rv + (g-$go)*$gv + (b-$bo)*$bv;
+			 /* saturate */
+			 *s = (unsigned char)( c<0 ? 0 : c>255 ? 255 : c );
+			 }#})) ())
+
+#? (rgbaim-projectcolors <rgbaim> <rgbaim2> <proto> <polarity> <bsatur> <fsatur>)
+;; Basically does the same thing as <rgbaim-greyquant>, but
+;; builds a color image instead of a gey image.
+;;.SEE (rgbaim-greyquant <rgbaim> <ubim> <proto> <polarity> <bsatur> <fsatur>)
+(de rgbaim-projectcolors (rgbaim ubim proto polarity bsatur fsatur)
+    ((-idx3- (-ubyte-)) rgbaim)
+    ((-idx3- (-ubyte-)) ubim)
+    ((-idx2- (-flt-)) proto)
+    ((-int-) polarity)
+    ((-flt-) bsatur fsatur)
+    (when (>= (+ bsatur fsatur) 0.95) 
+      (error "inconsistent values for bsatur and fsatur"))
+    (when (and (<> 0 polarity) (<> 1 polarity)) (error "invalid polarity value"))
+    (let* ((bg (if (= 0 polarity) 1 0))
+	   (fg (if (= 0 polarity) 0 1))
+           (rbg (proto bg 0)) (gbg (proto bg 1)) (bbg (proto bg 2))
+	   (ro rbg) (go gbg) (bo bbg)
+           (rfg (proto fg 0)) (gfg (proto fg 1)) (bfg (proto fg 2))           
+	   (rv (- rfg ro)) (gv (- gfg go)) (bv (- bfg bo))
+	   (sqnorm 0))
+      ((-int-) bg fg)
+      (incr ro (* bsatur rv))
+      (incr go (* bsatur gv))
+      (incr bo (* bsatur bv))
+      (incr rv (- (* (+ bsatur fsatur) rv)))
+      (incr gv (- (* (+ bsatur fsatur) gv)))
+      (incr bv (- (* (+ bsatur fsatur) bv)))
+      ;; normalize vector so that the projection gives apropriate numbers
+      (setq sqnorm (+ (* rv rv) (* gv gv) (* bv bv)))
+      (when (= 0 sqnorm) (error "prototypes are identical"))
+      (setq rv (/ rv sqnorm))
+      (setq gv (/ gv sqnorm))
+      (setq bv (/ bv sqnorm))
+      ;; project pixels on line
+      (cinline-idx2loop2 rgbaim "unsigned char" ubim "unsigned char" "p" "s" "i" "j"
+			 #{{ register flt r,g,b, c, cbar;
+			 r = (flt)(p[0]); g=(flt)(p[1]); b=(flt)(p[2]);
+			 c = (r-$ro)*$rv + (g-$go)*$gv + (b-$bo)*$bv;
+			 /* saturate */
+			 c = ( c<0 ? 0 : c>1 ? 1 : c );
+                         cbar = 1 - c;
+                         s[0] = (unsigned char)($rbg*cbar + $rfg*c);
+                         s[1] = (unsigned char)($gbg*cbar + $gfg*c);
+                         s[2] = (unsigned char)($bbg*cbar + $bfg*c);
+			 }#})) ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 
+(dhc-make-sf ()
+          rgbaim-quickquant 
+	  rgbaim-greyquant 
+	  rgbaim-projectcolors
+          rgbaim-cluster-colors
+          rgbaim-project-greys
+          rgbaim-project-colors)
+
+          
+
+

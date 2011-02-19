@@ -1,0 +1,696 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: gb-modules-nn.lsh,v 1.4 2003/11/02 08:16:20 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Basic Neural Net Modules
+;; {<author> Yann LeCun}
+;; a bunch of standard compiled modules
+;; for building neural net architectures:
+;; sigmoids, RBF, fully connected, convolutions, subsampling layers.
+;; Each of these classes has methods for fprop, bprop, bbprop,
+;; load, save, forget, and setting various parameters.
+
+(libload "libidx/idx-macros")
+(libload "libidx/idx-squops")
+(libload "gblearn2/gb-modules")
+(libload "gblearn2/gb-states")
+(libload "gblearn2/gb-params")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** f-layer 
+;; full connection between replicable 3D layers
+;; the full connection is only across the first dimension 
+;; of the input and output layer.
+;; the other two dimensions are spatial dimensions accross which the 
+;; weight matrix is shared. This is much more efficient than using
+;; a c-layer with a 1x1 convolution and a full-table.
+(defclass f-layer idx3-module
+  ((-obj- (idx2-ddstate)) weight)
+  ((-obj- (idx1-ddstate)) bias)
+  ((-obj- (idx3-ddstate)) sum)
+  ((-obj- (idx3-module)) squash))
+
+#? (new f-layer <tin> <tout> <si> <sj> <sqsh>)
+;; makes a new replicable fully-connected layer.
+;; <tin> and <tout> are the number of units in the input and output.
+;; <si> and <sj> are the vertical and horizontal sizes used for pre-allocating 
+;; the internal state variables (they, as well as the output. are 
+;; automatically resized, but the resizing is more efficient of it is 
+;; a downsizing).
+(defmethod f-layer f-layer (tin tout si sj sqsh prm)
+  (declare (-obj- (idx1-ddparam)) prm)
+  (declare (-int-) tin tout si sj)
+  (declare (-obj- (idx3-module)) sqsh)
+  (setq weight (==> prm alloc-idx2-ddstate tout tin))
+  (setq bias (==> prm alloc-idx1-ddstate tout))
+  (setq sum (new idx3-ddstate tout si sj))
+  (setq squash sqsh)
+  ())
+
+#? (==> <f-layer> save <file>)
+;; save weights and biases
+(defmethod f-layer save (f) 
+  (save-flt-matrix f weight)
+  (save-flt-matrix f bias))
+
+#? (==> <f-layer> load <file>)
+;; load weights and biases
+(defmethod f-layer load (f) 
+  (load-matrix-into f weight)
+  (load-matrix-into f bias))
+
+#? (==> <f-layer> set-squash <squash>)
+;; sets the squashing function to <squash>.
+;; <squash> must be an instance of the
+;; the class <idx3-module>.
+(defmethod f-layer set-squash (sqsh)
+  (declare (-obj- (idx3-module)) sqsh)
+  (setq squash sqsh)
+  ())
+
+#? (==> <f-layer> forget <v> <p>)
+;; initialize weights to random values
+;; uniformly distributed between -c and c,
+;; where c is v/(fanin^(1/p)).
+;; reasonnable values for v and p are 2.5 and 2.
+(defmethod f-layer forget (v p)
+  (declare (-flt-) v p)
+  (array-clear :bias:x 0)
+  (let ((c (/ v (** (idx-dim :weight:x 1) (/ p)))))
+    (idx-bloop ((w :weight:x)) (idx-bloop ((w w)) (w (rand c)))))
+  ())
+
+#? (==> <f-layer> fprop <in> <out>)
+;; forward prop with <in> as input and <out> as output.
+;; <in> and <out> must both be <idx3-state>.
+(defmethod f-layer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx3-state)) out)
+  (let* ((inx :in:x)
+	 (wx :weight:x)
+	 (sumx :sum:x)
+	 (inx-d1 (idx-dim inx 1))
+	 (inx-d2 (idx-dim inx 2))
+	 (ws (idx-dim wx 0)))
+    ;; resize sum and output
+    (==> sum resize ws inx-d1 inx-d2)
+    (==> out resize ws inx-d1 inx-d2)
+    (let ((inx (idx-transpose inx '(2 1 0)))
+	  (outx (idx-transpose sumx '(2 1 0))))
+      ;; loop over last two dimensions
+      (idx-bloop ((linx inx) (loutx outx))
+	(idx-bloop ((llinx linx) (lloutx loutx))
+	  ;; matrix-vector multiply
+	  (idx-m2dotm1 wx llinx lloutx))))
+    ;; add bias
+    (idx-bloop ((sumx sumx) (biasx :bias:x) (outx :out:x))
+      (idx-addm0 sumx biasx sumx))
+    ;; call squashing function
+    (==> squash fprop sum out))
+  ())
+
+#? (==> <f-layer> bprop <in> <out>)
+;; backward prop with <in> as input and <out> as output.
+;; <in> and <out> must both be <idx3-state>.
+(defmethod f-layer bprop (in out)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-obj- (idx3-dstate)) out)
+  ;; backprop gradient through squasher
+  (==> squash bprop sum out)
+  ;; compute gradient of bias
+  (idx-bloop ((lha :sum:dx) (lb :bias:dx)) (idx-sumacc lha lb))
+  ;; backprop through convolution
+  (let ((inx (idx-transpose :in:x '(2 1 0)))
+	(indx (idx-transpose :in:dx '(2 1 0)))
+	(outdx (idx-transpose :sum:dx '(2 1 0)))
+	(tkerx (idx-transpose :weight:x '(1 0))))
+    (idx-bloop ((linx inx) (lindx indx) (loutdx outdx))
+      (idx-bloop ((llinx linx) (llindx lindx) (lloutdx loutdx))
+	(idx-m1extm1acc lloutdx llinx :weight:dx)
+	(idx-m2dotm1 tkerx lloutdx llindx))))
+  ())
+
+#? (==> <f-layer> bbprop <in> <out>)
+;; backward prop of second derivatives with <in> as input 
+;; and <out> as output. <in> and <out> must both be <idx3-state>.
+(defmethod f-layer bbprop (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx3-ddstate)) out)
+  ;; backprop 2nd deriv through squasher
+  (==> squash bbprop sum out)
+  ;; compute 2nd deriv of bias
+  (idx-bloop ((lha :sum:ddx) (lb :bias:ddx)) (idx-sumacc lha lb))
+  ;; backprop 2nd deriv through convolution
+  (let ((inx (idx-transpose :in:x '(2 1 0)))
+	(indx (idx-transpose :in:ddx '(2 1 0)))
+	(outdx (idx-transpose :sum:ddx '(2 1 0)))
+	(tkerx (idx-transpose :weight:x '(1 0))))
+    (idx-bloop ((linx inx) (lindx indx) (loutdx outdx))
+      (idx-bloop ((llinx linx) (llindx lindx) (lloutdx loutdx))
+	(idx-m1squextm1acc lloutdx llinx :weight:ddx)
+	(idx-m2squdotm1 tkerx lloutdx llindx))))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** e-layer 
+;; full connection with Euclidean distance between replicable 
+;; 3D layers. This is like a layer of RBF WITHOUT NON-LINEAR FUNCTIONS.
+;; the output is the square Euclidean distance between the input
+;; and the weight
+;; the full connection is only across the first dimension 
+;; of the input and output layer.
+;; the other two dimensions are spatial dimensions accross which the 
+;; weight matrix is shared. 
+(defclass e-layer idx3-module
+  ((-obj- (idx2-ddstate)) weight))
+
+#? (new e-layer <tin> <tout> <prm>)
+;; new e-layer (Eucliden distance RBF). <tin> is the
+;; thickness of the input layer, <tout> is the thickness 
+;; of the output layer, <prm> is the parameter.
+(defmethod e-layer e-layer (tin tout prm)
+  (declare (-obj- (idx1-ddparam)) prm)
+  (declare (-int-) tin tout)
+  (setq weight (==> prm alloc-idx2-ddstate tout tin))
+  ())
+
+(defmethod e-layer save (f) (save-matrix f weight))
+(defmethod e-layer load (f) (load-matrix-into f weight))
+
+(defmethod e-layer forget (z p)
+  (declare (-flt-) z p)
+  (idx-bloop ((w :weight:x)) (idx-bloop ((w w)) (w (rand z))))
+  ())
+
+(defmethod e-layer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx3-state)) out)
+  (let* ((inx :in:x)
+	 (wx :weight:x)
+	 (inx-d1 (idx-dim inx 1))
+	 (inx-d2 (idx-dim inx 2))
+	 (ws (idx-dim wx 0)))
+    ;; resize out and output
+    (==> out resize ws inx-d1 inx-d2)
+    (let ((inx (idx-transpose inx '(2 1 0)))
+	  (outx (idx-transpose :out:x '(2 1 0))))
+      ;; loop over last two dimensions
+      (idx-bloop ((linx inx) (loutx outx))
+	(idx-bloop ((llinx linx) (lloutx loutx))
+	  ;; loop over outputs
+	  (idx-bloop ((w wx) (o lloutx))
+	    ;; Euclidean dist
+	    (idx-sqrdist w llinx o)
+	    (o (* .5 (o))))))))
+  ())
+
+(defmethod e-layer bprop (in out)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-obj- (idx3-dstate)) out)
+  (let* ((wx :weight:x)
+	 (wdx :weight:dx)
+	 (inx (idx-transpose :in:x '(2 1 0)))
+	 (indx (idx-transpose :in:dx '(2 1 0)))
+	 (outdx (idx-transpose :out:dx '(2 1 0)))
+	 (tmp (float-array* (idx-dim inx 2))))
+    (array-clear indx 0)
+    ;; loop over last two dimensions
+    (idx-bloop ((linx inx) (lindx indx) (loutdx outdx))
+      (idx-bloop ((llinx linx) (llindx lindx) (lloutdx loutdx))
+	;; loop over outputs
+	(idx-bloop ((w wx) (wd wdx) (od lloutdx))
+	  (let ((g (od)))
+	    (when (<> 0 g)
+	      (idx-sub llinx w tmp)
+	      (idx-f1dotcacc tmp g llindx)
+	      (idx-f1dotcacc tmp (- g) wd)))))))
+  ())
+
+
+;; this is algebraically incorrect, but that's the only way 
+;; I could find to avoid negative curvature when using MMI 
+;; type criteria.
+(defmethod e-layer bbprop (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx3-ddstate)) out)
+  (idx-f3fill :in:ddx 1)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** e-layer-sparse
+;; like e-layer, but each RBF is only connected to a subset of the inputs
+;; this should be used for "multiple bitmap" outputs.
+(defclass e-layer-sparse e-layer
+  ((-idx1- (-int-)) offset))
+
+#? (new e-layer-sparse <tin> <off> <prm>)
+;; new e-layer (Eucliden distance RBF). <tin> is the
+;; thickness of the input layer (dimension of prototypes), 
+;; <off> is an idx1 with as many elements as there are 
+;; output. each element contains the offset in the input
+;; for the input vector of each output.
+;; <prm> is the parameter.
+(defmethod e-layer-sparse e-layer-sparse (tin off prm)
+  (declare (-obj- (idx1-ddparam)) prm)
+  (declare (-int-) tin)
+  (declare (-idx1- (-int-)) off)
+  (let ((tout (idx-dim off 0)))
+    (setq offset off)
+    (setq weight (==> prm alloc-idx2-ddstate tout tin)))
+  ())
+
+(defmethod e-layer-sparse set-proto (p)
+  (declare (-idx2- (-flt-)) p)
+  (array-copy p :weight:x)
+  ())
+
+(defmethod e-layer-sparse fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx3-state)) out)
+  (let* ((inx :in:x)
+	 (wx :weight:x)
+	 (proto-size (idx-dim wx 1))
+	 (inx-d1 (idx-dim inx 1))
+	 (inx-d2 (idx-dim inx 2))
+	 (ws (idx-dim wx 0)))
+    ;; resize out and output
+    (==> out resize ws inx-d1 inx-d2)
+    (let ((inx (idx-transpose inx '(2 1 0)))
+	  (outx (idx-transpose :out:x '(2 1 0))))
+      ;; loop over last two dimensions
+      (idx-bloop ((linx inx) (loutx outx))
+	(idx-bloop ((llinx linx) (lloutx loutx))
+	  ;; loop over outputs
+	  (idx-bloop ((w wx) (o lloutx) (off offset))
+	    ;; Euclidean dist
+	    (idx-sqrdist w (idx-trim llinx 0 (off) proto-size) o)
+	    (o (* .5 (o))))))))
+  ())
+
+(defmethod e-layer-sparse bprop (in out)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-obj- (idx3-dstate)) out)
+  (let* ((wx :weight:x)
+	 (wdx :weight:dx)
+	 (proto-size (idx-dim wx 1))
+	 (inx (idx-transpose :in:x '(2 1 0)))
+	 (indx (idx-transpose :in:dx '(2 1 0)))
+	 (outdx (idx-transpose :out:dx '(2 1 0)))
+	 (tmp (float-array* proto-size)))
+    (array-clear indx 0)
+    ;; loop over last two dimensions
+    (idx-bloop ((linx inx) (lindx indx) (loutdx outdx))
+      (idx-bloop ((llinx linx) (llindx lindx) (lloutdx loutdx))
+	;; loop over outputs
+	(idx-bloop ((w wx) (wd wdx) (od lloutdx) (off offset))
+	  (let ((g (od)))
+	    (when (<> 0 g)
+	      (idx-sub (idx-trim llinx 0 (off) proto-size) w tmp)
+	      (idx-f1dotcacc tmp g (idx-trim llindx 0 (off) proto-size))
+	      (idx-f1dotcacc tmp (- g) wd)))))))
+  ())
+
+(defmethod e-layer-sparse bbprop (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx3-ddstate)) out)
+  (idx-f3fill :in:ddx 1)
+  ())
+
+;; see comment for bbprop-correct method of e-layer
+(defmethod e-layer-sparse bbprop-correct (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx3-ddstate)) out)
+  (let* ((wx :weight:x)
+	 (wdx :weight:ddx)
+	 (proto-size (idx-dim wx 1))
+	 (inx (idx-transpose :in:x '(2 1 0)))
+	 (inddx (idx-transpose :in:ddx '(2 1 0)))
+	 (outdx (idx-transpose :out:dx '(2 1 0)))
+	 (outddx (idx-transpose :out:ddx '(2 1 0)))
+	 (tmp (float-array* proto-size)))
+    (array-clear inddx 0)
+    ;; loop over last two dimensions
+    (idx-bloop ((linx inx) (linddx inddx) (loutddx outddx) (loutdx outdx))
+      (idx-bloop ((llinx linx) (llinddx linddx) 
+		  (lloutddx loutddx) (lloutdx loutdx))
+	;; loop over outputs
+	(array-clear llinddx 0)
+	(idx-bloop ((w wx) (wd wdx) 
+		    (od lloutdx) (odd lloutddx) (off offset))
+	  (let ((odz (<> 0 (od)))
+		(oddz (<> 0 (odd))))
+	    (when (or odz oddz)
+	      (if (not oddz)
+		  (idx-m1clear tmp)
+		(idx-m1sub w (idx-trim llinx 0 (off) proto-size) tmp)
+		(idx-m1mul tmp tmp tmp)
+		(idx-m1dotm0 tmp odd tmp))
+	      (when odz
+		(idx-m1addm0 tmp od tmp))
+	      (let ((indd (idx-trim llinddx 0 (off) proto-size)))
+		(idx-m1add tmp indd indd))
+	      (idx-m1add tmp wd wd)))))))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** c-layer
+;; convolutional layer module. Performs multiple convolutions
+;; between an idx3-state input and an idx3-state output.
+;; includes bias and sigmoid.
+(defclass c-layer idx3-module
+  ((-int-) thickness)
+  ((-int-) stridei)
+  ((-int-) stridej)
+  ((-idx2- (-int-)) table)
+  ((-obj- (idx3-ddstate)) kernel)
+  ((-obj- (idx1-ddstate)) bias)
+  ((-obj- (idx3-ddstate)) sum)
+  ((-obj- (idx3-module)) squash))
+
+#? (new c-layer <ki> <kj> <ri> <rj> <tbl> <thick> <si> <sj> <sqsh>)
+;; Creates a new convolution layer.
+;; <ki> (int) vertical kernel size.
+;; <kj> (int) horizontal kernel size.
+;; <ri> <int) vertical stride (number of pixels by which the kernels are stepped)
+;; <rj> <int) horizontal stride
+;; <tbl> (idx2) N by 2 matrix containing source and destination
+;; feature maps for coresponding kernel
+;; <thick> (int) thickness of output layer (number of feature maps)
+;; <si> (int) vertical size for preallocation of internal state
+;; <sj> (int) horizontal size for preallocation of internal state
+;; <sqsh> (idx3-module) a squashing function module that operates
+;; on idx3-state.
+;; <prm> and idx1-ddparam from which the parameters will be allocated
+(defmethod c-layer c-layer (ki kj ri rj tbl thick si sj sqsh prm)
+  (declare (-obj- (idx1-ddparam)) prm)
+  (declare (-int-) ki kj ri rj thick si sj)
+  (declare (-idx2- (-int-)) tbl)
+  (declare (-obj- (idx3-module)) sqsh)
+  (setq thickness thick)
+  (setq stridei ri)
+  (setq stridej rj)
+  (setq kernel (==> prm alloc-idx3-ddstate (idx-dim tbl 0) ki kj))
+  (setq table tbl)
+  (setq bias (==> prm alloc-idx1-ddstate thick))
+  (setq sum (new idx3-ddstate thick si sj))
+  (setq squash sqsh)
+  ())
+
+(defmethod c-layer set-squash (sqsh)
+  (declare (-obj- (idx3-module)) sqsh)
+  (setq squash sqsh)
+  ())
+
+(defmethod c-layer set-stride (ri rj)
+  (declare (-int-) ri rj)
+  (setq stridei ri)
+  (setq stridej rj))
+
+(defmethod c-layer save (f) 
+  (save-flt-matrix f kernel)
+  (save-flt-matrix f bias))
+(defmethod c-layer load (f) 
+  (load-matrix-into f kernel)
+  (load-matrix-into f bias))
+
+(defmethod c-layer forget (v p)
+  (declare (-flt-) v p)
+  (array-clear :bias:x 0)
+  (let* ((kx :kernel:x)
+         (vsize (idx-dim kx 1))
+         (hsize (idx-dim kx 2))
+         (fanin (int-array (1+ (idx-i1max (select table 1 1))))))
+    (idx-bloop ((tab table)) (fanin (tab 1) (1+ (fanin (tab 1)))))
+    (idx-bloop ((tab table) (x kx))
+      (let ((s (/ v (** (* vsize hsize (to-float (fanin (tab 1)))) (/ p)))))
+	(idx-bloop ((lx x)) 
+	  (idx-bloop ((llx lx)) (llx (rand (- s) s)))))))
+  ())
+
+(defmethod c-layer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx3-state)) out)
+  (let* ((inx :in:x)
+	 (kernelx :kernel:x)
+	 (ki (idx-dim kernelx 1))
+	 (kj (idx-dim kernelx 2))
+	 (sini (idx-dim inx 1))
+	 (sinj (idx-dim inx 2)))
+    (if (or (<> 0 (mod (- sini (- ki stridei)) stridei)) 
+	    (<> 0 (mod (- sinj (- kj stridej)) stridej)))
+	(error "inconsistent input size, kernel size, and subsampling ratio"))
+    (let ((uuin (unfold (unfold inx 1 ki stridei) 2 kj stridej)))
+      ;; resize output if necessary
+      (==> sum resize thickness (idx-dim uuin 1) (idx-dim uuin 2))
+      (==> out resize thickness (idx-dim uuin 1) (idx-dim uuin 2))
+      (array-clear :sum:x 0)
+      ;; generic convolution
+      (idx-bloop ((lk kernelx) (lt table))
+	(let ((suin (select uuin 0 (lt 0)))
+	      (sout (select :sum:x 0 (lt 1))))
+	  (idx-m4dotm2acc suin lk sout)))
+      ;; add bias
+      (idx-bloop ((sumx :sum:x) (biasx :bias:x) (outx :out:x))
+	(idx-addm0 sumx biasx sumx))
+      ;; call squashing function
+      (==> squash fprop sum out)))
+  ())
+
+(defmethod c-layer bprop (in out)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-obj- (idx3-dstate)) out)
+  ;; backprop gradient through squasher
+  (==> squash bprop sum out)
+  ;; compute gradient of bias
+  (idx-bloop ((lha :sum:dx) (lb :bias:dx)) (idx-sumacc lha lb))
+  ;; backprop through convolution
+  (array-clear :in:dx 0)
+  (let* ((uuin (unfold (unfold :in:dx 1 (idx-dim :kernel:dx 1) stridei)
+		       2 (idx-dim :kernel:dx 2) stridej))
+	 (uuinf (unfold (unfold :in:x 1 (idx-dim :kernel:dx 1) stridei)
+			2 (idx-dim :kernel:dx 2) stridej))
+	 (borp (idx-transpose uuinf '(0 3 4 1 2))))
+    (idx-bloop ((lk :kernel:dx) (lkf :kernel:x) (lt table))
+      (let* ((islice (lt 0))
+	     (suin (select uuin 0 islice))
+	     (sborp (select borp 0 islice))
+	     (sout  (select :sum:dx 0 (lt 1))))
+	;; backward convolution
+	(idx-m2extm2acc sout lkf suin)
+	;; compute gradient for kernel
+	(idx-m4dotm2acc sborp sout lk))))
+  ())
+
+(defmethod c-layer bbprop (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx3-ddstate)) out)
+  ;; backprop gradient through squasher
+  (==> squash bbprop sum out)
+  ;; compute gradient of bias
+  (idx-bloop ((lha :sum:ddx) (lb :bias:ddx)) (idx-sumacc lha lb))
+  ;; backprop through convolution
+  (array-clear :in:ddx 0)
+  (let* ((uuin (unfold (unfold :in:ddx 1 (idx-dim :kernel:ddx 1) stridei)
+		       2 (idx-dim :kernel:ddx 2) stridej))
+	 (uuinf (unfold (unfold :in:x 1 (idx-dim :kernel:ddx 1) stridei)
+			2 (idx-dim :kernel:ddx 2) stridej))
+	 (borp (idx-transpose uuinf '(0 3 4 1 2))))
+    (idx-bloop ((lk :kernel:ddx) (lkf :kernel:x) (lt table))
+      (let* ((islice (lt 0))
+	     (suin (select uuin 0 islice))
+	     (sborp (select borp 0 islice))
+	     (sout  (select :sum:ddx 0 (lt 1))))
+	;; backward convolution
+	(idx-m2squextm2acc sout lkf suin)
+	;; compute gradient for kernel
+	(idx-m4squdotm2acc sborp sout lk))))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** s-layer
+;; subsampling layer class
+(defclass s-layer idx3-module
+  ((-int-) stridej stridei)
+  ((-obj- (idx1-ddstate)) coeff)
+  ((-obj- (idx1-ddstate)) bias)
+  ((-obj- (idx3-ddstate)) sub)
+  ((-obj- (idx3-ddstate)) sum)
+  ((-obj- (idx3-module)) squash))
+
+#? (new s-layer <ki> <kj> <thick> <si> <sj> <sqsh> <prm>)
+;; Creates a new subsampling layer for convolutional nets
+;; <ki> (int) vertical subsampling ratio.
+;; <kj> (int) horizontal subsampling ratio.
+;; <thick> (int) thickness of output layer (number of feature maps)
+;; <si> (int) vertical size for preallocation of internal state
+;; <sj> (int) horizontal size for preallocation of internal state
+;; <sqsh> (idx3-module) a squashing function module that operates
+;; on idx3-state.
+;; <prm> and idx1-ddparam from which the parameters will be allocated
+(defmethod s-layer s-layer (ki kj thick si sj sqsh prm)
+  (declare (-obj- (idx1-ddparam)) prm)
+  (declare (-int-) ki kj thick si sj)
+  (declare (-obj- (idx3-module)) sqsh)
+  (setq stridei ki)
+  (setq stridej kj)
+  (setq coeff (==> prm alloc-idx1-ddstate thick))
+  (setq bias  (==> prm alloc-idx1-ddstate thick))
+  (setq sub (new idx3-ddstate thick si sj))
+  (setq sum (new idx3-ddstate thick si sj))
+  (setq squash sqsh)
+  ())
+
+(defmethod s-layer save (f) 
+  (save-flt-matrix f coeff)
+  (save-flt-matrix f bias))
+(defmethod s-layer load (f) 
+  (load-matrix-into f coeff)
+  (load-matrix-into f bias))
+
+(defmethod s-layer set-stride (ri rj)
+  (declare (-int-) ri rj)
+  (setq stridei ri)
+  (setq stridej rj))
+
+(defmethod s-layer set-squash (sqsh)
+  (declare (-obj- (idx3-module)) sqsh)
+  (setq squash sqsh)
+  ())
+
+(defmethod s-layer forget (v p)
+  (declare (-float-) v p)
+  (array-clear :bias:x 0)
+  (idx-f1fill :coeff:x (/ v (** (* stridei stridej) (/ p))))
+  ())
+
+(defmethod s-layer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx3-state)) out)
+  ;; resize output if necessary
+  (let* ((sint (idx-dim :in:x 0))
+	 (sini (idx-dim :in:x 1))
+	 (sinj (idx-dim :in:x 2))
+	 (si (/ sini stridei))
+	 (sj (/ sinj stridej)))
+    (if (or (<> 0 (mod sini stridei)) (<> 0 (mod sinj stridej)))
+	(error "inconsistent input size and subsampling ratio"))
+    (==> sub resize sint si sj)
+    (==> sum resize sint si sj)
+    (==> out resize sint si sj)
+    (array-clear :sub:x 0)
+    ;; perform subsampling
+    (idx-bloop ((lix :in:x) (lsx :sub:x) (lcx :coeff:x) (ltx :sum:x))
+      (let* ((uuin (unfold (unfold lix 1 stridej stridej) 
+			   0 stridei stridei)))
+	(idx-eloop ((z1 uuin))
+	  (idx-eloop ((z2 z1))
+	    (idx-add z2 lsx lsx))))
+      (idx-dotm0  lsx lcx ltx))
+    ;; add bias
+    (idx-bloop ((sumx :sum:x) (biasx :bias:x) (outx :out:x))
+      (idx-addm0 sumx biasx sumx))
+    ;; call squashing function
+    (==> squash fprop sum out))
+  ())
+
+(defmethod s-layer bprop (in out)
+  (declare (-obj- (idx3-dstate)) in)
+  (declare (-obj- (idx3-dstate)) out)
+  ;; backprop gradient through squasher
+  (==> squash bprop sum out)
+  ;; compute gradient of bias
+  (idx-bloop ((lha :sum:dx) (lb :bias:dx)) (idx-sumacc lha lb))
+  ;; gradient of coefficient
+  (idx-bloop ((lcdx :coeff:dx) (ltdx :sum:dx) (lsx  :sub:x))
+    (idx-dotacc lsx ltdx lcdx))
+  ;; gradient through coefficient and oversample
+  (idx-bloop ((lidx :in:dx) (lsdx :sub:dx) (lcx :coeff:x) (ltdx :sum:dx))
+    (idx-dotm0 ltdx lcx lsdx)
+    (midx-m2oversample lsdx stridei stridej lidx))
+  ())
+
+(defmethod s-layer bbprop (in out)
+  (declare (-obj- (idx3-ddstate)) in)
+  (declare (-obj- (idx3-ddstate)) out)
+  ;; backprop through squasher
+  (==> squash bbprop sum out)
+  ;; compute 2nd deriv of bias
+  (idx-bloop ((lha :sum:ddx) (lb :bias:ddx)) (idx-sumacc lha lb))
+  ;; 2nd deriv of coefficient
+  (idx-bloop ((lcdx :coeff:ddx) (ltdx :sum:ddx) (lsx  :sub:x))
+    (idx-m2squdotm2acc lsx ltdx lcdx))
+  ;; 2nd deriv through coefficient and oversample
+  (idx-bloop ((lidx :in:ddx) (lsdx :sub:ddx) (lcx :coeff:x) (ltdx :sum:ddx))
+    (let ((cf (lcx)))
+      (idx-f2dotc ltdx (* cf cf) lsdx))
+    (midx-m2oversample lsdx stridei stridej lidx))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; #? ** poly2-layer
+;; output all input variables and all cross-products
+;; of two variables. not finished.
+(defclass poly2-layer idx3-module)
+(defmethod poly2-layer poly2-layer () ())
+(defmethod poly2-layer fprop (in out)
+  (declare (-obj- (idx3-state)) in)
+  (declare (-obj- (idx3-state)) out)
+  (let* ((sint (idx-dim :in:x 0))
+	 (sini (idx-dim :in:x 1))
+	 (sinj (idx-dim :in:x 2)))
+    (==> out resize soutt si sj)
+    (array-copy :in:x (idx-trim :out:x 0 0 sint))
+    ()))
+
+  
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de full-table (a b)
+    (declare (-int-) a b)
+    (let ((m (int-array (* a b) 2))
+	  (p 0))
+      (for (j 0 (1- b)) (for (i 0 (1- a)) (m p 0 i) (m p 1 j) (incr p))) m))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make ()
+	  (f-layer f-layer forget fprop bprop bbprop set-squash)
+	  (e-layer e-layer forget fprop bprop bbprop)
+	  (e-layer-sparse e-layer-sparse fprop bprop bbprop set-proto)
+	  (c-layer c-layer forget fprop bprop bbprop set-stride set-squash)
+	  (s-layer s-layer forget fprop bprop bbprop set-stride set-squash)
+	  full-table
+	  )

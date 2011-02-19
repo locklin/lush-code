@@ -1,0 +1,157 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann Le Cun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the Lesser GNU General Public License as 
+;;; published by the Free Software Foundation; either version 2 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Managing sets of arrays
+;; If a number of arrays of varying extent are to be created and
+;; managed at runtime, this can be done by storing pointers to
+;; the arrays. The <IdxPool> facility implements this dynamic array
+;; management scheme. Declare a pool class for a specific array 
+;; rank and element-type and compile it. Example:
+;; 
+;; {<code>
+;; (def-idxpool DoubleVectorPool 1 double)
+;;
+;; (dhc-make-class "mypool" DoubleVectorPool)
+;; </code>}
+;; 
+;; The newly defined class is a subclass of class <IdxPool>.
+;; Note that using an <IdxPool> class only makes sense in compiled
+;; code. In interpreted code use an <atom-array> to store arrays.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(libload "dynamic")
+
+(deftemplate IdxPool object
+  ((-idx1- (-gptr-)) ptrs)
+  ((-obj- (MemoryPool)) idx-pool)
+  ((-int-) n)
+  ((-double-) memuse)
+  ((-any-) idx-obj) )
+
+(in-namespace (class IdxPool)
+
+(defmacro nullp (p)
+  `(= ,p (to-gptr ()))
+  )
+
+(defmacro check-bounds (i)
+  `(when (or (< ,i 0) (>= ,i (length ptrs)))
+     (error (sprintf "pool index out of bounds: %d" ,i)) )
+  )
+)
+
+#? (new <IdxPool> <n>)
+;; Create a new IdxPool with capacity <n>.
+(defmethod IdxPool IdxPool (n)
+  (declare (-int-) n)
+  (setq ptrs (gptr-array n))
+  (setq idx-pool (new MemoryPool))
+  (setq n 0)
+  (setq memuse (storage-nelems (idx-storage ptrs)))
+  ())
+
+#? (==> <IdxPool> length)
+;; Size of the pool in number of slots.
+(defmethod IdxPool length ()
+  (length ptrs) )
+
+#? (==> <IdxPool> number-of-items)
+;; Number of items in IdxPool.
+(defmethod IdxPool number-of-items ()
+  n)
+
+#? (==> <IdxPool> memuse)
+;; Number of bytes used by pool (sum of bytes used by pool and by all
+;; arrays currently stored in the pool).
+(defmethod IdxPool memuse ()
+  (+ (==> idx-pool memuse) memuse) )
+
+(dhc-make-class () IdxPool)      ; methods below are template methods
+
+(defmethod IdxPool -deepcopy (clone)
+  (declare (-obj- (-classof- this)) clone)
+  (setq :clone:ptrs (clone-array ptrs))
+  (for* (i 0 (length ptrs))
+    (declare (-int-) i)
+    (:clone:ptrs i (ptrs i)) )
+  (setq :clone:idx-pool idx-pool)
+  (setq :clone:n n)
+  (setq :clone:memuse memuse)
+  (setq :clone:idx-obj idx-obj)
+  ())
+  
+#? (==> <IdxPool> set <i> <m>)
+;; Store reference to array <m> in pool at <i> and return array
+;; previously stored at <i> or the array <idx-obj> if slot <i> was unused.
+(defmethod IdxPool set (i m)
+  (declare (-int-) i)
+  (declare (-typeof- idx-obj) m)
+  (check-bounds i)
+  (unprotect
+   (let ((oldm (if (nullp (ptrs i)) 
+                   (progn (incr n) idx-obj)
+                 (to-obj (classof idx-obj) (ptrs i)) )))
+     (ptrs i (to-gptr (in-pool idx-pool (copy-index m))))
+     (decr memuse (storage-nbytes (idx-storage oldm)))
+     (incr memuse (storage-nbytes (idx-storage m)))
+     oldm)
+   ))
+
+#? (==> <IdxPool> get <i>)
+;; Return array stored in pool at <i>.
+(defmethod IdxPool get (i)
+  (declare (-int-) i)
+  (check-bounds i)
+  (if (nullp (ptrs i)) 
+      idx-obj
+    (to-obj (classof idx-obj) (ptrs i)) ))
+
+
+(defmacro def-idxpool (name n type)
+  (when (not (symbolp name))
+    (error "Not a symbol" name))
+  (when (or (not (numberp n))
+            (> n +MAXDIMS+)
+            (< n 0))
+    (error "Not a valid array dimension" n) )
+  (when (null (storage-class type))
+    (error "Not a valid element-type" type))
+  (setq type (storage-class-symbol (storage-class type)))
+  (let ((idxt (symbol-concat '-idx (make-symbol (str n)) '-))
+        (elt (symbol-concat '- type '-))
+        (constr (symbol-concat type '-array)) )
+  `(prog1
+       (defclass ,name IdxPool
+         ((,idxt (,elt)) idx-obj) )
+     
+     (defmethod ,name ,name (n)
+       (declare (-int-) n)
+       (unprotect)
+       (setq idx-obj (,constr ,@(make-list n 0)))
+       (==> this IdxPool n) )
+     )
+    ))

@@ -1,0 +1,831 @@
+$Id: inputoutput.hlp,v 1.23 2006/02/26 15:34:46 laseray Exp $
+
+#? *** Loading and Executing Lush Program Files
+
+#? (load  <in> [<out> [<prompt>]])
+.SEE (open-write <s> [<suffix>])
+.SEE (open-read <s> [<suffix>])
+.SEE ^L <filename>
+
+This function is used for loading a Lush source or binary file. 
+
+This function starts a new toplevel with the file named <in> 
+as input file, and the file named <out> as the output file.  
+Strings <in> and <out> represent filenames according to the 
+general filename conventions explained with functions 
+<open-read> and <open-write>.
+
+Function <load> searches its input file <in> along the current 
+search path. It also tries various suffixes usually associated 
+with Lush program files (ie. <.lsh> <.lshc> as well as <.sn> 
+<.tl> <.snc> <.tlc> for backward compatibility with TL3 and SN).
+
+Function <load> then enters a loop which reads a Lush expression
+on the input file, evaluates this expression, and prints the
+result on the output file. This loop terminates when
+an end-of-file condition is detected or when function <exit>
+is called. Function <load> returns the full filename of the 
+input file.  
+
+When the output file argument is omitted <out>, function <load>
+does not display the evaluation results. This is useful for silently
+loading a Lush program file. This file however can produce an output
+because it may contain calls to some printing function (eg. <print>.)
+
+The optional string <prompt> indicates the prompts strings displayed
+by Lush when reading from the standard input.  String prompt contains 
+up to three prompt strings separated by the vertical bar character <"|">.
+The first prompt string is used when Lush waits for a new expression.
+The second prompt string is used when Lush waits for the continuation
+of an already started expression. The last prompt string is used
+when the execution of the Lush expression reads information from
+the console (for instance using function <read>).
+
+Example: 
+.VP
+;; The toplevel loop is implemented as
+(load "$stdin" "$stdout" "? |  |> ")
+
+#? ^L <filename>
+.SEE (load  <in> [<out> [<prompt>]])
+
+This macro-character expands into a call to function <load>.  If a
+filename <filename> is not provided, the last file name used with
+macro-character <^L> is used. This file name is saved in variable
+<last-loaded-file>.
+
+#? file-being-loaded
+.TYPE VAR
+.SEE (load  <in> [<out> [<prompt>]])
+
+This variable is set when you load a Lush program file using
+function <load>. It contains the full name of the file being
+loaded.  It provides a way to know the full filename of
+the Lush program file in which this variable is checked.
+
+#? (libload <libname> [<opt>])
+.TYPE DE
+.FILE sysenv.lsh
+.SEE file-being-loaded
+.SEE (load <in> [<out> [<prompt>]])
+.SEE (reload)
+This is the primary function used to load a library or
+a Lush file into another Lush file or library.
+A typical Lush program file will begin with a bunch
+of <libload>. The difference between <load> and <libload>
+is that <libload> remembers when a particular file was previously
+libloaded, and only loads it once. Libload also keeps track
+of the dependencies between Lush program files (which file
+libloads which other file). This is the basis of the automatic
+and transparent on-demand compilation mechanism as described 
+in detail below. 
+
+Function <libload> first searches the file <libname>.  
+When <libload> is called from an existing Lush file, it first
+searches file <libname> relative to the location of the existing Lush file.
+If no such file exists, it uses function <filepath> to locate the file along
+the lush search path.
+
+Function <libload> then updates its internal database of dependencies between
+Lush files. When function <libload> is called from an existing Lush file, it
+records the fact that this Lush file depends on the Lush file <filename>.
+
+Function <libload> then tests whether it is necessary 
+to load the file. It is necessary to load the file if 
+.LI
+Argument <opt> is non nil.
+.LI
+File <libname> has never been loaded,
+.LI
+File <libname> has been modified since the last time it was loaded,
+.LI
+File <libname> has not been modified since the last time it was loaded,
+but depends on a Lush file that has been modified since the last time it was
+loaded.
+.PP
+When this is the case, <libload> calls <load> to load the file,
+and stores a timestamp for the file in its internal database.
+Function <libload> always returns the full name of <libname>.
+
+
+#? (reload)
+Load the file that was loaded last using <libload>.
+
+
+#? (libload-dependencies [<fname>])
+
+Function returns the names of all the files on which <fname> depends.
+This information is collected whenever <libload> is called.
+Argument <fname> defaults to the currently loaded file.
+
+
+#? (libload-add-dependency <fname>)
+
+This function modifies the dependency database managed by function <libload>.
+It records that the file currently loaded depends on file <fname>.  This
+function is useful when it is not practical to call <libload> on function
+<fname>.  For instance <fname> might not be a Lush file but a data file
+processed by the current file.
+
+This function also claims that <fname> has been successfully loaded.  Calling
+<libload> on <fname> will not do anything unless someone modifies file <fname>
+after calling <libload-add-dependency>.
+
+#? (find-file <dirlist> <filename> <extlist>)
+.TYPE DE
+.FILE sysenv.lsh
+Finds the first file that exists fo the form
+<dir>/<file>.<ext> where <dir> is one of the
+directories in list <dirlist> and <ext> is
+one of the suffixes in <extlist>.
+
+Example:
+.CODE
+ (find-file '("local" "lsh") "stdenv" '(".lshc" ".lsh"))
+.PP
+Note:
+This is somewhat similar to <filepath>
+but allows searching through any directory tree.
+
+#? (save <f> <s1> ... <sn>)
+.TYPE DM
+.FILE sysenv.lsh
+
+This function just saves indented definitions of the symbols <s1> to
+<sn> into the file named <f>. A suffix <".lsh"> is automatically added
+to <f> if it has no suffix.
+
+
+#? (autoload <f> <s1> ... <sn>)
+.TYPE DM
+.FILE sysenv.lsh
+
+Defines functions <s1> to <sn> with a code that first loads file <f>,
+and then restart the evaluation.
+
+The first time one of these functions is called, its definition is
+loaded from file <f>, and the execution continues.  Such autoloading
+functions often are defined by <"stdenv.lsh">. They avoid loading many
+files while allowing the user to call those functions at any time.
+
+#? *** Lisp-Style Input/Output
+
+#? ** Input
+
+#? (read) 
+.SEE The Lush Reader.
+Calls the Lisp reader, and returns the next Lush object available on
+the current input. Function <read> is able to read both text and
+binary Lush files.
+
+
+#? (read-string [<spec>])
+
+Reads a string on the current input. 
+.IP
+When argument <spec> is a number, it indicates how many character
+should be read from the current input and returned as a string.
+.IP
+When argument <spec> is a string, it specifies which characters are to
+be read. For example, <"0-9"> matches any number, <"~0-9"> matches
+anything but a number, <"~ \t\n\r\f\e"> anything but a blank character
+or end of file, <"yYnN"> reads only one of these characters.
+.PP
+The default <spec> for function <read-string> is "~\n\r\f\e" and 
+means ``read anything until the end of line''.
+
+
+#? (skip-char [<spec>])
+
+Skips the characters matching string <spec> and returns the next available
+character.  The default value of argument <spec> is <"\t\n\r\f"> and means
+``skip any blank characters''.
+
+Example:
+
+This function reads the input stream and builds a list
+with each line, until it reaches an end-of-file character
+.CODE 
+ (de read-lines()
+  (let ((ans ()))
+   (while (<> (skip-char "\n\r\f") "\e")
+    (setq ans (nconc1 ans (read-string))) ) ) )
+.PP
+This function reads the input stream and builds a list
+with each word, until it reaches an end-of-file character
+.CODE 
+ (de read-words()
+  (let ((ans ()))
+   (while (<> (skip-char) "\e")
+     (setq ans (nconc1 ans (read-string "~ \t\n\r\f\e"))) ) ) )
+.PP
+
+#? (ask  <s>)
+
+Prints the string <s> on the standard output and waits for 
+a <"yes"> or <"no"> answer on the standard input.
+Function <ask> returns <t> or <()> according to the user's answer.
+Function <ask> is not affected by the current input or output file.
+
+Example:
+.CODE
+? (ask "Your answer")
+Your answer [y/n] ?
+.PP
+
+
+
+#? ** Output
+
+#? (prin <l1> ... <ln>)
+
+Prints the Lush objects <l1> to <ln> separated by spaces.  Unlike
+<print>, the function <prin> does not terminates the line with a
+linefeed.  Function <prin> returns the result of the last evaluation.
+
+#? (print <l1> ... <ln>)
+
+Prints the Lush objects <l1> to <ln> separated by spaces and output a
+newline character. Function <print> returns the result of the last
+evaluation.
+
+Example:
+.EX (print "hello" (+ 3 4) '(a b c d))
+
+
+#? (pprin <l1> ... <ln>)
+.TYPE DE
+.FILE sysenv.lsh
+
+Prints the Lush objects <l1> to <ln> with a nice indentation.  The
+indentation is defined according many heuristics suitable for printing
+nicely function definitions. Unlike function <pprint>, <pprin> does
+not terminates the line with a linefeed.
+
+#? (pprint <l1> ... <ln>)
+.TYPE DE
+.FILE sysenv.lsh
+
+Prints the evaluations of <l1> to <ln> with a nice indentation.  The
+indentation is defined according many heuristics suitable for printing
+nicely function definitions. Function <pprint> terminates the line
+with a linefeed.
+
+Although the current implementation of <pretty> is a more complicated, a
+simple implementation of <pretty> would be :
+.CODE
+ (df pretty(f) (pprint (funcdef f)))
+.PP
+
+#? (printf  <format> ... <args> ... )
+
+This function is similar to the <printf> function in C language.
+String <format> will be printed verbatim, except for the following
+escape sequences, which refer to <args>.
+.IP
+<"%%">
+is replaced by a single \%.
+.IP
+<"%l">
+is replaced by a representation of a lisp object.
+.IP
+<"%[-][<n>]s">
+is replaced by a string, right justified in a field of length <n>
+if <n> is specified.  When the optional minus sign is present,
+the string is left justified.
+.IP
+<"%[-][<n>]d">
+is replaced by an integer, right justified in a field of <n>
+characters, if <n> is specified.  When the optional minus sign is
+present, the string is left justified.
+.IP
+<"%[-][<n>[.<m>]]<c>">
+where <c> is one of the characters <e>, <f> or <g>, is replaced by a
+floating point number in a <n> character field, with <m> digits after
+the decimal point. <e> specifies a format with an exponent, <f>
+specifies a format without an exponent, and <g> uses whichever format
+is more compact.  When the optional minus sign is present, the string
+is left justified.
+.PP
+Function <printf> is the only way to print the real contents of a
+character string, without adding surrounding double quotes or escaping
+the special characters.
+
+Example:
+.EX (printf "%5s%3d is equal to %6.3f\n" "sqrt" 2 (sqrt 2))
+
+#? (tab  [<n>])
+
+When a numeric argument <n> is given, <tab> outputs blanks until the
+cursor reaches the <n>-th column on the current line. The cursor
+position is unchanged if the cursor is located after the <n>-th
+column. Function <tab> always returns the current cursor position.
+
+.EX (tab)
+
+
+
+#? ** File Names
+
+#? (basename <path> [<suffix>])
+
+Returns the terminal component of the pathname <path> by removing any
+prefix ending with </>. If string <suffix> is provided, a possible
+suffix <suffix> is removed from the pathname.
+
+This function makes no reference to the actual contents of the
+filesystem.  It just chops the filename according to the file naming
+conventions.
+
+
+#? (dirname <path>)
+Returns the name of the directory containing the file named <path>.
+
+This function makes no reference to the actual contents of the
+filesystem.  It just chops the filename according to the file naming
+conventions.
+
+
+#? (concat-fname [<filename1>] <filename2>)
+
+Returns an absolute filename equivalent to <filename2> parsed from
+current directory <filename1>.  Argument <filename1> defaults to the
+current directory.
+
+This function makes no reference to the actual contents of the
+filesystem.  It just concatenates the filenames according to the file
+naming conventions. Nevertheless, if the resulting filename refers to
+an actual directory, a directory separator </> is appended to the
+returned filename.
+
+Examples:
+.EX (concat-fname "..")
+.EX (concat-fname (getenv "HOME") "myfile.lsh")
+
+
+#? (relative-fname <dirname> <filename>)
+
+If <filename> represents a file located below directory <dirname>,
+this function returns a string representing the relative file name
+of <filename> with respect to directory <dirname>.
+Function <concat-fname> can then be reused to reconstruct
+the absolute file name.  This function returns <()> otherwise.
+
+Examples:
+.EX (relative-fname "/home" "/home/lush/zoo")
+.EX (relative-fname "/usr/share" "/home/lush/zoo")
+
+The following idiom can be used to relocate a filename <x>
+from directory <fromdir> to directory <todir>.  
+.VP
+   (concat-fname <todir>
+      (or (relative-fname <fromdir> <x>) <x>) )
+
+
+#? (tmpname [[<dir>] <suffix>])
+
+This function creates a temporary file and returns its name.
+When Lush exits, an automatic cleanup code removes these files.
+
+The optional string <dir> specifies the directory where the
+temporary file will be created. A value of <()> is interpreted
+as the default system directory for temporary files.
+
+This function generates file names using the optional suffix <suffix>.
+If you do not specify this argument, the generated filename will
+have no suffix.
+
+Examples:
+.CODE
+(tmpname)           ;; creates a temporary file.
+(tmpname () "sn")   ;; creates a temporary file whose name ends with ".lsh".
+(tmpname ".")       ;; creates a temporary file in the current directory.
+
+
+
+#? ** Searched Path
+.SEE Lush Startup.
+
+When Lush is looking for a file, it searches for it among a list of
+directories stored in variable <|*PATH|>. 
+Several functions are provided to handle this feature.
+
+#? (path  <s1>...<sn>)
+.TYPE DE
+.FILE sysenv.lsh
+The function <path> allows you to get and set this list of
+directories searched by Lush. Without arguments, function <path> 
+returns the current path. Otherwise, the strings <s1> to <sn> 
+become the current path.
+
+The initial path is automatically set while Lush is starting up
+by retrieving the Lush executable file and scanning up the
+directories until it finds a suitable library directory.
+
+.EX (progn (printf "--> The current path is:\n") (path))
+
+#? (addpath <s>)
+.TYPE DE
+.FILE sysenv.lsh
+.SEE (path  <s1>...<sn>)
+
+The function <addpath> adds the directory <s> to the file search path.
+Directory <s> is added at the head of the search path. Other
+occurrences of this directory in the path are removed, in order to
+keep the search path small and non redundant.
+
+Example:
+.CODE
+? (addpath (concat (getenv "HOME") "/mysnlib"))
+.PP
+
+
+#? (filepath <filename> [<suffixes>])
+.SEE (path  <s1>...<sn>)
+.SEE (concat-fname [<filename1>] <filename2>)
+.SEE (load  <in> [<out> [<prompt>]])
+
+The function <filepath> searches file <filename> along
+the current search path, using the suffixes specified
+by argument <suffixes>.  Function <filepath> returns the 
+absolute path name of the file. 
+The empty list is returned if no file matches the argument
+along the current search path.
+
+Argument <suffixes> is a string containing a 
+sequence of possible suffixes (including the initial period)
+separated by vertical bars ``|''. The sequence represents the
+priority order. A suffix may have zero characters.
+.CODE
+".dump"      Try suffix <.dump>.
+".lshc|.lsh|"  Try suffixes <.lshc> and <.lsh>, then try without suffix.
+"|.lsh"       Try without suffix, then try suffix <.lsh>.
+".lsh|"       Try suffix <sn>, then try without suffix.
+.PP
+Argument <suffixes> may specify a single suffix
+without the initial period. This is a shorthand
+for testing first the specified suffix and then 
+testing without a suffix.
+.CODE
+"sn"         Equivalent to ".lsh|"
+.PP
+When argument <suffixes> is omitted, <filepath> uses the
+same suffixes than function <load>.  This default
+provides a way to determine which file would be loaded
+by a given call to function <load>.
+.EX (filepath "sysenv")
+
+
+#? ** Files and Directories Management
+
+#? (files [<directory>])
+
+Returns the list of the files located in directory <directory>.
+If argument <directory> is ommitted, the current directory is assummed.
+
+
+#? (fileinfo <filename>)
+Returns an a-list containing lots of information about 
+the file named <filename> in the form of an association list. 
+Information includes type, dates, permissions, size,....
+This function returns nil if the named file does not exist.
+.EX (fileinfo ".")
+
+#? (dirp <path>)
+
+Returns <t> if string <path> is the filename of a directory.  This
+function also returns <t> if string <path> is the filename of a
+symbolic link referring to a directory.
+.EX (dirp "..")
+
+#? (filep <path>)
+
+Returns <t> if string <path> is the filename of a regular file (not a
+directory).  This function also returns <t> if string <path> is the
+filename of a symbolic link referring to a regular file.
+.EX (filep "..")
+
+
+#? (lockfile <path>)
+
+Attemps to create file <path>. 
+.IP
+If this file already exists, function <lockfile>
+returns the empty list <()>.
+.IP
+If this file does not exists already, function <lockfile>
+writes the current date into the file and returns <t>.
+.PP
+This function is useful for implementing a simple locking scheme.
+
+
+#? (mkdir <dirname>)
+
+This function creates a new directory <dirname>.
+.SEE (mkdir-on-need [<s>])
+.SEE (chdir [<s>])
+
+
+#? (unlink <path>)
+
+This function removes the file or directory <path>. 
+It does not complain if the file or directory <path> does not exist.
+
+
+#? (rename <path1> <path2>)
+
+This function renames file <path1> as <path2>. 
+
+
+#? (copyfile <file1> <file2>)
+
+Copy file <file1> onto file <file2>.
+Arguments <file1> and <file2> may be file descriptors or
+file names (as described in <open-read> and <open-write>.
+
+
+
+#? ** Files and Descriptors
+
+
+#? (script  [<s>])
+
+Creates a file named <s> and records all the input/output operations
+on that file. The suffix <".script"> is added to the name <s>. This
+function is handy for keeping a trace of the Lush session.  If
+function <script> is called without arguments, the current script file
+is closed.
+
+#? (open-read <s> [<suffixes>])
+.SEE (sys <shellcmd>)
+.SEE (filepath <filename> [<suffixes>])
+
+This function returns a read file descriptor of the file named <s>.
+The empty list is returned when an error occurs while opening the file.
+The file descriptor is closed when the garbage collector detects that
+the file is no longer necessary. File descriptors however can be
+manually closed with the function <delete>.
+
+Filenames have the following form:
+.IP
+A legal operating system filename will be
+searched along the current path.
+.IP
+<"$stdin"> stands for the Lush standard input.
+.IP
+On some systems, <"| shell command"> may be used to open a pipe to
+another process. See the description of function <sys> to have comments
+about the implementation of this feature.
+.PP
+When string <suffixes> is specified, the suffixes specified
+by this string are tried while searching the file along the
+search path. The possible values of the string <suffix> are
+documented with function <filepath>.
+
+
+#? (open-write <s> [<suffix>])
+.SEE (sys <shellcmd>)
+
+This function returns a write file descriptor of the file named <s>.
+The empty list is returned when an error occurs while opening the file.
+The file descriptor is closed when the garbage collector detects that
+the file is no longer necessary. File descriptors however can be
+manually closed with the <delete> function.
+
+Filenames have the following form:
+.IP
+A legal operating system filename.
+.IP
+<"$stdout"> stands for the Lush standard output stream.
+.IP
+<"$stderr"> stands for the Lush standard error stream.
+.IP
+On some systems, <"| shell command"> may be used to open a pipe to
+another process. See the description of function <sys> to have comments
+about the implementation of this feature.
+
+An optional suffix can be specified as argument <suffix>.
+This suffix is appended to the filename unless the filename
+already contains a suffix.
+
+
+#? (open-append <s> [<suffix>])
+
+This function returns a ``append'' file descriptor of the file named
+<s>.  All output on this file descriptor shall be appended to the
+file. The empty list is returned when an error occurs while opening the file.
+The file descriptor is closed when the garbage collector detects that
+the file is no longer necessary. File descriptors however can be
+manually closed with the <delete> function.
+
+An optional suffix can be specified as argument <suffix>.
+This suffix is appended to the filename unless the filename
+already contains a suffix.
+
+
+#? (writing <f> <l1> ... <ln>)
+.SEE (open-write <s> [<suffix>])
+.SEE (open-append <s> [<suffix>])
+
+Calls <progn> on <l1> to <ln>, while redirecting the current output to
+<f>. Argument <f> may be a filename or a file descriptor obtained by
+<open-write> or <open-append>. 
+
+
+#? (reading <f> <l1>... <ln>)
+.SEE (open-read <s> [<suffix>])
+
+Calls <progn> on <l1> to <ln>, while redirecting the current input to
+<f>.  Argument <f> may be a filename or a read file descriptor
+obtained by <open-read>.
+
+Example: This function returns the list of the files in directory s
+.CODE
+ (de directory(s)
+        (let ((ans ()))
+                (reading (concat "|/bin/ls " s)
+                        (while (<> (skip-char) "\e")
+                                (setq ans (nconc1 ans (read-string))) ) )
+                ans ) )
+.PP
+
+#? (reading-string <str> <l1>... <ln>)
+Calls <progn> on <l1> to <ln>, while redirecting the current input 
+to read the contents of string <str>. 
+.EX (reading-string "(1 2 3)" (read))
+
+#? (read8 <f>)
+
+Reads a byte on file descriptor <f>.  This function returns a number
+in the range 0 to 255.
+
+#? (write8 <f> <b>)
+
+Writes a byte <b> on file descriptor <f>. Argument <b> must be a
+number in the range 0 to 255. This function does not flush the file
+<f>.  The function <flush> must be used in order to write out all
+remaining data.
+
+#? (fsize <f>)
+Returns the number of bytes remaining in the file. When the file
+is not exhaustable or not rewindable (such as pipes and terminals)
+it causes an error.
+
+#? (flush [<f>])
+Flushes the file descriptor <f>.
+
+When no arguments are provided, both the current input and current
+output are flushed: All characters pending on the current input are
+removed until a newline is encountered, all characters buffered on the
+current output are printed out.
+
+Example:
+.CODE
+ ;;; This function ask a question and returns a string.
+ (de input(question)
+        (printf "%s" question)
+        (flush)
+        (read-string) )
+.PP
+
+
+
+
+#? ** Binary Input/Output
+
+#? (bwrite <l1> ... <ln>)
+.SEE (bread)
+Function <bwrite> writes the lisp objects <l1> to <ln> on the current
+output stream as a sequence of binary tokens.  This function is able 
+to write correctly lisp objects with circular references. It cannot 
+however write lisp objects useful for their side effects like open 
+file descriptors or windows.
+
+#? (bwrite-exact <l1> ... <ln>)
+.SEE (bwrite <l1> ... <ln>)
+.SEE (bread)
+Function <bwrite-exact> is similar to <bwrite> with a few twists
+that makes it more accurate but less frequently useful.
+.IP
+Function <bwrite> writes objects by first specifying the class name.  This
+implies the class must be defined and have the same name when reading the
+object.  Function <bwrite-exact> instead writes a complete definition of the
+class.  This implies that <bread> will create a new unnamed class regardless
+of the existing classes.
+.IP
+Function <bwrite> writes indexes by saving their content regardless of how
+the index is laid out in the corresponding storages.  This implies that
+<bread> will create a new storage for each of them.  Function <bwrite-exact>
+instead writes the storage and the index layout.  But this is wasteful
+if the storage is much larger than the index.
+
+
+#? (bread)
+.SEE (read)
+Function <bread> reads on the current input stream a binary sequence of tokens
+and builds the corresponding lisp object.  Functions <read> and <load> are
+also able to recognize binary tokens in the middle of a text file. This allows
+for reading a file containing a mixture of lisp objects representing as binary
+sequence of tokens or as text.
+
+
+#? (bread-exact)
+.SEE (bread)
+Function <bread-exact> is similar to <bwrite> with one twists
+that makes it more accurate but less frequently useful.
+.IP
+Saving an instance of a user defined class with <bwrite> saves only the slots
+of the instance and a reference to the class name.  Function <bread> will be
+able to read this binary file if the class has already been defined in the
+interpreter.  This class must define the same slots with the same order as the
+class of the actual object stored in the file.  Additional slots will just be
+skipped and left with their default value.  Function <bread-exact> instead
+causes an error when there are additional slots.
+.PP
+Note that both <bread> and <bread-exact> can read files produced
+by either <bwrite> or <bwrite-exact>.  There is no difference between
+<bread> and <bread-exact> when reading a file produced by <bwrite-exact>.
+
+
+#? (tokenize <fin> <fout>)
+.TYPE DE
+.FILE sysenv.lsh
+
+Function <tokenize> reads all lisp expressions from file <fin> and
+writes their binary equivalent into file <fout>.
+
+This function is useful for converting Lush program files (SN files)
+into preparsed binary file (SNC files). Loading a preparsed file 
+is much faster than loading a text file. Preparsed copies of certain 
+system libraries are located in directory <"<lushdir>/lib">.
+
+
+#? (dump <fname>)
+.SEE Lush Startup.
+
+Writes the status of the lisp interpreter into file <fname> and
+return size of file in bytes. When <fname> has no suffix,
+".dump" is used.
+
+Dump files are useful for lauching Lush with preloaded libraries
+and applications. During startup Lush can load a binary dump
+file specified by the command line arguments. If Lush does not
+find the system library <"stdenv.lsh">, it attempts to undump
+a file names <"stdenv.dump">.
+
+
+
+
+#? ** Pipes and Sockets
+
+
+#? (filteropen <cmd>)
+Launch another program with control over its stdin and stdout streams.
+
+This function runs the shell command <cmd> in the background and returns
+a list of length three, including a write file descriptor, read file
+descriptor and the process id of the child process. Writing to the 
+write file descriptor causes data to be send to the processes' stdin,
+and the read file descriptor reads from the processes' stdout.
+
+Example:
+
+
+#? (socketopen <host> <port> <fin> <fout>)
+This command is available under Unix.
+
+This function connects a server process listening on port number <port> on the
+remote computer named <host>.  It stores into symbol <fin> a file descriptor
+for reading from the server, and stores into symbol <fout> a file descriptor
+for writing to the server.
+
+Arguments <fin> and <fout> are evaluated and must be quoted symbols.
+
+This function causes an error if the server is not listening for connections.
+Make the port number negative to prevent this. 
+Function <socketopen> will then return <()> if the port cannot be opened.
+
+
+#? (socketaccept <port> [<fin> <fout>])
+This command is available under Unix.
+
+This commands creates a server side socket listening on port number <port>.
+It then waits for a client connection (for instance with <socketopen>).  Then
+it stores file descriptors for reading from and writing to the client into
+symbols <fin> and <fout> respectively.  Arguments <fin> and <fout> are
+evaluated and must be quoted symbols.
+
+When arguments <fin> and <fout> are not provided, it returns a boolean
+indicating whether it was possible to wait for connections on the 
+specified port. 
+
+
+#? (socketselect [...<filedescriptors>...] [<timeout>])
+This command waits until data becomes available on the specified file
+descriptors.  The optional argument <timeout> is a number specifying how many
+milliseconds the function should wait for data.  Providing a timeout of zero
+simply checks for the availability of data.  Providing no timeout potentially
+waits forever.
+
+
+#? * << libstd/remote.lsh

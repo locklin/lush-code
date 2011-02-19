@@ -1,0 +1,43 @@
+#!/bin/sh
+exec lush2 "$0" "$@"
+!#
+
+(error "this demo needs fixing")
+
+(libload "geometry/polygon")
+(libload "geometry/geometry")
+(libload "geometry/axial-descriptor")
+
+(defparameter pi 3.1415927)
+
+(defun plot-shape (poly . kwdargs)
+  (let ((cat (chordal-axis-transform poly)))
+    (apply send poly '-gnuplot "plot" 
+           (apply send cat '-plot-arguments 'edge-color 'red  'plot-points ()
+                  (==> poly -plot-arguments . kwdargs) ))))
+
+(defun splot-shape (poly . kwdargs)
+  (let* ((cat (chordal-axis-transform poly))
+         (zrange (vector 0 ((idx-sup :cat:p-width)))) )
+    (apply send poly '-gnuplot "splot"
+           (apply send cat '-splot-arguments 'edge-color 'red  'edge-width 2  'plot-points ()  'zdata :cat:p-width
+                  (apply send cat '-splot-arguments 'edge-color 'gray  'plot-points ()
+                         (==> poly -splot-arguments 'zrange zrange 'plot-points () . kwdargs) )))))
+
+(defun main (poly)
+  (let* ((plot-preamble "set title 'Contour polygon (blue) and CAT skeleton (red) of hand shape'")
+ 	 (splot-preamble "set view ,30,1.2,1; set ticslevel 0; set title 'Distance function over the CAT skeleton (bold red)'")
+	 (gp ()) )
+
+    (==> poly rotate (/ pi 0.9)) ; rotate so that plot looks nicer
+    (setq gp (plot-shape poly 'preamble plot-preamble))
+    (printf "<press any key to continue>\n")
+    (reading "$stdin" (read-string 1))
+
+    (==> poly rotate (- (/ pi 0.9))) ; undo rotation
+    (setq gp (splot-shape poly 'preamble splot-preamble))
+    (printf "<press any key to end demo>\n")
+    (reading "$stdin" (read-string 1)) ))
+
+(libload "hand-points.lsh")
+(main (new Polygon hand-points [i]))

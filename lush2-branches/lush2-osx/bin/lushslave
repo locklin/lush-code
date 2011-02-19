@@ -1,0 +1,95 @@
+#!/bin/sh
+exec lush2 "$0" "$@"
+!#
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: lushslave,v 1.14 2006/09/14 17:56:04 pierre_lagr Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar slave-input ())
+(defvar slave-output ())
+
+(let ((port 4000) (p (cdr argv)))
+  (when p
+    (setq port (val (car p))))
+  ;; Search available port.
+  (while (not (socketaccept port)) (incr port))
+  (printf "LUSHSLAVE %s %d %d\n" 
+	  (reading "| hostname" (read-string)) 
+	  port (getpid) )
+  (flush)
+  ;; Open.
+  (socketaccept port 'slave-input 'slave-output) )
+
+(de slave-debug-hook()
+  (let ((err (errname)))
+    (printf "*** %s\n" err)
+    (lush-is-quiet t)
+    (writing slave-output
+      (print (cons 'error err))
+      (flush) ) )
+  (lush-is-quiet ()) 
+  (flush)
+  t )
+
+(de slave-break-hook()
+  (printf "*** Break\n")
+  (lush-is-quiet t)
+  (writing slave-output
+    (print (cons 'error "Break"))
+    (flush) ) 
+  (lush-is-quiet ())
+  (flush)
+  t )
+
+(unlock-symbol toplevel)
+
+(de toplevel()
+  (let ((debug-hook slave-debug-hook)
+        (break-hook slave-break-hook))
+    (lush-is-quiet ())
+    (while (<> (reading slave-input (skip-char)) "\e")
+      (let* ((command (reading slave-input (read)))
+             (result (eval command)) )
+        (writing slave-output
+          (bwrite (cons 'ok result))
+          (flush) )
+	(flush) ) )
+    (lush-is-quiet t)
+    (printf "LUSHSLAVE TERMINATED\n")
+    (exit 0) ) )
+
+(lock-symbol slave-input 
+             slave-output
+             slave-debug-hook
+             slave-break-hook
+             toplevel )
+
+(toplevel)
+
+

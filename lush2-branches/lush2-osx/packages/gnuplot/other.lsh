@@ -1,0 +1,178 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; All the other things you want to control to make a good plot.
+
+(in-namespace gnuplot-other-
+
+(defun generic-tics (tics arg)
+  (let ((s (cond
+            ((vectorp arg)
+             (if (emptyp arg)
+                 (sprintf "unset %l" tics)
+               (sprintf "set %l (%s)" tics (str-join "," (mapcar str (arg ())))) ))
+            ((isa arg HTable)
+             (sprintf "set %l (%s)" tics 
+                      (str-join "," (domapcar ((l (htable-keys arg)))
+                                      (when (not (stringp l))
+                                        (error tics "not a string" l) )
+                                      (when (not (numberp (arg l)))
+                                        (error tics "not a number" (arg l)) )
+                                      (sprintf "%l %d" l (arg l)) ))))
+            (t (error tics "invalid argument" arg)) )))
+    (==> graph add-preamble s) ))
+
+(defmacro process-range-args ()
+  `(setq from (if (= from *) "*" (sprintf "%f" from))
+         to (if (= to *) "*" (sprintf "%f" to)))
+  )
+
+#? (title <str>)
+;; Add title to the plot.
+(defun title (s)
+  (sprintf "set title \"%s\"" s) )
+
+#? (xrange <from> <to>)
+;; Set range of x-axis. Either <from> or <to> may be <*>, which
+;; indicates auto-scaling for the respective end.
+(defun xrange (from to)
+  (process-range-args)
+  (sprintf "set xrange [%s:%s]" from to) )
+
+#? (yrange <from> <to>)
+;; Set range of y-axis.
+(defun yrange (from to)
+  (process-range-args)
+  (sprintf "set yrange [%s:%s]" from to) )
+
+#? (x2range <from> <to>)
+;; Set range of alternate (upper) x-axis.
+(defun x2range (from to)
+  (process-range-args)
+  (sprintf "set x2range [%s:%s]" from to) )
+
+#? (y2range <from> <to>)
+;; Set range of alternate (right-hand) y-axis.
+(defun y2range (from to)
+  (process-range-args)
+  (sprintf "set y2range [%s:%s]" from to) )
+
+#? (xy-aspect <r>)
+;; Set the aspect ratio of the x- and y-axis scales to <r>.
+(defun xy-aspect (r)
+  (sprintf "set size ratio %f" (- r)) )
+
+#? (xlabel <str>)
+;; Add label <str> to the x-axis.
+(defun xlabel (s)
+  (sprintf "set xlabel \"%s\"" s) )
+
+#? (ylabel <str>)
+;; Add an axis label to the y-axis.
+(defun ylabel (s)
+  (sprintf "set ylabel \"%s\"" s) )
+
+#? (x2label <str>)
+;; Add label <str> to the alternate (upper) x-axis.
+(defun x2label (s)
+  (sprintf "set x2label \"%s\"" s) )
+
+#? (y2label <str>)
+;; Add label <str> to the alternate (right-hand) y-axis.
+(defun y2label (s)
+  (sprintf "set y2label \"%s\"" s) )
+
+#? (xtics <arg>)
+;; Set tics for x-axis.
+;;
+;; <Arg> may be a vector of tic coordinates or a <htable>
+;; mapping labels (strings) to tic coordinates.
+(defun xtics (arg) (generic-tics '#:xtics arg))
+
+#? (ytics <arg>)
+;; {<see> xtics}
+;; Set tics for y-axis.
+(defun ytics (arg) (generic-tics '#:ytics arg))
+
+#? (ztics <arg>)
+;; {<see> xtics}
+;; Set tics for z-axis.
+(defun ztics (arg) (generic-tics '#:ztics arg))
+
+#? notics
+;; Turn off tics on all axes.
+(defparameter notics "unset tics")
+
+#? (x2tics <arg>)
+;; {<see> xtics}
+;; Set tics for alternate (upper) x-axis.
+(defun x2tics (arg) (generic-tics '#:x2tics arg))
+
+#? (y2tics <arg>)
+;; {<see> xtics}
+;; Set tics for alternate (right-hand) y-axis.
+(defun y2tics (arg) (generic-tics '#:y2tics arg))
+
+
+#? (grid [<which-tics>])
+;; {<see> xtics}
+;; Draw grid lines at tics-coordinates. With no argument, draw
+;; grid lines for all tics.
+(defun grid (&optional which)
+  (if (null which)
+      "set grid"
+    (if (member which '(xtics ytics ztics x2tics y2tics cbtics))
+        (sprintf "set grid %l" which)
+      (error "invalid argument" which) )))
+
+#? (margin <which> <f> [<which2> <f2> ...])
+;; Set margin to fraction <f> of canvas size.
+;;
+;; Gnuplot chooses margins automatically be default. If this
+;; is not a good choice then each margin (<left>, <right>, <top>, <bottom>)
+;; may be set explicitly to <f>, which is a fraction of the horizontal
+;; or vertical extent of the plotting canvas, respectively.
+;;
+;; Example:
+;; {<code> (margin 'left 0.2  'right 0.9)
+(defun margin (which f &rest args)
+  (when (stringp which)
+    (setq which (named which)) )
+  (when (not (numberp f))
+    (error "invalid argument" f) )
+  (let ((s (selectq which
+             ('left   (sprintf "set lmargin at screen %f" f))
+             ('right  (sprintf "set rmargin at screen %f" f))
+             ('top    (sprintf "set tmargin at screen %f" f))
+             ('bottom (sprintf "set bmargin at screen %f" f))
+             (t
+              (error "invalid argument" which) ))))
+    (if args
+        (concat s "; " (margin . args))
+      s)))
+
+)

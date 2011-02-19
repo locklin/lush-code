@@ -1,0 +1,370 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Arrays of Arrays
+;; Sometimes one needs to manipulate arrays block-wise. An obvious way 
+;; to represent an array partitioned into blocks is by creating indexes
+;; addressing the blocks of an array and then arranging these indexes
+;; into an atom array. For example, let's assume we want to partition
+;; a 4x4 matrix into four 2x2 blocks:
+;; {<code>
+;;   ? (setq m (reshape (arange 16) '(4 4)))
+;;   = [d[d  1.00  2.00  3.00  4.00]
+;;       [d  5.00  6.00  7.00  8.00]
+;;       [d  9.00 10.00 11.00 12.00]
+;;       [d 13.00 14.00 15.00 16.00]]
+;;   ? (setq block00 (idx-trim* m 2 2))
+;;   = [d[d  1.00  2.00]
+;;       [d  5.00  6.00]]
+;;   ? (setq block01 (idx-shift* block00 0 2))
+;;   = [d[d  3.00  4.00]
+;;       [d  7.00  8.00]]
+;;   ? (setq block10 (idx-shift* block00 2 0))
+;;   = [d[d  9.00 10.00]
+;;       [d 13.00 14.00]]
+;;   ? (setq block11 (idx-shift* block00 2 2))
+;;   = [d[d 11.00 12.00]
+;;       [d 15.00 16.00]]
+;;   ? (setq bm (atom-array 2 2))
+;;   = [a[a 0 0]
+;;       [a 0 0]]
+;;   ? (progn (bm 0 0 block00) (bm 0 1 block01)
+;;            (bm 1 0 block10) (bm 1 1 block11))
+;;   = [a[a [d[d  1.00  2.00]
+;;            [d  5.00  6.00]] [d[d  3.00  4.00]
+;;                               [d  7.00  8.00]]]
+;;       [a [d[d  9.00 10.00]
+;;            [d 13.00 14.00]] [d[d 11.00 12.00]
+;;                               [d 15.00 16.00]]]]
+;; </code>}
+;; Note, that the indexes in <bm> refer to the same data as <m>:
+;; {<code>
+;;   ? (m 0 0 123)
+;;   = [d[d 123.00  2.00  3.00  4.00]
+;;       [d  5.00  6.00  7.00  8.00]
+;;       [d  9.00 10.00 11.00 12.00]
+;;       [d 13.00 14.00 15.00 16.00]]
+;;   ? (bm 0 0)
+;;   = [d[d 123.00  2.00]
+;;       [d  5.00  6.00]]
+;; </code>}
+;;
+;; What took a number of steps above is much easier to accomplish
+;; by using <idx-slice>.
+;; {<code>
+;;   ? (idx-slice* m 2 2)
+;;    = [a[a [d[d 123.00  2.00]
+;;             [d  5.00  6.00]] [d[d  3.00  4.00]
+;;                              [d  7.00  8.00]]]
+;;        [a [d[d  9.00 10.00]
+;;             [d 13.00 14.00]] [d[d 11.00 12.00]
+;;                                [d 15.00 16.00]]]]
+;; </code>}
+;;
+;; Assume now that we want to transpose all blocks of <m> individually.
+;; Having created <bm>, this could be done by looping over all elements 
+;; of <bm>, transposing each element, and finally copying the transposed
+;; data back.
+;; {<code>
+;;   ? (idx-bloop ((block (ravel bm)))
+;;       (let ((b (block)))
+;;         (array-copy (copy-array b) (mat-transpose b)) ))
+;;   = ...
+;;   ? m
+;;   = [d[d 123.00  5.00  3.00  7.00]
+;;       [d  2.00  6.00  4.00  8.00]
+;;       [d  9.00 13.00 11.00 15.00]
+;;       [d 10.00 14.00 12.00 16.00]]
+;; </code>}
+;; 
+;; Alternatively one may use <array-map> and <array-splice>. This does 
+;; not modify <m> in-place, however, but involves the creation of a new
+;; array:
+;; {<code>
+;;   ? (array-splice (array-map mat-transpose bm))
+;;   = [d[d 123.00  5.00  3.00  7.00]
+;;       [d  2.00  6.00  4.00  8.00]
+;;       [d  9.00 13.00 11.00 15.00]
+;;       [d 10.00 14.00 12.00 16.00]]
+;; </code>}
+;; 
+;; Now assume that we want to transpose <m> "on the block level". This
+;; again is easy using <idx-slice> and <array-splice>.
+;; {<code>
+;;   ? (let* ((m (reshape (arange 16) '(4 4)))
+;;            (bm (idx-slice* m 2 2)) )
+;;       (array-splice (mat-transpose bm)) )
+;;   = [d[d  1.00  2.00  9.00 10.00]
+;;       [d  5.00  6.00 13.00 14.00]
+;;       [d  3.00  4.00 11.00 12.00]
+;;       [d  7.00  8.00 15.00 16.00]]
+;; </code>}
+
+#? ** Map for arrays
+;; Just as <mapcar> applies a function to all elements of a list and
+;; returns a list of results, <array-map> applies a function to all
+;; elements of an array and returns an array of results.
+
+#? (array-map <f> <a1>...<an>)
+;; {<see> array-map-to, array-mapc}
+;; Apply function <f> to all identically subscripted elements of arrays 
+;; <a1>...<an>, store the results in a new array and return it.
+;; All arrays <a1>...<an> must have the same shape. 
+;;
+;; Examples:
+;;
+;; {<ex> (let ((m (reshape (array-range 20) '(4 5)))) 
+;;          (array-map + m (mat-flipud m)))}
+;; {<ex> (let* ((m  (reshape (array-range 20) '(4 5)))
+;;              (bm (idx-slice m 1 '(2))) )
+;;          (array-splice (array-map mat-fliplr bm)) )}
+(defun array-map (f &rest as) 
+  (let ((out ())
+        (test (apply f (mapcar #\((@ $1)) as))) )
+    ;; create output array based on types of test and first array in as.
+    (setq out (cond
+               ((and (numberp test) (idx-numericp (car as)))
+                (clone-array (car as)) )
+               ((not (numberp test))
+                (atom-array ($ (car as))) )
+               ((not (idx-numericp (car as)))
+                (double-array ($ (car as))) )
+               (t 
+                (error "can't determine type of result") )))
+    (array-map-to out f . as) ))
+
+#? (array-map-to <out> <f> <a1>...<an>)
+;; Apply function <f> to all identically subscripted elements of arrays 
+;; <a1>...<an> and store result in the corresponding element of array 
+;; <out>. Return <out>. All arrays must have the same shape.
+;; {<ex> (let ((m (reshape (array-range 20) '(4 5)))) 
+;;          (array-map-to (clone-array m) + m (mat-flipud m)))}
+(defun array-map-to (out f &rest as) 
+  (if (= (idx-rank out) 0)
+      (let ((ss (mapcar apply as (make-list (length as) ()))))
+        (out (apply f ss)) )
+    ;; if out is not a scalar, idx-bloop over 1st dimension
+    (let* ((o+as   (cons out as))
+           (lvars  (gensyms (length o+as)))
+           (lforms (mapcar list lvars o+as))
+           (lbody  (if (= (idx-rank out) 1)
+                       (list (car lvars) `(,f ,@(mapcar list (cdr lvars))))
+                     `(array-map-to ,(car lvars) ,f ,@(cdr lvars)) )))
+      (apply idx-bloop lforms lbody ()) ))
+  out)
+
+#? (array-mapc <f> <a1>...<an>)
+;; Apply function <f> to all identically subscripted elements of 
+;; arrays <a1>...<an>, and return the first array <a1>. All arrays
+;; <a1>...<an> must have the same shape.
+;; {<see> array-map-to, array-map}
+;; {<ex> (let ((m (reshape (array-range 4) '(2 2)))) 
+;;          (array-mapc print m) )}
+(defun array-mapc (f &rest as) 
+  (let ((n (length as)))
+    (if (= (idx-rank (car as)) 0)
+	(let ((ss (mapcar apply as (make-list n nil))))
+	  (apply f ss)
+	  (car as))
+      ;; if out is not a scalar, idx-bloop over 1st dimension
+      (let* ((lvars  (gensyms n))
+	     (lforms (mapcar list lvars as))
+	     (lbody  (if (= (idx-rank (car as)) 1)
+			 `(,f ,@(mapcar list lvars))
+		       `(array-mapc ,f ,@lvars) )))
+	(apply idx-bloop lforms lbody ()) ))
+    (car as) ))
+
+
+#? ** Slicing and splicing arrays
+;; Some functions discussed in this section operate on "sliced arrays", that is,
+;; arrays of arrays as they are returned by function <idx-slice>. Not all arrays 
+;; of arrays are sliced arrays. In this example, array <b> is not a sliced array
+;; because the rank of <b> does not match the rank of its elements:
+;; {<code>
+;;   ? (setq b (let ((v (idx-lift (arange 3) 1))) (box v v)))
+;;   = [a [d[d  1.00  2.00  3.00]] [d[d  1.00  2.00  3.00]]]
+;; </code>}
+;; In this example the array is not a sliced array because the extents of the 
+;; element arrays are not compatible:
+;; {<code>
+;;   ? (let ((m (idx-lift (arange 3) 1)))
+;;       (idx-lift (box m (mat-transpose m)) 1))
+;;   = [a[a [d[d  1.00  2.00  3.00]] [d[d  1.00]
+;;                                     [d  2.00]
+;;                                     [d  3.00]]]]
+;; </code>}
+
+;;
+;; Creating sliced arrays
+;; 
+
+#? (box <i1>...<in>)
+;; Box items. Create one-dimensional atom array containing items 
+;; <i1>...<in>. 
+;; {<see> box1}
+;; {<ex> (let ((l '(1 2 3))) (box l "wisdom" 42))}
+(defun box args
+  (let ((a (atom-array (length args))))
+    (a () args)
+    a))
+
+
+#? (box1 <item>)
+;; Box item. Create an atom scalar containing <item>.
+;; {<see> box}
+;; {<ex> (let ((l '(1 2 3))) (box1 l))}
+(defmacro box1 (arg)
+  `((atom-array) ,arg) )
+
+
+#? (idx-slice <m> <d> <zero-idx>)
+;; Slice array <m> along dimension <d> at element <zero-idx>. The 
+;; result is a sliced array of smaller blocks than <m>. The input
+;; array <m> may be a sliced array or a plain array. <Zero-idx> may
+;; be a slice index (a number) or a list of indices.
+;;
+;; A plain array <m> is treated as a sliced array consisting of a
+;; single block, and the rank of the sliced array is the rank of 
+;; the plain array. An array may be sliced only once per dimension.
+;; {<see> box, idx-slice*, array-splice}
+;; {<ex> (let ((m (reshape (arange 20) '(4 5)))) 
+;;          (idx-slice m 0 '(2 3)))}
+(defun idx-slice (m d zs)
+  ;; validate arguments
+  (chk-idx m)
+  (when (not (indexp ((idx-dc m))))
+    (setq m (reshape (box1 m) (make-list (rank m) 1))) )
+  (when (> (idx-shape m d) 1)
+    (error "array already sliced along this dimension" d) )
+  (when (numberp zs) 
+    (setq zs (list zs)) )
+  (when (not (listp zs))
+    (error "third argument is not a number or list of numbers" zs))
+
+  (if (null zs)              ;; if no zs are given take fast route
+      (array-map-to m copy-index m)
+    (setq zs (cons 0 zs))    ;; else partition along dimension d 
+    (let* ((ld  (idx-dim ((idx-dc m)) d))
+	   (zs* (append zs (list ld)))
+	   (es  (mapcar - (cdr zs*) zs*)) ; diff of zs*
+	   (out (copy-array (idx-expand m d (length zs)))) )
+      (domapc ((i (range* (length zs))) (z zs) (e es))
+        (let ((slots (idx-select out d i)))
+          (array-map-to slots (lambda (x) (idx-trim x d z e)) slots) ))
+      out)))
+
+#? (idx-slice* <m> <z0> <z1> ...)
+;; Recursively slice <m> with zero index (indices) <z0> for 
+;; dimension 0, <z1> for dimension 1 and so on.
+;; {<see> idx-slice}
+(defmacro idx-slice* (m . zss)
+  (let ((c m) (d 0))
+    (dolist (zs zss)
+      (setq c `(idx-slice ,c ,d ,zs))
+      (incr d) )
+    c))
+
+#? (array-splice <m>)
+;; Splice sliced array <m>. Given a sliced array, create a new plain
+;; array that holds the contents of all element arrays as if spliced
+;; along the non-singleton dimensions of array <m>.
+;; <Array-splice> is the inverse to <idx-slice>.
+;; {<see> idx-slice}
+;; {<ex> (let ((m (reshape (arange 16) '(4 4))))
+;;         (array-splice (idx-slice m 0 '(2))))}
+(defun array-splice (m &rest kwdargs)
+  (chk-idx m)
+  (when (not (indexp ((idx-dc m))))
+    (error "not an array of arrays" m))
+  (when (not (= (idx-rank m) (idx-rank ((idx-dc m)))))
+    (error "not a sliced array (ranks do not match)"
+           (list m 'of ((idx-dc m)))))
+  
+  (let* ((n    (idx-rank m))
+         (elt  (classof (idx-storage ((idx-dc m)))))
+         ;; compute slice indices and output shape
+         (zss  ())
+         (shp  (let ((probe ())
+                     (probe-shp (make-list n 1))
+                     (nd ()) )
+                 (domapcar ((d (range* n)))
+                   (setq zss (cons () zss))
+                   (setq probe (apply idx-trim* m probe-shp))
+                   (setq nd (idx-shape ((idx-dc probe)) d))
+                   (for (i 1 (1- (idx-shape m d)))
+                        (rplaca zss (cons nd (car zss)))
+                        (idx-shift! probe d 1)
+                        (setq nd (+ nd (idx-shape ((idx-dc probe)) d))) )
+                   (rplaca zss (reverse (car zss)))
+                   nd)))
+         (out (make-array elt shp ())) )
+    (setq zss (reverse zss))
+    ;; slice out and copy block-wise
+    (array-mapc array-copy m (reduce> idx-slice out (range* n) zss))
+    out))
+
+#? (array-combine <m1> <m2>...<mn>)
+;; {<see> array-combine*, idx-broadcast, mat-catcols}
+;; Combine argument arrays by stacking them into a "column of arrays". 
+;; The argument arrays <m1>...<mn> must be broadcastable, the result 
+;; has length n. The rank of the result is the rank of the broadcasted
+;; arrays plus 1. Examples:
+;;
+;; {<ex> (array-combine [1 2 3] [4 5 6])}
+;; {<ex> (let ((m (+ 1 (double-array 2 3)))
+;;             (v (vector 2 2 2))
+;;             (s [@ 3]))
+;;         (array-combine s v m))
+;; }
+(defun array-combine args
+  (let* ((sa (apply box (mapcar idx-lift (idx-broadcast . args) 1s)))
+	 (boxed-shape (cons (length sa) (make-list (1- (idx-rank (sa 0))) 1))) )
+    (array-splice ($$ sa boxed-shape)) ))
+
+#? (array-combine* <m1> <m2>...<mn>)
+;; {<see> array-combine, idx-broadcast, mat-catrows}
+;; Combine argument arrays by stacking them into a "row of arrays". The
+;; argument arrays <m1>...<mn> must be broadcastable. The rank of the
+;; result is the rank of the broadcasted arrays plus 1. Examples:
+;;
+;; {<ex> (array-combine* [1 2 3] [4 5 6])}
+;; {<ex> (let ((m (+ 1 (double-array 2 3)))
+;;             (v (vector 2 2 2))
+;;             (s [@ 3]))
+;;         (array-combine* s v m))
+;; }
+(defun array-combine* args
+  (let* ((sa (apply box (mapcar idx-sink (idx-broadcast . args) 1s)))
+	 (boxed-shape (nconc1 (make-list (1- (idx-rank (sa 0))) 1) (length sa))) )
+    (array-splice ($$ sa boxed-shape)) ))
+
+(lock-symbol array-map array-mapc array-map-to
+             box box1
+             idx-slice idx-slice* array-splice
+             array-combine array-combine*)
+

@@ -1,0 +1,485 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2002 Leon Bottou, Yann Le Cun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This file is derived from SN-2.8
+;;;   Copyright (C) 1987-1999 Neuristique s.a.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: imagetool.sn,v 1.2 2003/03/18 18:45:51 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(printf "\n***\007 Lush Warning (%s): %s\n"
+        (basename file-being-loaded)
+        "Lush misses compatibility functions to run this file" )
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;  IMAGETOOL: tools pour traitement et affichage d'images
+;;;
+;;;  Copyright (C) 1990 Jean Bourrely & Leon Bottou
+;;;                     Neuristique SA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+;;; Load the ogre and matrixtool library
+
+(ogre)
+(when ~(classp C-MatrixTool)
+      (libload "matrixtool.sn"))
+
+
+
+;;; The ImageTool entry point
+
+(de imagetool( &optional arg )
+    (let ((r (new c-imagetool)))
+      (when arg 
+	    (==> r setmatrix arg)
+	    (setq :r:changed ()) )
+      r ) )
+
+
+
+;;; The functions
+
+(de from3Dto2D(mat)
+    (let ((m (float-matrix (1+ (bound mat 1))
+                           (* (1+ (bound mat 2)) (1+ (bound mat 3))))))
+      (copy-any-matrix mat m) m ) )
+
+(de from2Dto3D(mat ncol)
+  (let ((m (float-matrix (1+ (bound mat 1))
+                         (/ (1+ (bound mat 2)) ncol) ncol)))
+    (copy-any-matrix mat m) m) )
+
+
+
+;;; Interface
+
+
+
+(defclass c-imagetool c-matrixtool
+  
+  2d3d-dialog
+  convolve-dialog
+  
+  display-panel
+  pattern-panel 
+  
+  the-controls
+  the-viewer
+  the-area
+
+  nc-item
+  nl-item
+
+  flag ;; flag '(transpose rotation)
+  
+  (patnum 0)
+  (zoom 1)
+  (zoomx/y 1)
+  )
+
+
+
+(defmethod c-imagetool manage-geometry()
+  (let (((x y w h) rect)
+	((x1 y1 w1 h1) :the-controls:rect)
+	((x2 y2 w2 h2) :the-viewer:rect) )
+    (==> the-controls geometry 0 0 w h1)
+    (==> the-viewer geometry 0 (1+ h1) w (- h (1+ h1))) ) )
+
+
+(defmethod C-Imagetool c-imagetool()
+  
+  (==> this c-matrixtool)
+
+  (setq display-panel
+	(new grid 4
+	     (new string "Width")
+	     (setq nc-item (new editnumber 6))
+	     (new string "Height")
+	     (setq nl-item (new editnumber 6))
+	     (new string "Black")
+	     (new editnumber 6)
+	     (new string "White")
+	     (new editnumber 6) ) )
+
+  (setq pattern-panel
+	(new row
+	     (new stdbutton "ReDraw" 
+		  (lambda(c) (==> thiswindowobject disp-action)) ) 
+	     (new column
+		  (new row
+		       (new tinybutton " *2 "
+			    (lambda(c) (==> thiswindowobject 
+					    setzoom (2* zoom) )) )
+		       (new tinybutton " /2 "
+			    (lambda(c) (==> thiswindowobject 
+					    setzoom (2/ zoom) )) )
+		       (new emptyspace 10)
+		       (new tinybutton "x*2"
+			    (lambda(c) (==> thiswindowobject 
+					    setzoomx/y (2* zoomx/y) )) )
+		       (new tinybutton "x/2"
+			    (lambda(c) (==> thiswindowobject 
+					    setzoomx/y (2/ zoomx/y) )) )
+		       (new tinybutton "x=y"
+			    (lambda(c) (==> thiswindowobject 
+					    setzoomx/y 1 )) )
+		       )
+		  (new row
+		       (new stdbutton " << "
+			    (lambda(c) (==> thiswindowobject setpattern
+					    (1- patnum) )) )
+		       (let ((en (new editnumber 8 0)))
+			 (==> en setcall 
+			      (lambda(c) (==> thiswindowobject setpattern
+					      (==> c getdata) )) )
+			 en )
+		       (new stdbutton " >> "
+			    (lambda(c) (==> thiswindowobject setpattern
+					    (1+ patnum) )) )
+		       )
+		  )
+	     (new emptyspace 5)
+	     (new column
+		  (new tinybutton "Rotate"
+		       (lambda(c) (==> thiswindowobject rotate-action))
+		       )
+		  (new tinybutton "Flip x"
+			    (lambda(c) (==> thiswindowobject flipx-action))
+			    ) )
+	     (new emptyspace 5) ) )
+  
+  (setq the-controls
+	(new column
+	     (new row
+		  filemenu
+		  (new menu "Processing"
+		       "2D/3D Convert"
+		       (lambda(caller)
+			 (==> 2d3d-dialog popup))
+		       "Convolve" 
+		       (lambda(caller)
+			 (==> convolve-dialog popup))
+		       ">> NormTool"
+		       (lambda (caller)
+			 (when mat
+			       (if (= (bound mat 0) 2)
+				   (normtool mat)
+				 (==> error-dialog popup
+				      "Matrix is not 2D") ) ) )
+		       ">> StatTool"
+		       (lambda (caller)
+			 (when mat
+			       (if (= (bound mat 0) 2)
+				   (stattool mat)
+				 (==> error-dialog popup
+				      "Matrix is not 2D") ) ) ) )
+		  size-string )
+	     (new row
+		  pattern-panel
+		  display-panel ) ) )
+  
+  (setq the-area (new c-dispmatarea))
+  (setq the-viewer (new viewer 200 200 the-area t t)) 
+  
+  (setq 2d3d-dialog 
+	(new yesnorequester this
+	     (new Column
+		  (new String "2D/3D Converter")
+		  (new DarkSpace 3) )
+	     "  Convert  " "Cancel"
+	     (lambda(caller)
+	       (==> thiswindowobject 2d3d-action) ) ) )
+  
+  (setq convolve-dialog 
+	(new yesnorequester this
+	     (new column
+		  (new String "Convolve")
+		  (new DarkSpace 3)
+		  (new menu "Standard Filters"
+		       "Blurring filter I"
+		       (lambda(caller)
+			 (==> thisrequester setdata 
+			      '( 0.1 0.1 0.1 
+				 0.1 0.2 0.1 
+				 0.1 0.1 0.1)) ) 
+		       "Blurring filter II"
+		       (lambda(caller)
+			 (==> thisrequester setdata 
+			      '( 0.0625 0.125 0.0625
+				 0.125  0.250 0.125
+			         0.0625 0.125 0.0625) ) )
+		       "Edge detector"
+		       (lambda(caller)
+			 (==> thisrequester setdata 
+			      '( -0.1  -0.15 -0.1
+				 -0.15  1    -0.15
+				 -0.1  -0.15 -0.1 ) ) ) )
+		  (new row
+		       (new emptyspace 20)
+		       (new grid 3
+			    (new editnumber 8)
+			    (new editnumber 8)
+			    (new editnumber 8)
+			    (new editnumber 8)
+			    (new editnumber 8)
+			    (new editnumber 8)
+			    (new editnumber 8)
+			    (new editnumber 8)
+			    (new editnumber 8) )
+		       (new emptyspace 20) )
+		  (new DarkSpace 3) )
+	     "Convolve" "Cancel"
+	     (lambda(caller)
+	       (==> thiswindowobject convolve-action) ) ) )
+
+  (setq flag '(() 0)) ;; no transposition, rotation 0 out of [0..3]
+	     
+  (==> convolve-dialog setdata '(0 0 0 0 1 0 0 0 0))
+
+  (==> this windowobject 0 0 600 400 "ImageTool"
+       the-controls
+       the-viewer ) ) ) 
+
+
+;;; Set parameters of Imagetool: pattnum, matrix
+
+
+
+(defmethod c-imagetool setmatrix(m)
+  (when (==> this (c-matrixtool . setmatrix) m) 
+	(selectq (bound m 0)
+		 (3
+		  (==> display-panel
+		       setdata
+		       (list (1+ (bound mat 2))
+			     (1+ (bound mat 1))
+			     (inf (mapfor (i 0 (bound mat 1))
+					  (inf-mat (submatrix mat i ()())) ))
+			     (sup (mapfor (i 0 (bound mat 1))
+					  (sup-mat (submatrix mat i ()())) )) ) )
+		  (==> nc-item enable)
+		  (==> nl-item enable)
+		  (==> nc-item disable)
+		  (==> nl-item disable) )
+		 (2
+		  (==> display-panel
+		       setdata
+		       (list (1+ (bound mat 2))
+			     (1+ (bound mat 1))
+			     (inf-mat mat)
+			     (sup-mat mat) ) )
+		  (==> nc-item enable)
+		  (==> nl-item enable)
+		  (==> nl-item disable) ) )
+	
+	(==> this setpattern 0) ) )
+
+
+
+(defmethod c-imagetool setpattern(n)
+  (when mat
+	(let ((m (bound mat 1)))
+	  (setq patnum (max 0 (min m n))) 
+	  (==> pattern-panel setdata (list patnum)) )
+	(let (((nc nl minv maxv) (==> display-panel getdata)))
+	  (when nc (==> this disp-action)) ) ) )
+
+
+;;;
+;;; Actions of Imagetool
+;;;
+
+
+(defmethod C-Imagetool disp-action()
+  (let (((nc nl minv maxv) (==> display-panel getdata)))
+    (when ~minv (setq minv -1))
+    (when ~maxv (setq maxv 1))
+    (cond
+     (~mat
+      (==> error-dialog popup "You must load a matrix first") )
+     (~nc
+      (==> error-dialog popup "You should specify the number of columns") )
+     ((and (= (bound mat 0) 2) (<> 0 (mod (1+ (bound mat 2)) nc)))
+      (==> error-dialog popup "Invalid number of columns") )
+     ((= minv maxv)
+      (==> error-dialog popup "Illegal values for white/black parameters") )
+     (t
+      (when (= (bound mat 0) 2)
+	    (==> nl-item setdata (div (1+ (bound mat 2)) nc))
+            (==> the-area setdata (submatrix mat patnum ()) 
+		 nc minv maxv zoom zoomx/y flag) )
+      (when (= (bound mat 0) 3)
+            (==> the-area setdata (submatrix mat patnum ()()) 
+		 nc minv maxv zoom zoomx/y flag) ) ) ) ) )
+
+
+(defmethod c-imagetool setzoom(n)
+  (setq zoom (max 1 (min 64 (int n))))
+  (setq zoomx/y (max zoomx/y (/ 1 zoom)))
+  (==> this setpattern patnum) )
+
+(defmethod c-imagetool setzoomx/y(n)
+  (setq zoomx/y (max (/ 1 zoom) (/ 1 16) (min 16 n)))
+  (==> this setpattern patnum) )
+
+
+(defmethod c-imagetool flipx-action()
+  (let (((f r) flag))
+    (setq r (mod (- 5 r) 4)) ;; rotate 3times if transposed, else once
+    (setq f ~f) ;; notify transposition
+    (setq flag (list f r)) )
+  (==> this disp-action)
+  )
+
+(defmethod c-imagetool rotate-action()
+  (let (((f r) flag))
+    (setq flag (list f (mod (1+ r) 4))) )
+  (setq zoom (* zoom zoomx/y))
+  (setq zoomx/y (/ 1 zoomx/y))
+  (==> this disp-action)
+  )
+
+
+(defmethod C-Imagetool 2d3d-action()
+  (when mat
+	(selectq (bound mat 0)
+		 (3 
+		  (==> this ( c-matrixtool . setmatrix )
+		       (from3Dto2D mat) )
+		  (==> nc-item enable)
+		  (setq changed t) )
+		 (2 
+		  (let ((nc (==> nc-item getdata)))
+		    (if (and nc (0= (mod (1+ (bound mat 2)) nc)))
+			(progn 
+			  (==> this ( c-matrixtool . setmatrix )
+			       (from2Dto3D mat nc) )
+			  (setq changed t)
+			  (==> nc-item enable)
+			  (==> nc-item disable) )
+		      (==> error-dialog popup 
+			   "Invalid number of columns") ) ) ) ) ) )
+
+
+(defmethod C-Imagetool convolve-action()
+  (cond 
+   (~mat
+    (==> error-dialog popup "You must load a matrix first") )
+   ((<> (bound mat 0) 3)
+    (==> error-dialog popup "Matrix is not 3D") )
+   (t
+    (let (((n x y) (bound mat))
+	  (k ()) (a ()) )
+      (if (or (< x 3) (< y 3))
+	  (==> error-dialog popup "Matrix is too small")
+	
+	(setq a (double-array n (- x 2) (- y 2)))
+	(setq k (double-array 3 3))
+	(k () () (==> convolve-dialog getdata))
+	(for (i 0 (1- n))
+	     (convolve (submatrix mat i () ())
+		       1 1 k 
+		       (submatrix a i () ()) ) )
+	(let ((oldpat patnum))
+	  (==> this setmatrix a)
+	  (==> this setpattern oldpat) ) ) ) ) ) )
+
+
+
+;;;;;;;;;                             ;;;;;;;;;
+;;;;;;;;;  DISP-AREA  class & methods ;;;;;;;;;
+;;;;;;;;;                             ;;;;;;;;;
+
+(defclass c-dispmatarea visualobject
+  mat
+  minval
+  maxval
+  zoom
+  zoomx/y
+  )
+
+(defmethod c-dispmatarea c-dispmatarea()
+  (==> this visualobject 10 10))
+
+(defmethod c-dispmatarea setdata (m m1 m2 m3 m4 &optional (m5 1) flag)
+  (let ((oldm m)
+	((f r) flag) )
+    (when (= (bound m 0) 1)
+          (setq m (double-array (div (+ m1 (bound m 1)) m1) m1))
+	  (copy-any-matrix oldm m)
+	  )
+    (setq m (rotate (if f (transpose m) m) r))
+    )
+  (setq mat m minval m2 maxval m3 zoom m4 zoomx/y m5)
+  (==> this compute-geometry)
+  (==> this expose rect) )
+
+
+(defmethod c-dispmatarea compute-geometry()
+  (when mat
+	(let (((h w) (bound mat))
+	      ((ww hh) '(() ())) )
+	  (setq hh (+ 10 (* h zoom)))
+	  (setq ww (+ 10 (* w (max 1 (* zoom zoomx/y)))))
+	  (==> this resize ww hh)
+	  rect ) ) )
+
+
+(defmethod c-dispmatarea repaint ()
+    (when mat
+      (let* ((erect (expand-rect rect -5 -5))     ;; elimine la bordure
+  	   (eclip (collide-rect (clip) erect)) )
+        (when eclip
+  	(let (((x y w h) erect)
+  	      ((cx cy cw ch) eclip)
+  	      (mat mat)
+  	      (zoomx (max 1 (* zoom zoomx/y))) )
+  	  (if (rect-in-rect erect eclip)
+  	      (gray_draw_matrix x y mat minval maxval zoomx zoom)
+  	    (let* ((firstc (max 0 (1- (div (- cx x) zoomx))))
+  		   (firstl (max 0 (1- (div (- cy y) zoom))))
+  		   (lastc (min (bound mat 2) (+ firstc 2 (div cw zoomx))))
+  		   (lastl (min (bound mat 1) (+ firstl 2 (div ch zoom)))) )
+  	      (setq x (+ x (* firstc zoomx)))
+  	      (setq y (+ y (* firstl zoom)))
+  	      (setq mat (submatrix mat (list firstl lastl) (list firstc lastc)))
+  	      (gray_draw_matrix x y mat minval maxval zoomx zoom) ) ) ) ) ) ) )
+
+
+
+
+
+
+
+

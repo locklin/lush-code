@@ -1,0 +1,902 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "datatypes/queue")
+(libload "datatypes/stack")
+(libload "geometry/geometry")
+
+#? *** Axis-based shape descriptors
+;; An axis-based shape description consists of a shape skeleton plus
+;; some function defined on the skeleton. The implementations provided
+;; here compute approximations of Blum's Symmetric Axis Transform (SAT; 
+;; often referred to s Medial Axis Transform), and Prasad's Chordal Axis
+;; Transform (CAT), which is a variant of Brady's Smoothed Local Symmetries
+;; descriptor.
+;; Axis-based shape descriptors are important for operations on shapes 
+;; like smoothing, matching of shapes, and decomposing shapes into parts.
+ 
+(defclass AxialDescriptor Mesh
+  ((-idx1- (-double-)) p-width)    ; distance at point
+  )
+
+(in-namespace (class AxialDescriptor)
+
+(import all from (class SimpleTriangulation))
+
+;; tr is a triangle, i is a triangle point (0, 1, or 2)
+(defmacro angle-bisector-midpoint (tr i point)
+  (assert (symbolp tr))
+  (assert (symbolp i))
+  `(let ((p0 (triangles ,tr ,i)) 
+         (p1 (edges (triangle-edges ,tr ,i) 0))
+         (p2 (edges (triangle-edges ,tr ,i) 1))
+         (point ,point) )
+     (declare (-int-) p0 p1 p2)
+     (with-points (p0 p1 p2)
+      (point 0 (+ (* 0.5 p0x) (* 0.25 p1x) (* 0.25 p2x)))
+      (point 1 (+ (* 0.5 p0y) (* 0.25 p1y) (* 0.25 p2y))) ))
+  )
+
+;; center of gravity for equal point masses on the three vertices
+(defmacro triangle-barycenter (tr point)
+  (assert (symbolp tr))
+  `(let ((p0 (triangles ,tr 0))
+         (p1 (triangles ,tr 1))
+         (p2 (triangles ,tr 2))
+         (point ,point) )
+     (declare (-int-) p0 p1 p2)
+     (with-points (p0 p1 p2)
+       (point 0 (/ (+ p0x p1x p2x) 3))
+       (point 1 (/ (+ p0y p1y p2y) 3)) ))
+   )
+
+(defun circumcircles (triang)
+  (declare (-obj- (SimpleTriangulation)) triang)
+  (let* ((points :triang:points)
+	 (triangles :triang:triangles)
+	 (ccs (double-array (length triangles) 3)) )
+    (idx-bloop ((triangle triangles) (cc ccs))
+      (let ((a (idx-select points 0 (triangle 0)))
+	    (b (idx-select points 0 (triangle 1)))
+	    (c (idx-select points 0 (triangle 2))) )
+	(circumcircle a b c cc)))
+    ccs))
+
+;; (defun guard-junction-triangles (triang bem)
+;;   (declare (-obj- (SimpleTriangulation)) triang)
+;;   (declare (-idx1- (-int-)) bem)
+;;   (let ((est (make-stack (div (length :triang:triangles) 5) int)))
+;;     (with-object triang
+;;       (do-triangles* tr
+;;         (when (and (= (bem tr.e0) 0)
+;;                    (= (bem tr.e1) 0)
+;;                    (= (bem tr.e2) 0) )
+;;           (push est tr.e0)
+;;           (push est tr.e1)
+;;           (push est tr.e2) )))
+;;     (while (not (emptyp est))
+;;       (bem (pop est) 1) ))
+;;   ())
+
+) ; in-namespace
+
+#? (new AxialDescriptor <points> <edges> <p-width>)
+;; An <AxialDescriptor> is a <Mesh> with <double> value <p-width>
+;; assigned to every point.
+(defmethod AxialDescriptor AxialDescriptor (points edges p-width)
+  (declare (-idx2- (-double-)) points)
+  (declare (-idx2- (-int-)) edges)
+  (declare (-idx1- (-double-)) p-width)
+  (unprotect) ; don't warn about uninitialized slots
+  (==> this Mesh points edges)
+  (setq :this:p-width p-width) )
+
+;; (defmethod AxialDescriptor display kwdargs
+;;   (when (<> root -1)
+;;     (setq kwdargs (update-kwdargs kwdargs 'plot-arrows t)) )
+;;   (let* ((win (==> this (Mesh . display) . kwdargs))
+;;          (scale (getp win 'scale))
+;;          (ps (getp win 'plot-points)) )
+;;     ;; display root if defined
+;;     (when (<> root -1)
+;;       (==> (new Mesh 
+;; 		(array-take points 0 (.v root))
+;; 		(int-array 0 2))
+;; 	   display  'point-size 4  'point-color 'magenta  'window win))
+;;     win))
+
+;; Helper to inverse-transform: For each CAT edge compute the two points
+;; of intersection of the endpoint's circles
+;; (defmethod ChordalAxisTransform -compute-intersections ()
+;;   ;; Compute intersections of all adjacent circles
+;;   ;; we get two entries per axis edge
+;;   (let* ((ne (length edges))
+;;          (iss (double-array (* 2 ne) 2)))
+;;     (declare (-int-) ne)
+;;     (declare (-idx2- (-double-)) iss)
+
+;;     (for* (e 0 ne)
+;;       (let ((e0 (edges e 0)) (e1 (edges e 1)) (p -1))
+;;         (declare (-int-) e0 e1 p)
+;;         (if (or (= 0 (ds (setq p e0))) 
+;;                 (= 0 (ds (setq p e1))) )
+;;           ;; if axis edge is in an end-triangle, just copy the end-point
+;;           (progn 
+;;             (iss e 0 (points p 0))
+;;             (iss (+ e ne) 0 (points p 0))
+;;             (iss e 1 (points p 1))
+;;             (iss (+ e ne) 1 (points p 1))
+;;             )
+;;           ;; else compute the intersection points
+;;           (let* ((e0.x (points e0 0))
+;;                  (e0.y (points e0 1))
+;;                  (e1.x (points e1 0))
+;;                  (e1.y (points e1 1))
+;;                  (d.x (- e1.x (points e0 0)))          ; d. = vector from e0 to e1
+;;                  (d.y (- e1.y (points e0 1)))          ;
+;;                  (d   (euclidean-norm d.x d.y))        ; d = length of d.
+;;                  (n.x (/ d.x d))                       ; n. = normalized d.
+;;                  (n.y (/ d.y d))                       ;
+;;                  (r0  (ds e0))                         ; radius around e0
+;;                  (r1  (ds e1))                         ; radius around e1
+;;                  (dr  (/                               ; distance from e0 to radical line
+;;                        (+ (* d d) (* r0 r0) (- (* r1 r1)))
+;;                        (* 2 d) ))
+;;                  (lr  (/ (sqrt (*                      ; half length of radical line
+;;                                 (+ d r0 r1)
+;;                                 (+ (- d) r0 r1)
+;;                                 (+ d (- r0) r1)
+;;                                 (+ d r0 (- r1)) ))
+;;                          (* 2 d) )))
+;;             (iss e 0 (+ e0.x (* n.x dr) (* (- n.y) lr)))
+;;             (iss e 1 (+ e0.y (* n.y dr) (* n.x lr)))
+;;             (iss (+ e ne) 0 (+ e0.x (* n.x dr) (* n.y lr)))
+;;             (iss (+ e ne) 1 (+ e0.y (* n.y dr) (* (- n.x) lr)))) )))
+;;     iss))
+
+;; #? (==> <AxialDescriptor> -as-rooted-tree <root>)
+;; Reorient edges so that the CAT graph is a rooted tree, return
+;; the root point. The root point may be specified.
+(defmethod AxialDescriptor -as-rooted-tree (&optional root)
+  (let ((pdir (atom-array (length points))) ; directory of points
+        (ears (make-queue))        ; queue of ear points
+        (f (lambda (x) (<> x e))) ); filter predicate
+
+    ;; initialize pdir and ears
+    (for* (i 0 (length edges))
+      (let (((e0 e1) (edges i ())))
+        (pdir e0 (cons i (pdir e0)))
+        (pdir e1 (cons i (pdir e1))) ))
+    (for* (i 0 (length points))
+      (when (= (length (pdir i)) 1)
+        (enqueue ears i) ))
+
+    ;; turn CAT into a rooted tree
+    (if (null root)
+        (while (not (queue-empty-p ears))
+          (let* ((p (dequeue ears))
+                 (es (pdir p))
+                 (e (car es)) )
+            (if es
+                (let ((ee (idx-select* edges e)))
+                  (when (= (ee 0) p)
+                    (ee 0 (ee 1))
+                    (ee 1 p) )
+                  (pdir p ())
+                  (setq p (ee 0))
+                  (pdir p (setq es (filter f (pdir p))))
+                  (when (= (length es) 1)
+                    (enqueue ears p) ))
+              (setq root p) )))
+
+      (while (not (queue-empty-p ears))
+        (let ((p (dequeue ears)))
+          (when (<> p root)
+            (let ((es (pdir p)))
+              (when es
+                (let* ((e (car es))
+                       (ee (idx-select* edges e)) )
+                  (when (= (ee 0) p)
+                    (ee 0 (ee 1))
+                    (ee 1 p) )
+                  (pdir p (cdr es))
+                  (setq p (ee 0))
+                  (pdir p (setq es (filter f (pdir p))))
+                  (when (= (length es) 1)
+                    (enqueue ears p)) )))))))
+    (setq :this:root root)
+    root))
+
+
+;;#? (==> <AxialDescriptor> -order-edges-for-traversal [<root>])
+;; Re-order edges so that going through the edge list in order
+;; is a depth-first traversal of the skeleton starting at point <root>.
+(defmethod AxialDescriptor -order-edges-for-traversal (&optional root)
+  (when root (==> this -as-rooted-tree root))
+  (let ((pdir (atom-array (length points))) ; directory of points
+        (eis (int-array (length edges))) ; indices for edge re-ordering
+        (branches ())              ; stack of branch points
+        (n -1)                     ; an index
+        (e -1) )                   ; edge
+    
+    ;; initialize pdir
+    (for* (e 0 (length edges))
+      (let (((e0 e1) (edges e ())))
+        (pdir e0 (cons e (pdir e0))) ))
+
+    (for* (e 0 (length edges))
+      (let* ((e1 (edges e 1))
+             (es (pdir e1)) )
+        (when (> (length es) 1) ; order edges at branch points
+          (pdir e1 (order-edges-by-direction e es)) )))
+    (let ((es (pdir root)))
+      (pdir root (order-edges-by-direction (car es) es)) )
+  
+    ;; reorder edges for traversal
+    (setq n 0  p root  e (car (pdir root))  branches (list root))
+    (while branches
+      (let ((es (pdir p)))
+        (if (null es)
+            (setq p (car branches)  branches (cdr branches))
+          (when (> (length es) 1)
+            (setq branches (cons p branches)) )
+          (setq e (car es))
+          (eis n e)
+          (incr n)
+          (pdir p (cdr es))
+          (setq p (edges e 1)) )))
+    (assert (= n (length edges)))
+    (setq edges (array-take edges 0 eis))
+    eis ))
+
+;; (defmethod ChordalAxisTransform inverse-transform ()
+;;   (==> this -order-edges-for-traversal)
+;;   (let ((iss (==> this -compute-intersections))
+;;         (left (ubyte-array (length edges)))
+;;         (branches ()) )
+    
+    
+;;     ;; For each point 
+;;     iss))
+
+(defun -chordal-axis-transform (cdt bem proto-only)
+  (declare (-obj- (SimpleTriangulation)) cdt)
+  (declare (-idx1- (-int-)) bem)
+  (declare (-bool-) proto-only)
+  (let* ((bem (copy-array bem))
+         (n  (+ (length :cdt:edges) (length :cdt:points))) ; upper bound on #axis points
+         (ps (double-array n 2))        ; axis points (will be trimmed below)
+         (es (int-array n 2))           ; axis edges  (will be trimmed)
+         (ls (double-array n))          ; half chord lengths (will be trimmed)
+	 (pi 0)                         ; axis point index
+	 (ei 0) )                       ; axis edge index
+    (declare (-int-) n pi ei)
+
+    (with-object cdt
+      ;; compute midpoints of all chord edges
+      (do-edges* e
+	(when (= (bem e) 0)
+	  (with-points (e.p0 e.p1)
+            (ps pi 0 (/ (+ e.p1x e.p0x) 2))
+	    (ps pi 1 (/ (+ e.p1y e.p0y) 2))
+	    (ls pi (/ (euclidean-distance point-e.p0 point-e.p1) 2)) )
+	  (bem e (- pi))              ; remember what axis point
+	  (incr pi)))
+      (idx-minus bem bem)
+
+      (do-triangles* tr
+        ;; determine #boundary edges of triangle tr (in tr-type)
+        (let ((tr-type (+ (if (= (bem tr.e0) -1) 1 0)
+			   (if (= (bem tr.e1) -1) 1 0)
+			   (if (= (bem tr.e2) -1) 1 0) )))
+	  (declare (-int-) tr-type)
+
+	  ;; add edges depending on triangle type
+	  (let ((p0 (bem tr.e0)) (p1 (bem tr.e1)) (p2 (bem tr.e2)))
+	    (declare (-int-) p0 p1 p2)
+
+	    (selectq tr-type
+	      (0                      ; when tr is a junction triangle ...
+	       (when (not proto-only)
+		 (let ((angles (==> cdt triangle-angles tr)))
+		   (if (< (max (angles 0) (angles 1) (angles 2)) (/ +pi+ 2)) ; acute triangle
+		     ;; add another point and three edges
+		       (with-points (tr.p0 tr.p1 tr.p2)
+                         (let ((cc (circumcircle point-tr.p0 point-tr.p1 point-tr.p2)))
+			   (ps pi 0 (cc 0))
+			   (ps pi 1 (cc 1))
+			   (ls pi (cc 2)) )
+			 (es ei 0 p0)
+			 (es ei 1 pi)
+			 (incr ei)
+			 (es ei 0 p1)
+			 (es ei 1 pi)
+			 (incr ei)
+			 (es ei 0 p2)
+			 (es ei 1 pi)
+			 (incr ei)
+			 (incr pi) )
+		     ;; add two edges to midpoint of longest chord
+		     (let ((lmax (max (ls p0) (ls p1) (ls p2))))
+		       (while (<> (ls p0) lmax) ; ... find midpoint of the longest chord
+			 (rotatef p0 p1 p2))
+		       (es ei 0 p0)       ; and add an edge from this point to
+		       (es ei 1 p1)       ; each of the other two points, respectively
+		       (incr ei)            
+		       (es ei 0 p0) 
+		       (es ei 1 p2)
+		       (incr ei) )))))
+	     (1                       ; when tr is a sleeve triangle 
+	      (while (<> p0 -1)       ; find the two axis points on the chords
+		(rotatef p0 p1 p2))   ; 
+	      (es ei 0 p1)            ; and add a new edge that connects
+	      (es ei 1 p2)            ; the them
+	      (incr ei) )
+	     (2                       ; when tr is a termination triangle
+	      (while (= p0 -1)
+		(rotatef p0 p1 p2)    ; find the end point
+		(rotatef tr.p0 tr.p1 tr.p2))
+	      (ps pi 0 (points tr.p0 0)) ; and make it another axis point
+	      (ps pi 1 (points tr.p0 1)) ;
+	      (ls pi 0)               ; record zero chord length for the axis point
+	      (es ei 1 pi)            ; add an edge that connects this point
+	      (es ei 0 p0)            ; with the nearest chord midpoint
+	      (incr pi)
+	      (incr ei) )
+	     (t 
+	      (printf "about triangle %d, tr-type=%d:\n" tr tr-type)
+	      (error "Chordal axis transform of a triangle is not defined") ))))))
+
+    (idx-trim! ps 0 0 pi)
+    (idx-trim! ls 0 0 pi)
+    (idx-trim! es 0 0 ei)
+    (new AxialDescriptor ps es ls) ))
+
+(defun -chordal-axis-transform* (cdt bem proto-only)
+  (declare (-obj- (SimpleTriangulation)) cdt)
+  (declare (-idx1- (-int-)) bem)
+  (declare (-bool-) proto-only)
+  (let* ((bem (copy-array bem))
+         (ccs (circumcircles cdt))
+         (n   (+ (length :cdt:edges) (length :cdt:points))) ; upper bound on #axis points
+         (aps (double-array n 2))       ; axis points (will be trimmed below)
+         (aes (int-array n 2))          ; axis edges  (will be trimmed)
+         (aws (double-array n))         ; widths (will be trimmed)
+	 (pi 0)                         ; axis point index
+	 (ei 0)                         ; axis edge index
+         (nb 0) )
+    (declare (-int-) n pi ei nb)
+
+    ;; count # boundary edges
+    (idx-bloop ((be bem)) 
+      (when (> (be) 0)
+        (incr nb) ))
+
+    (with-object cdt
+      ;; compute cat* axis point for every non-boundary edge
+      (do-edges* e
+        (when (= (bem e) 0)
+          (setq pi (- e nb))
+          (with-edge-quad e
+            (with-points (e.p0 e.p1)
+              (cond ((and (<> e.trl -1) (<> e.trr -1))
+                     (point-intersecting-line-line point-e.p0 point-e.p1
+                                                   (idx-select ccs 0 e.trl)
+                                                   (idx-select ccs 0 e.trr)
+                                                   (idx-select aps 0 pi) )
+                     (aws pi (/ (+ (ccs e.trl 2) (ccs e.trr 2)) 2)) )
+
+                    ((or (= e.trl -1) (= e.trr -1))
+                     (aps pi 0 (/ (+ e.p0x e.p1x) 2))
+                     (aps pi 1 (/ (+ e.p0y e.p1y) 2))
+                     (aws pi (/ (euclidean-distance point-e.p0 point-e.p1) 2)) )
+
+                    (t
+                     (error "bogus triangulation data") ))))))
+
+      (setq pi (- (length :cdt:edges) nb))
+      (do-triangles* tr
+        (let ((tr-type (+ (if (> (bem tr.e0) 0) 1 0)
+                          (if (> (bem tr.e1) 0) 1 0)
+                          (if (> (bem tr.e2) 0) 1 0) ))
+                      (p0 (- tr.e0 nb)) (p1 (- tr.e1 nb)) (p2 (- tr.e2 nb)) )
+          (declare (-int-) tr-type p0 p1 p2)
+	  ;; add edges depending on triangle type
+          (selectq tr-type
+            (0                      ; when tr is a junction triangle ...
+             (when (not proto-only)
+               (let* ((angles (==> cdt triangle-angles tr))
+                      (max-angle (max (angles 0) (angles 1) (angles 2)))
+                      (cc (idx-select ccs 0 tr)) )
+                 (if (< (max (angles 0) (angles 1) (angles 2)) (/ +pi+ 2)) ; acute triangle
+                     ;; add another axis point and three edges
+                     (progn
+                       (aps pi 0 (ccs tr 0))
+                       (aps pi 1 (ccs tr 1))
+                       (aws pi (ccs tr 2))
+
+                       (aes ei 0 p0) (aes ei 1 pi) (incr ei)
+                       (aes ei 0 p1) (aes ei 1 pi) (incr ei)
+                       (aes ei 0 p2) (aes ei 1 pi) (incr ei)
+                       (incr pi) )
+                       
+                   ;; add two edges to midpoint of longest chord
+                   (cond
+                    ((= (angles 0) max-angle)
+                     (aes ei 0 p1) (aes ei 1 p0) (incr ei)
+                     (aes ei 0 p2) (aes ei 1 p0) (incr ei) )
+                     
+                    ((= (angles 1) max-angle)
+                     (aes ei 0 p0) (aes ei 1 p1) (incr ei) 
+                     (aes ei 0 p2) (aes ei 1 p1) (incr ei) )
+
+                    ((= (angles 2) max-angle)
+                     (aes ei 0 p0) (aes ei 1 p2) (incr ei) 
+                     (aes ei 0 p1) (aes ei 1 p2) (incr ei) )
+
+                    (t 
+                     (error "internal error") ))))))
+
+	     (1                       ; when tr is a sleeve triangle 
+              (cond
+               ((> (bem tr.e0) 0)
+                (aes ei 0 p1) (aes ei 1 p2) (incr ei) )
+               
+               ((> (bem tr.e1) 0)
+                (aes ei 0 p0) (aes ei 1 p2) (incr ei) )
+               
+               ((> (bem tr.e2) 0)
+                (aes ei 0 p1) (aes ei 1 p0) (incr ei) )
+
+               (t 
+                (error "internal error") )))
+
+	     (2                       ; when tr is a termination triangle
+              (cond
+               ((= (bem tr.e0) 0)
+                (aps pi 0 (points tr.p0 0))
+                (aps pi 1 (points tr.p0 1))
+                (aws pi 0)
+                (aes ei 0 p0) (aes ei 1 pi) (incr ei)
+                (incr pi) )
+               
+               ((= (bem tr.e1) 0)
+                (aps pi 0 (points tr.p1 0))
+                (aps pi 1 (points tr.p1 1)) 
+                (aws pi 0)
+                (aes ei 0 p1) (aes ei 1 pi) (incr ei)
+                (incr pi) )
+
+               ((= (bem tr.e2) 0)
+                (aps pi 0 (points tr.p2 0))
+                (aps pi 1 (points tr.p2 1)) 
+                (aws pi 0)
+                (aes ei 0 p2) (aes ei 1 pi) (incr ei)
+                (incr pi) )
+
+               (t 
+                (error "internal error") )))
+	     (t 
+	      (printf "about triangle %d, tr-type=%d:\n" tr tr-type)
+	      (error "Chordal axis transform of a triangle is not defined") )))))
+    
+    (idx-trim! aps 0 0 pi)
+    (idx-trim! aws 0 0 pi)
+    (idx-trim! aes 0 0 ei)
+    (new AxialDescriptor aps aes aws) ))
+
+
+(defun -delaunay-axis-transform (cdt bem proto-only)
+  (declare (-obj- (SimpleTriangulation)) cdt)
+  (declare (-idx1- (-int-)) bem)
+  (declare (-bool-) proto-only)
+  (let* ((n   (length :cdt:triangles))  ; upper bound on #axis points
+         (aps (double-array n 2))       ; axis points (will be trimmed below)
+	 (aws (double-array n))         ; width info at axis point
+         (g   (==> cdt dual-graph bem))
+         (els (==> cdt edges-length))   ; all edge lengths
+	 (pi 0) )                       ; axis point index
+    
+    (declare (-int-) n pi)
+
+    (with-object cdt
+      (do-triangles* tr
+        ;; determine #boundary edges of triangle tr (in tr-type)
+        (let ((tr-type (+ (if (> (bem tr.e0) 0) 1 0)
+                          (if (> (bem tr.e1) 0) 1 0)
+                          (if (> (bem tr.e2) 0) 1 0) )))
+	  (declare (-int-) tr-type)
+          
+	  ;; create points depending on triangle type
+          (selectq tr-type
+            (0                          ; when tr is a junction triangle ...
+             (when proto-only
+               (==> g remove-edges-adjacent-to tr) )
+               (let* ((angles (==> cdt triangle-angles tr))
+                      (max-angle (max (angles 0) (angles 1) (angles 2))) )
+                 (with-points (tr.p0 tr.p1 tr.p2)
+                   (let ((cc (circumcircle point-tr.p0 point-tr.p1 point-tr.p2)))
+                     (if (< max-angle (/ +pi+ 2)) ; acute triangle
+                         ;; make circumcenter the point
+                         (progn
+                           (aps pi 0 (cc 0))
+                           (aps pi 1 (cc 1))
+                           (aws pi (cc 2)) )
+                       ;; otherwise make 
+                       (cond
+                        ((= (angles 0) max-angle)
+                         (aps pi 0 (/ (+ tr.p1x tr.p2x) 2))
+                         (aps pi 1 (/ (+ tr.p1y tr.p2y) 2))
+                         (aws pi (/ (els tr.e0) 2)) )
+                        ((= (angles 1) max-angle)
+                         (aps pi 0 (/ (+ tr.p0x tr.p2x) 2))
+                         (aps pi 1 (/ (+ tr.p0y tr.p2y) 2))
+                         (aws pi (/ (els tr.e1) 2)) )
+                        ((= (angles 2) max-angle)
+                         (aps pi 0 (/ (+ tr.p0x tr.p1x) 2))
+                         (aps pi 1 (/ (+ tr.p0y tr.p1y) 2))
+                         (aws pi (/ (els tr.e2) 2)) )
+                        (t 
+                         (error "internal error") )))))))
+            (1
+             (let ((i (cond ((> (bem tr.e0) 0) 0)
+                            ((> (bem tr.e1) 0) 1)
+                            ((> (bem tr.e2) 0) 2)
+                            (t (error "internal error") -1))))
+               (angle-bisector-midpoint tr i (idx-select aps 0 pi))
+               (aws pi (/ (+ (els tr.e0) (els tr.e1) (els tr.e2)
+                             (- (els (triangle-edges tr i))) ) 4)) ))
+
+            (2 
+             (let ((i (cond ((= (bem tr.e0) 0) 0)
+                            ((= (bem tr.e1) 0) 1)
+                            ((= (bem tr.e2) 0) 2)
+                            (t (error "internal error") -1))))
+               (angle-bisector-midpoint tr i (idx-select aps 0 pi))
+               (aws pi (/ (els (triangle-edges tr i)) 2)) ))
+            (3
+             (triangle-barycenter tr (idx-select aps 0 pi)) 
+             (aws pi (/ (+ (els tr.e0) (els tr.e1) (els tr.e2)) 6)) ))
+
+
+          (incr pi) )))
+        
+    (idx-trim! aps 0 0 pi)
+    (idx-trim! aws 0 0 pi)
+    (new AxialDescriptor aps :g:edges aws) ))
+
+  
+(defun -delaunay-axis-transform* (cdt bem proto-only)
+  (declare (-obj- (SimpleTriangulation)) cdt)
+  (declare (-idx1- (-int-)) bem)
+  (declare (-bool-) proto-only)
+  (let* ((nt  (length :cdt:triangles))  ; upper bound on #axis points
+	 (ne  (length :cdt:edges))
+	 (ccs (circumcircles cdt))
+         (els (==> cdt edges-length))   ; edge lengths
+         (aps (double-array nt 2))      ; axis points (will be trimmed below)
+	 (aws (double-array nt))        ; width info at axis point
+         (dg  (==> cdt dual-graph bem))
+	 (pi 0) )                       ; axis point index
+    (declare (-int-) nt ne pi)
+
+    (with-object cdt
+      (do-triangles* tr
+        ;; determine #boundary edges of triangle tr (in tr-type)
+        (let ((tr-type (+ (if (> (bem tr.e0) 0) 1 0)
+                          (if (> (bem tr.e1) 0) 1 0)
+                          (if (> (bem tr.e2) 0) 1 0) )))
+	  (declare (-int-) tr-type)
+          
+	  ;; create points depending on triangle type
+          (selectq tr-type
+            (0     ;  when tr is a junction triangle ...
+             (when proto-only
+               (==> dg remove-edges-adjacent-to tr))
+             (let* ((angles (==> cdt triangle-angles tr))
+                    (max-angle (max (angles 0) (angles 1) (angles 2))) )
+	       (if (< max-angle (/ +pi+ 2)) ; acute triangle
+		   ;; make circumcenter the point
+		   (progn
+		     (aps pi 0 (ccs tr 0))
+		     (aps pi 1 (ccs tr 1))
+		     (aws pi (ccs tr 2)) )
+		 ;; otherwise make midpoint of longest chord
+		 (cond
+		  ((= (angles 0) max-angle)
+                   (edge-midpoint tr.e0 (idx-select aps 0 pi)) )
+		  ((= (angles 1) max-angle)
+		   (edge-midpoint tr.e1 (idx-select aps 0 pi)) )
+		  ((= (angles 2) max-angle)
+		   (edge-midpoint tr.e2 (idx-select aps 0 pi)) )
+		  (t 
+		   (error "internal error") ))
+                 (aws pi (ccs tr 2)) ) ))
+            
+            (1
+             (let ((e -1) (f -1) (g -1) (p -1) (point [0 0]))
+               
+               (declare (-int-) e f g p)
+               (cond ((> (bem tr.e0) 0) 
+                      (setq e tr.e1  f tr.e2  g tr.e0  p tr.p0) )
+                     ((> (bem tr.e1) 0) 
+                      (setq e tr.e0  f tr.e2  g tr.e1  p tr.p1) )
+                     ((> (bem tr.e2) 0) 
+                      (setq e tr.e0  f tr.e1  g tr.e2  p tr.p2) )
+                     (t 
+                      (error "internal error") ))
+               ;; find other point tangent to cc
+               (edge-midpoint g point)
+               (decr (point 0) (ccs tr 0))
+               (decr (point 1) (ccs tr 1))
+               (tangent-vector! point)
+               (scale-vector! point (ccs tr 2))
+               (incr (point 0) (ccs tr 0))
+               (incr (point 1) (ccs tr 1))
+               ;; determine axis point as point between cc tangent points
+               (with-points (p)
+                 (aws pi (/ (euclidean-distance point point-p) 2))
+                 (incr (point 0) (point-p 0))
+                 (incr (point 1) (point-p 1))
+                 (aps pi 0 (/ (point 0) 2))
+                 (aps pi 1 (/ (point 1) 2)) )))
+            
+            (2 
+             (let ((i (cond ((= (bem tr.e0) 0) 0)
+                            ((= (bem tr.e1) 0) 1)
+                            ((= (bem tr.e2) 0) 2)
+                            (t (error "internal error") -1))))
+               (angle-bisector-midpoint tr i (idx-select aps 0 pi))
+               (aws pi (/ (els (triangle-edges tr i)) 2)) ))
+
+            (3
+             (error "DAT of triangle is not defined") )
+             ;(triangle-barycenter tr (idx-select aps 0 pi)) 
+             ;(aws pi (/ (+ (els tr.e0) (els tr.e1) (els tr.e2)) 6)) ))
+          
+            (t 
+             (error "internal error") )))
+
+        (incr pi) ))
+    
+    (idx-trim! aps 0 0 pi)
+    (idx-trim! aws 0 0 pi)
+    (new AxialDescriptor aps :dg:edges aws) ))
+
+(defun -pisa-axis-transform (cdt bem proto-only)
+  (declare (-obj- (SimpleTriangulation)) cdt)
+  (declare (-idx1- (-int-)) bem)
+  (declare (-bool-) proto-only)
+  (let* ((nt  (length :cdt:triangles))  ; upper bound on #axis points
+	 (ne  (length :cdt:edges))
+	 (ccs (circumcircles cdt))
+         (els (==> cdt edges-length))   ; edge lengths
+         (aps (double-array nt 2))      ; axis points (will be trimmed below)
+	 (aws (double-array nt))        ; width info at axis point
+         (dg  (==> cdt dual-graph bem))
+	 (pi 0) )                       ; axis point index
+    (declare (-int-) nt ne pi)
+
+    (with-object cdt
+      (do-triangles* tr
+        ;; determine #boundary edges of triangle tr (in tr-type)
+        (let ((tr-type (+ (if (> (bem tr.e0) 0) 1 0)
+                          (if (> (bem tr.e1) 0) 1 0)
+                          (if (> (bem tr.e2) 0) 1 0) )))
+	  (declare (-int-) tr-type)
+          
+	  ;; create points depending on triangle type
+          (selectq tr-type
+            (0     ;  when tr is a junction triangle ...
+             (when proto-only
+               (==> dg remove-edges-adjacent-to tr))
+             (==> dg remove-vertex tr)
+             (let* ((angles (==> cdt triangle-angles tr))
+                    (max-angle (max (angles 0) (angles 1) (angles 2))) )
+	       (if (< max-angle (/ +pi+ 2)) ; acute triangle
+		   ;; make circumcenter the point
+		   (progn
+		     (aps pi 0 (ccs tr 0))
+		     (aps pi 1 (ccs tr 1))
+		     (aws pi (ccs tr 2)) )
+		 ;; otherwise make midpoint of longest chord
+		 (cond
+		  ((= (angles 0) max-angle)
+                   (edge-midpoint tr.e0 (idx-select aps 0 pi)) )
+		  ((= (angles 1) max-angle)
+		   (edge-midpoint tr.e1 (idx-select aps 0 pi)) )
+		  ((= (angles 2) max-angle)
+		   (edge-midpoint tr.e2 (idx-select aps 0 pi)) )
+		  (t 
+		   (error "internal error") ))
+                 (aws pi (ccs tr 2)) ) ))
+            
+            (1
+             (let ((e -1) (f -1) (g -1) (p -1) (point [0 0]) (s 1))
+               (declare (-int-) e f g p)
+               (cond ((> (bem tr.e0) 0) 
+                      (setq e tr.e1  f tr.e2  g tr.e0  p tr.p0) )
+                     ((> (bem tr.e1) 0) 
+                      (setq e tr.e0  f tr.e2  g tr.e1  p tr.p1) )
+                     ((> (bem tr.e2) 0) 
+                      (setq e tr.e0  f tr.e1  g tr.e2  p tr.p2) )
+                     (t 
+                      (error "internal error") ))
+               ;; find other point tangent to cc
+               (edge-midpoint g point)
+               (decr (point 0) (ccs tr 0))
+               (decr (point 1) (ccs tr 1))
+               (tangent-vector! point)
+               (scale-vector! point (ccs tr 2))
+               (incr (point 0) (ccs tr 0))
+               (incr (point 1) (ccs tr 1))
+               ;; determine pisa-point
+               (with-points (p)
+                 (aws pi (/ (euclidean-distance point point-p) 2))
+                 (incr (point 0) (point-p 0))
+                 (incr (point 1) (point-p 1))
+                 ;(point 0 (/ (point 0) 2))
+                 ;(point 1 (/ (point 1) 2))
+                 ;(decr (point 0) (ccs tr 0))
+                 ;(decr (point 1) (ccs tr 1))
+                 ;(tangent-vector! point)
+                 ;(scale-vector! point (ccs tr 2))
+                 (incr (point 0) (ccs tr 0))
+                 (incr (point 1) (ccs tr 1))
+                 (aps pi 0 (/ (point 0) 3))
+                 (aps pi 1 (/ (point 1) 3)) )))
+            
+            (2 
+             (let ((i (cond ((= (bem tr.e0) 0) 0)
+                            ((= (bem tr.e1) 0) 1)
+                            ((= (bem tr.e2) 0) 2)
+                            (t (error "internal error") -1))))
+               (angle-bisector-midpoint tr i (idx-select aps 0 pi))
+               (aws pi (/ (els (triangle-edges tr i)) 2)) ))
+
+            (3
+             (error "DAT of triangle is not defined") )
+             ;(triangle-barycenter tr (idx-select aps 0 pi)) 
+             ;(aws pi (/ (+ (els tr.e0) (els tr.e1) (els tr.e2)) 6)) ))
+          
+            (t 
+             (error "internal error") )))
+
+        (incr pi) ))
+    
+    (idx-trim! aps 0 0 pi)
+    (idx-trim! aws 0 0 pi)
+    (new AxialDescriptor aps :dg:edges aws) ))
+
+
+#? (medial-axis-transform <poly> [<proto-only>])
+;; Compute the Medial Axis Transform of polygon <poly>.
+;; When <proto-only> is <t>, compute only the proto-skeleton.
+(defmacro medial-axis-transform (poly &optional proto-only)
+  `(let* ((poly ,poly)
+	  (cdt (delaunay poly)) )
+     (-medial-axis-transform cdt ,proto-only) )
+  )
+
+(defun -medial-axis-transform (cdt proto-only)
+  (declare (-obj- (SimpleTriangulation)) cdt)
+  (declare (-bool-) proto-only)
+  (let* ((ccs (circumcircles cdt))
+	 (cc-points (idx-trim ccs 1 0 2))
+	 (cc-radii (idx-select ccs 1 2))
+	 (cc-edges (int-array (* 2 (length :cdt:triangles)) 2))
+	 (i 0))
+    (declare (-int-) i)
+    (if proto-only
+        (with-object cdt
+          (do-interior-edges e
+            (with-edge-quad e
+              (when (not (or (triangle-interior-p e.trl)
+                             (triangle-interior-p e.trr) ))
+                (cc-edges i 0 e.trl)
+                (cc-edges i 1 e.trr)
+                (incr i)))))
+      (with-object cdt
+        (do-interior-edges e
+          (with-edge-quad e
+            (cc-edges i 0 e.trl)
+            (cc-edges i 1 e.trr))
+          (incr i))))
+  (idx-trim! cc-edges 0 0 i)
+  (new AxialDescriptor cc-points cc-edges cc-radii)))
+
+
+#? (chordal-axis-transform <poly> [<proto-only>])
+;; Compute the Chordal Axis Transform of polygon <poly>.
+;; When <proto-only> is <t>, compute only the proto-skeleton.
+;;
+;; L. Prasad, R. L. Rao: "A Geometric Transform for Shape Feature 
+;; Extraction", Proceedings of SPIE's 45th Annual Meeting, 2000, 
+;; San Diego, CA, Vol. 4117, pp 222-233, 2000.
+(defmacro chordal-axis-transform (poly &optional proto-only)
+  `(let* ((poly ,poly)
+	  (cdt (delaunay poly))
+	  (bem (int-array (length :cdt:edges))) )
+     (array-clear (idx-trim bem 0 0 (length :poly:edges)) 1)
+     (-chordal-axis-transform cdt bem ,proto-only) )
+  )
+
+(defmacro chordal-axis-transform* (poly &optional proto-only)
+  `(let* ((poly ,poly)
+	  (cdt (delaunay poly))
+	  (bem (int-array (length :cdt:edges))) )
+     (array-clear (idx-trim bem 0 0 (length :poly:edges)) 1)
+     (-chordal-axis-transform* cdt bem ,proto-only) )
+  )
+
+#? (delaunay-axis-transform <poly> [<proto-only>])
+;; Compute the Delaunay Axis Transform of polygon <poly>.
+;; When <proto-only> is <t>, compute only the proto-skeleton.
+(defmacro delaunay-axis-transform (poly &optional proto-only)
+  `(let* ((poly ,poly)
+          (proto-only ,proto-only)
+	  (cdt (delaunay poly))
+	  (bem (int-array (length :cdt:edges))) )
+     (array-clear (idx-trim bem 0 0 (length :poly:edges)) 1)
+     (-delaunay-axis-transform cdt bem proto-only) )
+  )
+
+(defmacro delaunay-axis-transform* (poly &optional proto-only)
+  `(let* ((poly ,poly)
+          (proto-only ,proto-only)
+	  (cdt (delaunay poly))
+	  (bem (int-array (length :cdt:edges))) )
+     (array-clear (idx-trim bem 0 0 (length :poly:edges)) 1)
+     (-delaunay-axis-transform* cdt bem proto-only) )
+  )
+
+(defmacro pisa-axis-transform* (poly &optional proto-only)
+  `(let* ((poly ,poly)
+          (proto-only ,proto-only)
+	  (cdt (delaunay poly))
+	  (bem (int-array (length :cdt:edges))) )
+     (array-clear (idx-trim bem 0 0 (length :poly:edges)) 1)
+     (-pisa-axis-transform cdt bem proto-only) )
+  )
+
+(with-namespace (class AxialDescriptor)
+
+(dhc-make ()
+	  circumcircles
+          ;guard-junction-triangles
+	  (AxialDescriptor AxialDescriptor
+			   ;set-root
+			   ;-compute-intersections
+			   )
+	  -chordal-axis-transform
+	  -chordal-axis-transform*
+          -delaunay-axis-transform
+	  -delaunay-axis-transform*
+	  -medial-axis-transform
+          -pisa-axis-transform
+         )
+)

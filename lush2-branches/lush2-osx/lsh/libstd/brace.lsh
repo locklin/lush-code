@@ -1,0 +1,1707 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Functions and classes to handle brace lists.
+;; brace lists are list 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; utilities
+
+(defvar brace.lush-keywords
+  '("(cond" "(if" "(when" "(for" "(each" "(all"
+    "(while" "(let" "(let*" "(progn" "(prog1" 
+    "(let-filter" "(reading" "(writing" "(selectq"
+    "(do-while" "(mapwhile" "(mapfor" "(repeat"
+    "(idx-eloop" "(idx-bloop" "(idx-gloop"
+    "(ifdef" "(ifcompiled"
+    "(lambda" "(flambda" "(mlambda" 
+    "(on-error" "(on-break"
+    "(de" "(df" "(dmc" "(dmd" "(dz" "(dm" "(dhm-p" "(dhm-t" "(dhm-c" "(defun"
+    "(demethod" "(dfmethod" "(dmmethod"
+    ))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de list-get-strings (l)
+  (let ((r ()))
+    (each ((x l)) (if (stringp x) (setq r (cons x r))))
+    (reverse r)))
+
+(de first-string (l)
+  (while (and l (not (stringp (car l)))) (setq l (cdr l)))
+  (car l))
+
+;; string literal: turns a brace into a single string.
+;; allows to type a brace expression to build a
+;; complicated string with non-escaped characters.
+(df <lit> p 
+  (let ((r "")) 
+    (each ((x p))
+      (cond 
+       ((stringp x) (setq r (concat r x)))
+       ((and (numberp x) (>= x 1)) (repeat x (setq r (concat r " "))))
+       ((and (numberp x) (= x -1)) (setq r (concat r "\n")))
+       ((and (numberp x) (= x -2)) (setq r (concat r "\t")))
+       (t (error "illegal object in literal brace"))))
+    r))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; brace macro for double-quote-free text
+;; syntax: 
+;;   '{<xxx> yyy,   qqq {<zzz> aaa} ,(bbb ccc) ,$ddd}
+;;   '{<xxx> yyy, \\  qqq {<zzz> aaa} \(bbb ccc) \$ddd}
+;; is turned into:
+;;   (<xxx> 1 "yyy" "," 1 "\\" 2 "qqq" 1 (<zzz> 1 "aaa") 1 (bbb ccc) 1 ddd)
+;; The first element of each brace must be one of the legal tags, which
+;; are all of the form <tag>. The legal tags are available in the
+;; global variable brace.tags. 
+;; comma or backslash followed by a parenthesized expression: returns expression
+;; comma followed by $ followed by expression: returns expression 
+;;   (useful for symbols) (can be a symbol)
+;; comma followed by another comma (or two backslashes): 
+;;   return evaluated expression
+;; comma follow by anything else is a comma.
+;; number of spaces is inserted as an integer between strings
+;; -1 is inserted where carriage returns are
+;; -2 is inserted where tabs are
+;; preformatted text can inserted (with no need to escape special chars)
+;; using the {<pre> xxxx </pre>} and {<code> xxxx </code>} tags.
+
+(de brace.read-text(&optional leave-bracket)
+  (let ((nextchar (skip-char "")))
+    (selectq nextchar
+      (" " (str-len (read-string " ")))
+      ("\n" (read-string 1) 
+       (if (<> "\n" (skip-char "")) -1
+	 (read-string 1) (list '<p> -1)))
+      ("\t" (read-string 1) -2)
+      ("{" (read))
+      (("," "\\")
+       (read-string 1)
+       (let ((n (skip-char "")))
+	 (selectq n
+	  ("(" (read))
+	  ("$" (read-string 1) (read))
+	  (("," "@") (read-string 1) (eval (read)))
+	  ("{" (read-string 1))
+	  ("}" (read-string 1))
+	  (("," "\\") (read-string 1) (eval (read)))
+	  (t nextchar))))
+      ("}" (read-string 1) "<END>")
+      ("\e" "<END>")
+      ("<" (if leave-bracket
+	       (read-string "~ ,{}\n\t\\")
+	     (read-string 1) (brace.read-bracket)))
+      (t (read-string "~ ,{}<\n\t\\")))))
+
+(de brace.read-bracket ()
+  (let ((c ())
+        (pgm ())
+	(again t)
+        (level 0) )
+    (while again
+      (let ((item 
+	     (let ((nextchar (skip-char "")))
+	       (selectq nextchar
+		 (" "  (str-len (read-string " ")))
+		 ("\e" ())
+		 ("\n" (read-string 1) -1)
+		 ("\t" (read-string 1) -2)
+                 ("<"  (incr level +1) (read-string 1))
+		 (">"  (read-string 1) (when (>= (incr level -1) 0) ">"))
+                 (t    (read-string "~ <>\n\t\e")) ) ) ))
+        (cond
+         ((stringp item)
+          (setq pgm (cons item pgm)) )
+         ((numberp item)
+          (setq c (cons item (cons (apply concat (reverse pgm)) c)))
+          (setq pgm ()) )
+         (t
+          (setq again ()) ) ) ) )
+    (when (or pgm (not c))
+      (setq c (cons (apply concat (reverse pgm)) c)) )
+    (cons '<c> (reverse c)) ) )
+
+;; read preformatted text
+(de brace.read-pre (endtag)
+  (let ((pgm ())
+	(again t)
+	(found-endtag ()))
+    (while again
+      (let ((item 
+	     (let ((nextchar (skip-char "")))
+	       (selectq nextchar
+		 (" " (str-len (read-string " ")))
+		 ("\n" (read-string 1) -1)
+		 ("\t" (read-string 1) -2)
+		 ("\e" "<END>")
+		 ("}" (read-string 1) (if found-endtag "<END>" "}"))
+		 (t (read-string "~ }\n\t\e"))))))
+        (cond
+         ((= item endtag)
+	  ;; insert end tag in preformatted doc
+          (setq pgm (nconc1 pgm (namedclean item)))
+	  (setq found-endtag t))
+	 ;; ((and (stringp item) (regex-match "{<.+>" item))
+	 ;; we found a brace and a tag, this must be a mistake
+	 ;; (error "no end tag for pre-formatted text?"))
+         ((= item "<END>")
+	  (setq again ()))
+	  ;; end of file: no end tag
+          ;; (error "no end tag for pre-formatted text") 
+         (t
+          (setq pgm (nconc1 pgm item))))))
+    pgm))
+    
+
+(de brace.read-tag (tags)
+  (let ((tag (progn (read-string " \t\n") (read-string "~ \t\n{}"))))
+    (if (member tag tags) 
+	tag
+      (error (sprintf "illegal tag in brace construct: %s" tag)) )))
+  
+(de brace.read-body (pgm)
+  (let ((again t))
+    (while again
+      (let ((item (brace.read-text)))
+	(cond
+	 ((= item "<END>")
+	  (setq again ()) )
+	 ((= item "\e")
+	  (error "unbalanced brace construct { }") )
+	 (t
+	  (setq pgm (nconc1 pgm item))))))
+    pgm))
+
+
+(defvar *brace.ex-tmp* ())
+
+(de brace.ex-tmp () 
+  (when (not (stringp *brace.ex-tmp*))
+    (setq *brace.ex-tmp* (tmpname)) )
+  *brace.ex-tmp*)
+
+;; read preformatted text
+(de brace.read-example ()
+  (let ((a (read)))
+    (read-string "~ \n\e")
+    (when (<> (skip-char "") "\e") (read-string 1))
+    (writing (brace.ex-tmp)
+      (printf "? ")
+      (pprint a)
+      (let ((result (eval a)))
+	(printf "= ")
+	(pprint result) )
+      (printf "\n</code>\n"))
+    (reading (brace.ex-tmp) 
+      (cons '<code> (brace.read-pre "</code>")))))
+
+;; join successive strings into a single string
+(de brace.read-concat-strings (intags)
+  (let ((tags intags))
+    (while tags
+      (if (listp (car tags))
+	  (rplaca tags (brace.read-concat-strings (car tags)))
+	(when (and (stringp (car tags)) (stringp (cadr tags)))
+	  (displace tags (cons (concat (car tags) (cadr tags)) (cddr tags)))))
+      (setq tags (cdr tags))))
+  intags)
+
+(de brace.read (tags)
+  (let ((tag (brace.read-tag tags)))
+    (cond
+     ((member tag '("<pre>" "<code>" "<PRE>" "<CODE>"))
+      (let ((endtag (regex-subst "<" "</" tag)))
+	(cons (namedclean tag) (brace.read-pre endtag))))
+     ((member tag '("<ex>" "<EX>"))
+      (brace.read-example))
+     (t (brace.read-concat-strings (brace.read-body (list (namedclean tag))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; list of old-style tags
+;; these are the tag that take no argument
+(defvar brace.old-tags-noargs-map
+  '((".P" . <p>) (".PP" . <p>) (".BR" . <br>)))
+	
+;; these are the tags that take an argument on the same line
+(defvar brace.old-tags-lineargs-map
+  '((".TYPE" . <type>)
+    (".DESC" . <desc>)
+    (".FILE" . <location>)
+    (".HLINK". <hlink>) (".SEE" . <see>)
+    (".AUTHOR" . <author>) (".AUTH" . <author>)
+    (".DATE" . <author>)
+    (".EX" . <ex>)
+    (".IMG" . <img>) (".EPS" . <img>) ))
+
+;; these are the tags whose argument is the text until the next tag
+(defvar brace.old-tags-textargs-map
+  '((".LI" . <li>) (".IP" . <li>)
+    (".PRE" . <pre>) (".VP" . <pre>)
+    (".CODE" . <code>)
+    (".DIV" . <div>)
+    (".IFOGRE" . <if-ogre>)
+    (".IFHLP" . <if-ogre>) (".IFHELP" . <if-ogre>)
+    (".IFTEX" . <if-latex>) (".IFTXT" . <if-text>)
+    (".IFHTML" . <if-html>)))
+
+(defvar brace.old-tags-noargs
+  (mapcar car brace.old-tags-noargs-map))
+(defvar brace.old-tags-lineargs
+  (mapcar car brace.old-tags-lineargs-map))
+(defvar brace.old-tags-textargs
+  (mapcar car brace.old-tags-textargs-map))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; read an old-style tag and the arguments
+;; that come with it.
+(de brace.read-old-tag()
+  (let ((tag (read-string "~ \e\t\n"))
+	(<tag> ()))
+    (cond
+     ;; is it a tag with no args
+     ((setq <tag> (alist-get tag brace.old-tags-noargs-map))
+      (list <tag>))
+     ;; is it an example tag
+     ((= tag ".EX") (list '<div> '(<br>) (brace.read-example)))
+     ;; is it a tag with a single line arg
+     ((setq <tag> (alist-get tag brace.old-tags-lineargs-map))
+	(let ((stop ()) (rez (list <tag>)))
+	  (while (not stop)
+	    (let ((token (brace.read-old-token)))
+	      (cond 
+	       ((= token "<EOF>") (setq stop t) token)
+	       ((= token -1) (setq stop t) (nconc1 rez -1))
+	       (t (nconc1 rez token)))))
+	  rez))
+     ;; is it a tag whose scope ends at another tag
+     ((setq <tag> (alist-get tag brace.old-tags-textargs-map))
+      (let ((stop ()) (rez (list <tag>))
+	    (leave-bracket (member <tag> '(<code> <pre> <c>))))
+	(while (not stop)
+	  (let ((token (brace.read-old-token leave-bracket)))
+	    (cond 
+	     ((= token "<EOF>") (setq stop t) token)
+	     ((= token -1) 
+	      (when (= (skip-char "") ".") (setq stop t))
+	      (nconc1 rez -1))
+	     (t (nconc1 rez token)))))
+	rez))
+     ;; none of the above, error.
+     (t (error (concat "unknown dot tag: " tag))))))
+      
+;; parse word/carriage-return/tab/spaces/eof
+(de brace.read-old-token(&optional leave-bracket)
+  (let ((nextchar (skip-char "")))
+    (selectq nextchar
+      (" " (str-len (read-string " ")))
+      ("\n" (read-string 1)
+       (if (= "\n" (skip-char "")) (list '<p> -1) -1))
+      ("\t" (read-string 1) -2)
+      ("{" (read-string 1)
+       (if (<> (skip-char "") "<")
+	   "{" (printf "WARNING: brace tag in old-style doc\n")))
+      ("\e" "<EOF>")
+      ("<" (if leave-bracket 
+	       (read-string "~ {\n\t\e")
+	     (read-string 1) (brace.read-bracket)))
+      (t (read-string "~ {<\n\t\e")))))
+
+;; reads the body of a document in the "old" format (with dot tags).
+;; result will be spliced into <doc>, which must be a non-empty list.
+;; example:
+;; (let ((zz (list '<div>))) (reading "/tmp/qqq" (brace.read-old-body zz)))
+(de brace.read-old-body (doc)
+  (let ((done ())
+	(stop ()))
+    ;; this assumes we are at the beginning of a line in the file
+    (while (not done)
+      (let ((c (skip-char "")))
+	(cond 
+	 ((= "\e" c) (setq done t))
+	 ((= "\n" c) (read-string 1) 
+	  (nconc1 doc (if (<> "\n" (skip-char "")) -1
+			(read-string 1) (list '<p> -1))))
+	 ((= "." c) (nconc1 doc (brace.read-old-tag)))
+	 (t 				; read tokens until end of line
+	  (let ((stop ()))
+	    (while (not stop)
+	      (let ((token (brace.read-old-token)))
+		(cond 
+		 ((= token "<EOF>") (setq stop t))
+		 ((= token -1) (setq stop t) (setq doc (nconc1 doc -1)))
+		 (t (nconc1 doc token)))))))))))
+    doc)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;(dmc |{| 
+;     (on-error (error 'brace.read "Illegal brace syntax") 
+;       (brace.read brace.tags)))
+
+(dmc |{| (brace.read brace.tags))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; splice expressions that begin with one
+;; of the tags in <tags> out of <z>,
+;; and splice them into <r> 
+;; (which must be a non-nil list).
+(de brace.extract-metadata (z r tags)
+  (while (cadr z)
+    (let ((x (cadr z)))
+      (cond
+       ((and (consp x) (member (car x) tags))
+	(nconc1 r (cons (car x) (list-get-strings (cdr x))))
+	(rplacd z (cddr z)))
+       ((consp x)
+	(brace.extract-metadata x r tags)
+	(setq z (cdr z)))
+       (t (setq z (cdr z)))))) ())
+
+;; splice-in the <ul> tags around successive
+;; instances of <li> tags (when needed).
+(de brace.splice-ul (z)
+  (while (cadr z)
+    (let ((x (cadr z)))
+      (when (consp x)
+	  (when (= (car x) '<li>)
+	    (let ((ul z))
+	      (while (= (car (cadr ul)) '<li>) (setq ul (cdr ul)))
+	      (let ((cdrul (cdr ul)))
+		(rplacd ul ())
+		(rplacd z (cons (cons '<ul> (cons -1 (cdr z))) cdrul)))))
+	  (if (= (car x) '<ul>) x (brace.splice-ul x))))
+    (setq z (cdr z))) ())
+
+;; simple print out of a brace list in brace form.
+(de brace.print (z)
+  (let ((tag (pname (car z))))
+    (if (not (member tag brace.tags))
+	(progn
+	  (printf "\\") 
+	  (pretty z))
+      (printf "{%s " tag)
+      (each ((x (cdr z)))
+	(cond
+	 ((consp x) (brace.print x))
+	 ((= -1 x) (printf "\n"))
+	 ((= -2 x) (printf "       "))
+	 ((numberp x) (repeat x (printf " ")))
+	 ((stringp x) (printf "%s" x))
+	 ((symbolp x) (printf "\\$") (prin x))
+	 (t (error "can't print that"))))
+      (printf "}")))
+  (printf "\n"))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; RENDERING
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass brace-renderer object
+  ;; text formatting tags
+  <p>					; paragraph
+  <pre>					; preformatted
+  <code>				; displayed code
+  <li>					; list item
+  <br>					; line break
+  <tt>					; typewriter font
+  <b>					; bold
+  <i>					; italic
+  <u>					; underlined
+  <c>					; highlighted code/arguments
+  <font>				; font
+  <center>				; center
+  <img>					; image
+  <ul>					; unstructured list
+  <div>					; noop, just grouping tag
+
+  ;; more text formatting
+  <h1>					; big title
+  <h2> 					; medium title
+  <h3>					; small title
+
+  <hlink>			       ; hyperlink (to URL or heading)
+  <see>				       ; hyperlink (to URL or heading)
+
+  ;; special commands
+  <if-html>
+  <if-latex>
+  <if-ogre>
+  <if-text>
+
+  <meta>				; metatags
+
+  <ex>					; we should never see that one
+  )
+
+
+(defmethod brace-renderer render (brace) (eval brace))
+
+  
+;; these are the tags that need to be excised from
+;; the raw doclist because they contain metadata
+;; rather than printable material.
+(defvar brace.meta-tags
+  '(<author> <symbol> <location> <keywords> <date> <desc> <title> <type>))
+
+(defvar brace.global-tags '(<lit>))
+
+;; collect all the legal tags
+(defvar brace.tags 
+  (let ((tags (mapcar pname 
+		      (append (slots brace-renderer) 
+			      brace.meta-tags brace.global-tags))))
+    (append tags (mapcar upcase tags))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; PLAIN TEXT RENDERER
+
+;; print string
+(de brace-text.printf (s) 
+  (printf (regex-subst "%" "%%%%" s))
+  (setq returns 0)
+  (incr cursor-pos (str-len s)))
+
+;; print n spaces
+(de brace-text.sp (n)
+  (repeat n (printf " "))
+  (setq returns 0)
+  (incr cursor-pos n))
+
+;; go to beginning of next line, only if current line non empty
+(de brace-text.br ()
+  (when (<> cursor-pos left-margin)
+    (printf "\n")
+    (incr returns)
+    (repeat left-margin (printf " "))
+    (setq cursor-pos left-margin)))
+
+;; unconditional carriage return
+(de brace-text.cr ()
+  (printf "\n")
+  (incr returns)
+  (repeat left-margin (printf " "))
+  (setq cursor-pos left-margin))
+
+;; a single blank line (even for multiple calls)
+(de brace-text.parskip ()
+  (while (< returns 2)
+    (printf "\n")
+    (incr returns))
+  (repeat left-margin (printf " "))
+  (setq cursor-pos left-margin))
+
+;; print word with possible word wrap
+(de brace-text.print-word (s)
+  (when (> (+ cursor-pos (str-len s)) right-margin) (brace-text.br))
+  (printf (regex-subst "%" "%%%%" s)) (printf " ")
+  (setq returns 0)
+  (incr cursor-pos (1+ (str-len s))))
+
+;; print paragraph (any brace list really)
+(de brace-text.parprint (p)
+  (each ((x p))
+    (cond
+     ((consp x) (eval x))
+     ((stringp x) (brace-text.print-word x))
+     (t ()))))
+
+;; print pre-formatted text
+(de brace-text.preprint (p)
+  (let ((stop ()))
+    (while (and p (not stop))
+      (let ((x (car p)))
+	(cond
+	 ((member x '(</code> </pre> </CODE> </PRE>)) (setq stop t))
+	 ((stringp x) (brace-text.printf x))
+	 ((= x -1) (brace-text.cr))
+	 ((= x -2) (brace-text.sp 7))
+	 ((and (numberp x) (>= x 1)) (brace-text.sp x)))
+	(setq p (cdr p))))
+    (brace-text.parprint p)))
+
+;; print title and header with available metadata
+(de brace-text.meta (p)
+  (let (((author symbol location keywords date desc title type) p))
+    (printf "\n")
+    (repeat 6 (printf "------------")) (printf "\n")
+    (when title
+      (printf "%s" title)
+      (repeat (max 1 (- 40 (str-len title))) (printf " "))
+      (if (not type)
+	  (repeat 8 (printf " "))
+	(repeat (max 1 (- 8 (str-len type))) (printf " "))
+	(printf "[%s]" type))
+      (when (and location (<> (str-right location 4) ".hlp"))
+	(printf "(%s)" location))
+      (printf "\n")
+      (repeat 6 (printf ". . . . . . ")) (printf "\n"))
+    (when author 
+      (brace-text.parprint (cons "Author(s): " author))
+      (brace-text.br))
+    (when date (printf "%s\n" date))
+    (when desc 
+      (brace-text.parprint (cons "Description: " desc))
+      (brace-text.br))
+    (when keywords
+      (brace-text.parprint (cons "Keywords: " keywords))
+      (brace-text.br))
+    (brace-text.cr)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defclass brace-text brace-renderer
+  (returns 0)				; counts the number of successive CR
+  (cursor-pos 0)
+  (left-margin 0)
+  (right-margin 72))
+
+(defmethod brace-text brace-text ()
+  (setq <p> (flambda p 
+	      (when p (brace-text.parprint p))
+	      (brace-text.parskip)))
+  (setq <pre> (flambda p (brace-text.preprint p)))
+  (setq <code> (flambda p (brace-text.preprint p)))
+  (setq <li> (flambda p 
+	       (brace-text.printf "* ")
+	       (let ((left-margin (+ left-margin 2)))
+		 (brace-text.parprint p))
+	       (brace-text.br)))
+  (setq <br> (flambda p 
+	       (when p (brace-text.parprint p))
+	       (brace-text.br)))
+  (setq <tt> (flambda p (brace-text.parprint p)))
+  (setq <b> (flambda p (brace-text.parprint p)))
+  (setq <i> (flambda p (brace-text.parprint p)))
+  (setq <u> (flambda p (brace-text.parprint p)))
+  (setq <c> (flambda p (brace-text.parprint p)))
+  (setq <font> (flambda p ()))
+  (setq <center> (flambda p (brace-text.parprint p)))
+  (setq <img> (flambda p 
+		(brace-text.parprint (append '("[image:" 1) p '("]" 1)))))
+  (setq <ul> (flambda p 
+	       (brace-text.br)
+	       (brace-text.parprint p)
+	       (brace-text.br)))
+  (setq <div> (flambda p (brace-text.parprint p)))
+  (setq <h1> (flambda p 
+	       (brace-text.parskip)
+	       (brace-text.printf "### ")
+	       (brace-text.parprint p)
+	       (brace-text.parskip)))
+  (setq <h2> (flambda p 
+	       (brace-text.parskip)
+	       (brace-text.printf "## ")
+	       (brace-text.parprint p)
+	       (brace-text.parskip)))
+  (setq <h3> (flambda p 
+	       (brace-text.parskip)
+	       (brace-text.printf "# ")
+	       (brace-text.parprint p)
+	       (brace-text.parskip)))
+  (setq <hlink> (flambda p 
+		  (brace-text.print-word "[HLINK:")
+		  (brace-text.parprint p)
+		  (brace-text.print-word "]")))
+  (setq <see> (flambda p 
+		(brace-text.br)
+		(brace-text.printf "* ")
+		(let ((left-margin (+ left-margin 2)))
+		  (brace-text.print-word "See:")
+		  (brace-text.parprint p))
+		(brace-text.br)))
+
+  (setq <if-html> (flambda p ()))
+  (setq <if-latex> (flambda p ()))
+  (setq <if-ogre> (flambda p ()))
+  (setq <if-text> (flambda p (brace-text.parprint p)))
+
+  (setq <meta> (flambda p (brace-text.meta p)))
+  )
+
+(defmethod brace-text render (doc lmargin rmargin)
+  (setq cursor-pos 0)
+  (setq returns 0)
+  (setq left-margin lmargin)
+  (setq right-margin rmargin)
+  (==> this (brace-renderer . render) doc))
+
+(defvar *brace-text* (new brace-text))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; OGRE RENDERER: returns an executable list of graphic commands
+
+;; print string
+(de brace-ogre.printf (s) 
+  (setq s (regex-subst "%" "%%%%" s))
+  (nconc1 gcode `(gprintf (+ x ,px) (+ y ,py) ,s))
+  (incr px (caddr (rect-text 0 0 s)))
+  (setq returns 0))
+
+;; print n spaces
+(de brace-ogre.sp (&optional (n 1))
+  (incr px (* n space-width))
+  (setq returns 0))
+
+;; go to beginning of next line, only if current line non empty
+(de brace-ogre.br ()
+  (when (= returns 0)
+    (setq px left-margin)
+    (incr py line-height)
+    (incr returns)))
+
+;; unconditional carriage return
+(de brace-ogre.cr ()
+  (setq px left-margin)
+  (incr py line-height)
+  (incr returns))
+
+;; a single blank line (even for multiple calls)
+(de brace-ogre.parskip ()
+  (brace-ogre.br)
+  (brace-ogre.cr))
+
+;; print word with possible word wrap
+;; all the complixated regex stuff is to
+;; handle the bracketted words. This should
+;; really be handled by the parser.
+(de brace-ogre.print-word (s)
+  (setq s (regex-subst "%" "%%%%" s))
+  (let ((bracketp ())
+	(w (or (caddr (rect-text 0 0 s)) 0))
+	(s0 ()) (s1 ()) (s2 ()))
+    (when (and (str-find "<" s)
+	       (regex-match "[^<]*<.+>[^>]*" s))
+      (let* ((regx"([^<]*)<(.+)>([^>]*)"))
+	(setq s0 (regex-subst regx "%0" s))
+	(setq s1 (regex-subst regx "%1" s))
+	(setq s2 (regex-subst regx "%2" s))
+	(setq s s1)
+	(setq bracketp t)))
+    (when (> (+ w px) right-margin)
+      (setq px left-margin)
+      (incr py line-height)
+      (incr returns))
+    (when bracketp 
+      (when (and s0 (<> "" s0))
+	(nconc1 gcode `(gprintf (+ x ,px) (+ y ,py) ,s0))
+	(incr px (caddr (rect-text 0 0 s0))))
+      (brace-ogre.push-font "Courier" t () ())
+      (brace-ogre.push-color bracket-color))
+    (nconc1 gcode `(gprintf (+ x ,px) (+ y ,py) ,s))
+    (incr px (caddr (rect-text 0 0 s)))
+    (when bracketp 
+      (when (and s2 (<> "" s2))
+	(nconc1 gcode `(gprintf (+ x ,px) (+ y ,py) ,s2))
+	(incr px (caddr (rect-text 0 0 s2))))
+      (brace-ogre.pop-font)
+      (brace-ogre.pop-color))
+    (incr px space-width)
+    (setq returns 0)))
+
+(de brace-ogre.print-word (s)
+  (setq s (regex-subst "%" "%%%%" s))
+  (let ((w (or (caddr (rect-text 0 0 s)) 0)))
+    (when (> (+ w px) right-margin)
+      (setq px left-margin)
+      (incr py line-height)
+      (incr returns))
+    (nconc1 gcode `(gprintf (+ x ,px) (+ y ,py) ,s))
+    (incr px (+ space-width w))
+    (setq returns 0)))
+
+;; print paragraph (any brace list really)
+(de brace-ogre.parprint-broken (p)
+  (each ((x p))
+    (let ((z (eval x)))
+      (cond
+       ((stringp z) (brace-ogre.print-word z))
+       ((and (numberp z) (> 0 z)) (incr px space-width))))))
+
+;; print paragraph (any brace list really)
+(de brace-ogre.parprint (p)
+  (each ((x p))
+    (let ((z (eval x)))
+      (cond
+       ((stringp z) (brace-ogre.print-word z))))))
+
+
+;; build the name of a font from the 
+;; family name, a bold flag, an italic flag and a size integer.
+(de make-font-name (n b i s)
+  ;; not used when 'ogre-font' is present
+  (sprintf "%s-%s%d" n 
+	   (cond 
+	    ((and (<> 0 b) (<> 0 i)) "BoldItalic-")
+	    ((<> 0 b) "Bold-")
+	    ((<> 0 i) "Italic-")
+	    (t "")) s ) )
+
+(de font-stdsize (size &optional (stdsizes (8 10 11 12 14 18 24)))
+  (nth (bsearch stdsizes size) stdsizes) )
+
+(de brace-ogre.push-bold () (brace-ogre.push-font () t () ()))
+(de brace-ogre.pop-bold () (brace-ogre.pop-font))
+
+(de brace-ogre.push-italic () (brace-ogre.push-font () () t ()))
+(de brace-ogre.pop-italic () (brace-ogre.pop-font))
+
+(de brace-ogre.push-size (s) (brace-ogre.push-font () () () s))
+(de brace-ogre.pop-size () (brace-ogre.pop-font))
+
+(de brace-ogre.push-font (&optional name boldp italicp size)
+  (when font-stack
+    (let (((n b i s) (car font-stack)))
+      (setq name (or name n))
+      (setq boldp (or boldp b))
+      (setq italicp (or italicp i))
+      (setq size (or size s)) ) )
+  (let ((expr
+         (if (functionp ogre-font)
+	     `(ogre-font ,(or size 11)
+			 ,(= name "Times") ,(= name "Courier")
+			 ,(<> boldp 0) ,(<> italicp 0) )
+	   `(font ,(make-font-name name boldp italicp size)) ) ))
+    (setq font-stack (cons (list name boldp italicp size) font-stack))
+    (eval expr)
+    (setq line-height (* 1.25 (lasta (rect-text 0 0 "pd0"))))
+    (setq space-width
+	  (* (if (= name "Times") 1.25 1)
+	     (- (caddr (rect-text 0 0 "0 0"))
+		(caddr (rect-text 0 0 "00")))))
+    (nconc1 gcode expr) ) )
+
+(de brace-ogre.pop-font ()
+  (setq font-stack (cdr font-stack))
+  (let ((name (caar font-stack))
+	(expr ()) )
+    (let (((name boldp italicp size) (car font-stack)))
+      (setq expr
+	    (if (functionp ogre-font)
+		`(ogre-font ,(or size 11)
+			    ,(= name "Times") ,(= name "Courier")
+			    ,(<> boldp 0) ,(<> italicp 0) )
+	      `(font ,(make-font-name name boldp italicp size)) ) ) )
+    (eval expr)
+    (setq line-height (* 1.25 (lasta (rect-text 0 0 "pd0"))))
+    (setq space-width
+          (* (if (= name "Times") 1.25 1)
+             (- (caddr (rect-text 0 0 "0 0"))
+		(caddr (rect-text 0 0 "00"))) ) )
+    (nconc1 gcode expr) ) )
+
+(de brace-ogre.push-color (c)
+  (setq color-stack (cons c color-stack))
+  (nconc1 gcode (cons 'color-rgb c)))
+
+(de brace-ogre.pop-color ()
+  (setq color-stack (cdr color-stack))
+  (nconc1 gcode (cons 'color-rgb (car color-stack))))
+
+(de brace-ogre.image (p) 
+  (let ((img (image-read-rgba (eval (car p)))))
+    (brace-ogre.cr)
+    (nconc1 gcode (cons 'rgb-draw-matrix px py img))
+    (incr py (idx-dim img 0))
+    (brace-ogre.cr)))
+
+;; print pre-formatted text
+(de brace-ogre.preprint (p)
+  (let ((stop ()))
+    (while (and p (not stop))
+      (let ((x (car p)))
+	(cond
+	 ((member x '(</code> </pre> </CODE> </PRE>)) (setq stop t))
+	 ((stringp x) (brace-ogre.printf x))
+	 ((= x -1) (brace-ogre.cr))
+	 ((= x -2) (brace-ogre.sp 7))
+	 ((and (numberp x) (>= x 1)) (brace-ogre.sp x)))
+	(setq p (cdr p))))
+    (brace-ogre.parprint p)))
+
+;; print pre-formatted text
+(de brace-ogre.codeprint (p)
+  (let ((stop ()) (comment ()) (c-code ()))
+    (while (and p (not stop))
+      (let ((x (car p)))
+	(cond
+	 ((member x '(</code> </pre> </CODE> </PRE>))
+	  (when comment (setq comment ()) (brace-ogre.pop-color))
+	  (when c-code (setq c-code ()) (brace-ogre.pop-color))
+	  (setq stop t))
+	 ((stringp x) 
+	  (if (and (member x brace.lush-keywords)
+		   (not comment)
+		   (not c-code))
+	      (progn
+		(brace-ogre.push-font () t () ())
+		(brace-ogre.printf x)
+		(brace-ogre.pop-font))
+	    (when (and (not comment)
+		       (not c-code)
+		       (or (regex-match "#\\?" x)
+			   (regex-match "[;]+" x)))
+	      (setq comment t) (brace-ogre.push-color '(0.8 0 0)))
+	    (when (and (not comment)
+		       (not c-code)
+		       (regex-match "#{" x))
+	      (setq c-code t) (brace-ogre.push-color '(0 0.7 0)))
+	    (if (and c-code (not comment) 
+		     (or (regex-seek "#}" x)
+			 (and (= x "#") (regex-seek "^}" (cadr p)))))
+		(progn
+		  (setq c-code ()) 
+		  (brace-ogre.printf x) 
+		  (brace-ogre.pop-color))
+	      (brace-ogre.printf x))))
+	 ((= x -1) 
+	  (when comment (setq comment ()) (brace-ogre.pop-color))
+	  (brace-ogre.cr))
+	 ((= x -2) (brace-ogre.sp 7))
+	 ((and (numberp x) (>= x 1)) (brace-ogre.sp x)))
+	(setq p (cdr p))))
+    (brace-ogre.parprint p)))
+
+;; print title and header with available metadata
+(de brace-ogre.meta (p)
+  (let (((author symbol location keywords date desc title type) p))
+    (when title
+      (brace-ogre.push-font "Helvetica" 0 0 14)
+      (brace-ogre.push-color title-color)
+      (brace-ogre.cr)
+      (brace-ogre.printf title)
+      (brace-ogre.pop-color)
+      (brace-ogre.pop-font)
+      (brace-ogre.cr)
+      (brace-ogre.cr))
+
+    (brace-ogre.push-color meta-color)    
+    (when type 
+      (brace-ogre.printf (sprintf "[%s]" type))
+      (brace-ogre.sp))
+    (when (and location (<> (str-right location 4) ".hlp"))
+      (brace-ogre.printf (sprintf "(%s)" location))
+      (brace-ogre.cr))
+    (when author 
+      (brace-ogre.parprint (cons "Author(s): " author))
+      (brace-ogre.br))
+    (when date 
+      (brace-ogre.printf (sprintf "%s\n" date))
+      (brace-ogre.br))
+    (when desc 
+      (brace-ogre.parprint (cons "Description: " desc))
+      (brace-ogre.br))
+    (when keywords
+      (brace-ogre.parprint (cons "Keywords: " keywords))
+      (brace-ogre.br))
+    (brace-ogre.cr)
+    (brace-ogre.pop-color)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defclass brace-ogre brace-renderer
+  (px 0) (py 0)
+  (gcode ())
+  (space-width 8)
+  (text-font "Helvetica")
+  (font-size (font-stdsize 14))
+  (font-stack ())
+  (color-stack ())
+  (returns 0)
+  (left-margin 0)
+  (right-margin 400)
+  (line-height 20)
+  (text-color '(0 0 0))
+  (bracket-color '(0.7 0 0.9))
+  (code-color '(0 0 0.8))
+  (title-color '(1 0 0))
+  (meta-color '(0.8 0 0.8))
+  )
+
+
+(defmethod brace-ogre brace-ogre ()
+  (setq <p> (flambda p 
+	      (when p (brace-ogre.parprint p))
+	      (brace-ogre.parskip) ()))
+  (setq <pre> (flambda p (brace-ogre.preprint p)()))
+  (setq <code> (flambda p 
+		 (brace-ogre.push-color code-color)
+		 (brace-ogre.push-font "Courier" 0 0 font-size)
+		 (brace-ogre.codeprint p)
+		 (brace-ogre.pop-font)
+		 (brace-ogre.pop-color)()))
+  (setq <li> (flambda p 
+	       (brace-ogre.printf "*")
+	       (brace-ogre.sp)
+	       (let ((left-margin (+ left-margin (* 2 space-width))))
+		 (brace-ogre.parprint p))
+	       (brace-ogre.br) ()))
+  (setq <br> (flambda p 
+	       (when p (brace-ogre.parprint p))
+	       (brace-ogre.br) ()))
+  (setq <tt> (flambda p 
+	       (brace-ogre.push-font "Courier" () () ())
+	       (brace-ogre.parprint p)
+	       (brace-ogre.pop-font) ()))
+  (setq <b> (flambda p 
+	      (brace-ogre.push-font () t () ())
+	      (brace-ogre.parprint p)
+	      (brace-ogre.pop-font) ()))
+  (setq <i> (flambda p 
+	      (brace-ogre.push-font () () t ())
+	      (brace-ogre.parprint p)
+	      (brace-ogre.pop-font) ()))
+  (setq <u> (flambda p (brace-ogre.parprint p) ()))
+  (setq <c> (flambda p 
+	      (brace-ogre.push-color bracket-color)
+	      (brace-ogre.push-font "Courier" 1 0 font-size)
+	      (brace-ogre.parprint p)
+	      (brace-ogre.pop-font)
+	      (brace-ogre.pop-color) ()))
+  (setq <font> (flambda p ()()))
+  (setq <center> (flambda p (brace-ogre.parprint p) ()))
+  (setq <img> (flambda p (brace-ogre.image p)()))
+  (setq <ul> (flambda p 
+	       (brace-ogre.br)
+	       (brace-ogre.parprint p)
+	       (brace-ogre.br)()))
+  (setq <div> (flambda p (brace-ogre.parprint p) ()))
+  (setq <h1> (flambda p 
+	       (brace-ogre.parskip)
+	       (brace-ogre.push-color '(0.9 0.1 0.5))
+	       (brace-ogre.push-font text-font 1 0 
+                                     (font-stdsize (+ font-size 3)) )
+	       (brace-ogre.parprint p)
+	       (brace-ogre.pop-font)
+	       (brace-ogre.parskip)
+	       (brace-ogre.pop-color) ()))
+  (setq <h2> (flambda p 
+	       (brace-ogre.parskip)
+	       (brace-ogre.push-color '(0.9 0.1 0.5))
+	       (brace-ogre.push-font text-font 1 0 
+                                     (font-stdsize (+ font-size 3)) )
+	       (brace-ogre.parprint p)
+	       (brace-ogre.pop-font)
+	       (brace-ogre.parskip)
+	       (brace-ogre.pop-color) ()))
+  (setq <h3> (flambda p 
+	       (brace-ogre.parskip)
+	       (brace-ogre.push-color '(0.9 0.1 0.5))
+	       (brace-ogre.push-font text-font 1 0 font-size)
+	       (brace-ogre.parprint p)
+	       (brace-ogre.pop-font)
+	       (brace-ogre.parskip)
+	       (brace-ogre.pop-color) ()))
+  (setq <hlink> (flambda p 
+		  (brace-ogre.print-word "[HLINK:")
+		  (brace-ogre.parprint p)
+		  (brace-ogre.print-word "]") ()))
+  (setq <see> (flambda p 
+		(brace-ogre.br)
+		(brace-ogre.printf "*")
+		(brace-ogre.sp)
+		(let ((left-margin (+ left-margin (* 2 space-width))))
+		  (brace-ogre.print-word "See:")
+		  (brace-ogre.parprint p))
+		(brace-ogre.br) ()))
+
+  (setq <if-html> (flambda p ()))
+  (setq <if-latex> (flambda p ()))
+  (setq <if-text> (flambda p ()))
+  (setq <if-ogre> (flambda p (brace-ogre.parprint p) ()))
+
+  (setq <meta> (flambda p (brace-ogre.meta p) ()))
+  )
+
+(defmethod brace-ogre render (doc w)
+  (setq gcode (list 'progn))
+  (setq right-margin w)
+  (setq left-margin 0)
+  (setq color-stack ())
+  (setq font-stack ())
+  (setq px 0) (setq py 0)
+  (gsave
+   (brace-ogre.push-color text-color)
+   (brace-ogre.push-font text-font 0 0 font-size))
+   (==> this (brace-renderer . render) doc)
+   (list (list w (+ py line-height)) gcode)))
+
+(defvar *brace-ogre* (new brace-ogre))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; HTML RENDERER
+
+;; print string
+(de brace-html.printf (s) 
+  (printf (regex-subst "%" "%%%%" s))
+  (setq returns 0)
+  (incr cursor-pos (str-len s)))
+
+;; print n spaces
+(de brace-html.sp (n)
+  (repeat n (printf " "))
+  (setq returns 0)
+  (incr cursor-pos n))
+
+;; go to beginning of next line, only if current line non empty
+(de brace-html.br ()
+  (when (<> cursor-pos left-margin)
+    (printf "<br>\n")
+    (incr returns)
+    (repeat left-margin (printf " "))
+    (setq cursor-pos left-margin)))
+
+;; unconditional carriage return
+(de brace-html.cr ()
+  (printf "<br>\n")
+  (incr returns)
+  (repeat left-margin (printf " "))
+  (setq cursor-pos left-margin))
+
+;; a single blank line (even for multiple calls)
+(de brace-html.parskip ()
+  (while (< returns 1)
+    (printf "\n<p>\n")
+    (incr returns))
+  (repeat left-margin (printf " "))
+  (setq cursor-pos left-margin))
+
+;; print word with possible word wrap
+(de brace-html.print-word (s)
+  (when (> (+ cursor-pos (str-len s)) right-margin) 
+    (printf "\n") (setq cursor-pos 0))
+  (setq s (regex-subst "%" "%%%%" s))
+  (setq s (regex-subst "<([^ >]+)>" "@@@%0@@@" s))
+  (setq s (regex-subst "<" "&lt;" s))
+  (setq s (regex-subst ">" "&gt;" s))
+  (setq s (regex-subst "@@@([^@]+)@@@" "<i>%0</i>" s))
+  (printf s) (printf " ")
+  (setq returns 0)
+  (incr cursor-pos (1+ (str-len s))))
+
+;; print paragraph (any brace list really)
+(de brace-html.parprint (p)
+  (each ((x p))
+    (cond
+     ((consp x) (eval x))
+     ((stringp x) (brace-html.print-word x))
+     (t ()))))
+
+;; print pre-formatted text
+(de brace-html.preprint (p)
+  (printf "\n<PRE>")
+  (let ((stop ()))
+    (while (and p (not stop))
+      (let ((x (car p)))
+	(cond
+	 ((member x '(</code> </pre> </CODE> </PRE>)) (setq stop t))
+	 ((stringp x) 
+	  (setq x (regex-subst "<" "&lt;" x))
+	  (setq x (regex-subst ">" "&gt;" x))
+	  (brace-html.printf x))
+	 ((= x -1) (printf "\n"))
+	 ((= x -2) (brace-html.sp 7))
+	 ((and (numberp x) (>= x 1)) (brace-html.sp x)))
+	(setq p (cdr p))))
+    (printf "</PRE>\n")
+    (setq cursor-pos left-margin)
+    (brace-html.parprint p)))
+
+(de cleanup-brackets-for-html (s)
+  (setq s (regex-subst "<([^ >]+)>" "@@@%0@@@" s))
+  (setq s (regex-subst "<" "&lt;" s))
+  (setq s (regex-subst ">" "&gt;" s))
+  (setq s (regex-subst "@@@([^@]+)@@@" "<i>%0</i>" s))
+  s)
+    
+;; print title and header with available metadata
+(de brace-html.meta (p)
+  (let (((author symbol location keywords date desc title type) p))
+    (when title
+      (printf "\n")
+      (printf "<hr><br>\n")
+      (printf "<table width=90%% border=0 cellspacing=0 cellpadding=1>\n")
+      (printf "<tr><td><font size=+2 color=#770077>")
+      (brace-html.printf (cleanup-brackets-for-html title))
+      (printf "</font><br></td>\n")
+      (printf "<td>")
+      (if type (printf "[%s] " type))
+      (when (and location (<> (str-right location 4) ".hlp"))
+	(printf "(%s)" location))
+      (printf "</td></tr>\n")
+      (printf "</table><br>\n"))
+    (when author 
+      (brace-html.parprint (cons "Author(s): " author))
+      (brace-html.br))
+    (when date (printf "%s\n" date))
+    (when desc 
+      (brace-html.parprint (cons "Description: " desc))
+      (brace-html.br))
+    (when keywords
+      (brace-html.parprint (cons "Keywords: " keywords))
+      (brace-html.br))
+    (brace-html.cr)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defclass brace-html brace-renderer
+  (returns 0)				; counts the number of successive CR
+  (cursor-pos 0)
+  (left-margin 0)
+  (right-margin 72))
+
+(defmethod brace-html brace-html ()
+  (setq <p> (flambda p 
+	      (when p (brace-html.parprint p))
+	      (brace-html.parskip)))
+  (setq <pre> (flambda p (brace-html.preprint p)))
+  (setq <code> (flambda p (brace-html.preprint p)))
+  (setq <li> (flambda p 
+	       (brace-html.printf "<li> ")
+	       (let ((left-margin (+ left-margin 2)))
+		 (brace-html.parprint p))
+	       (brace-html.br)))
+  (setq <br> (flambda p 
+	       (when p (brace-html.parprint p))
+	       (brace-html.br)))
+  (setq <tt> (flambda p 
+	       (brace-html.printf "<tt>")
+	       (brace-html.parprint p)
+	       (brace-html.printf "</tt>")))
+  (setq <b> (flambda p 
+	      (brace-html.printf "<b>")
+	      (brace-html.parprint p)
+	      (brace-html.printf "</b>")))
+  (setq <i> (flambda p 
+	      (brace-html.printf "<i>")
+	      (brace-html.parprint p)
+	      (brace-html.printf "</i>")))
+  (setq <u> (flambda p 
+	      (brace-html.printf "<u>")
+	      (brace-html.parprint p)
+	      (brace-html.printf "</u>")))
+  (setq <c> (flambda p 
+	      (brace-html.printf "<font color=#5500ff><b>")
+	      (brace-html.parprint p)
+	      (brace-html.printf "</b></font>")))
+  (setq <font> (flambda p (brace-html.parprint p)))
+  (setq <center> (flambda p 
+		   (brace-html.printf "\n<center>")
+		   (brace-html.parprint p)
+		   (brace-html.printf "</center>")))
+  (setq <img> (flambda p 
+		(brace-html.printf "<img src=\"")
+		(brace-html.parprint p)
+		(brace-html.printf "\">")))
+  (setq <ul> (flambda p 
+	      (brace-html.printf "\n<ul>")
+	      (brace-html.parprint p)
+	      (brace-html.printf "</ul>")))
+  (setq <div> (flambda p (brace-html.parprint p)))
+  (setq <h1> (flambda p 
+	      (brace-html.printf "\n<h1>")
+	      (brace-html.parprint p)
+	      (brace-html.printf "</h1>")))
+  (setq <h2> (flambda p 
+	      (brace-html.printf "\n<h2>")
+	      (brace-html.parprint p)
+	      (brace-html.printf "</h2>")))
+  (setq <h3> (flambda p 
+	      (brace-html.printf "\n<h3>")
+	      (brace-html.parprint p)
+	      (brace-html.printf "</h3>")))
+  (setq <hlink> (flambda p 
+		  (brace-html.printf "<a href=\"")
+		  (brace-html.parprint (list (car p)))
+		  (brace-html.printf "\">")
+		  (brace-html.parprint (if (cdr p) (cdr p) p))
+		  (brace-html.printf "</a>")))
+  (setq <see> (flambda p 
+		(brace-html.br)
+		(brace-html.printf "See: <a href=\"")
+		(brace-html.parprint (list (car p)))
+		(brace-html.printf "\">")
+		(brace-html.parprint (if (cdr p) (cdr p) p))
+		(brace-html.printf "</a>")
+		(brace-html.br)))		
+
+  (setq <if-html> (flambda p (brace-html.parprint p)))
+  (setq <if-latex> (flambda p ()))
+  (setq <if-ogre> (flambda p ()))
+  (setq <if-text> (flambda p ()))
+
+  (setq <meta> (flambda p (brace-html.meta p)))
+  )
+
+(defmethod brace-html render (doc lmargin rmargin)
+  (setq cursor-pos 0)
+  (setq returns 0)
+  (setq left-margin lmargin)
+  (setq right-margin rmargin)
+  (==> this (brace-renderer . render) doc))
+
+(defvar *brace-html* (new brace-html))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; BRACE RENDERER
+
+;; print string
+(de brace-brace.printf (s) 
+  (printf (regex-subst "%" "%%%%" s))
+  (setq returns 0)
+  (incr cursor-pos (str-len s)))
+
+;; print n spaces
+(de brace-brace.sp (n)
+  (repeat n (printf " "))
+  (setq returns 0)
+  (incr cursor-pos n))
+
+;; go to beginning of next line, only if current line non empty
+(de brace-brace.br ()
+  (when (<> cursor-pos left-margin)
+    (printf "{<br>}\n")
+    (incr returns)
+    (repeat left-margin (printf " "))
+    (setq cursor-pos left-margin)))
+
+;; unconditional carriage return
+(de brace-brace.cr ()
+  (printf "\n")
+  (incr returns)
+  (repeat left-margin (printf " "))
+  (setq cursor-pos left-margin))
+
+;; a single blank line (even for multiple calls)
+(de brace-brace.parskip ()
+  (while (< returns 2)
+    (printf "\n")
+    (incr returns))
+  (repeat left-margin (printf " "))
+  (setq cursor-pos left-margin))
+
+;; print word with possible word wrap
+(de brace-brace.print-word (s)
+  (when (> (+ cursor-pos (str-len s)) right-margin) (brace-brace.cr))
+  (setq s (regex-subst "%" "%%%%" s))
+  (printf s) (printf " ")
+  (setq returns 0)
+  (incr cursor-pos (1+ (str-len s))))
+
+;; print paragraph (any brace list really)
+(de brace-brace.parprint (p)
+  (each ((x p))
+    (cond
+     ((consp x) (eval x))
+     ((stringp x) (brace-brace.print-word x))
+     (t ()))))
+
+;; print pre-formatted text
+(de brace-brace.preprint (p)
+  (brace-brace.cr)
+  (printf "{<PRE> ")
+  (let ((stop ()))
+    (while (and p (not stop))
+      (let ((x (car p)))
+	(cond
+	 ((member x '(</code> </pre> </CODE> </PRE>)) (setq stop t))
+	 ((stringp x) 
+	  (brace-brace.printf x))
+	 ((= x -1) (printf "\n"))
+	 ((= x -2) (brace-brace.sp 7))
+	 ((and (numberp x) (>= x 1)) (brace-brace.sp x)))
+	(setq p (cdr p))))
+    (brace-brace.print-word "</pre>")
+    (setq cursor-pos left-margin)
+    (brace-brace.parprint p)
+    (brace-brace.printf "}"))))
+
+;; print title and header with available metadata
+(de brace-brace.meta (p)
+  (let (((author symbol location keywords date desc title type) p))
+    (brace-brace.printf (sprintf "\n#? %s\n" title))
+    (when (or type location author desc keywords)
+      (printf "\n{<meta> ")
+      ;;(brace-brace.printf "{<title> ")
+      ;; (brace-brace.print-word title)
+      ;; (printf "}\n")
+      (if type (brace-brace.parprint (list "{<type> " type "}\n")))
+      (when (and location (<> (str-right location 4) ".hlp"))
+	(brace-brace.print-word "{<location> ")
+	(brace-brace.print-word location )
+	(brace-brace.print-word "}\n"))
+    (when author 
+      (brace-brace.print-word "{<author> ")
+      (brace-brace.parprint author)
+      (brace-brace.print-word "}\n"))
+    ;; (when date (printf "%s\n" date))
+    (when desc 
+      (brace-brace.print-word "{<desc> ")
+      (brace-brace.parprint desc)
+      (brace-brace.print-word "}\n"))
+    (when keywords
+      (brace-brace.print-word "{<keywords> ")
+      (brace-brace.parprint keywords)
+      (brace-brace.print-word "}\n"))
+    (brace-brace.print-word "}\n"))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass brace-brace brace-renderer
+  (returns 0)				; counts the number of successive CR
+  (cursor-pos 0)
+  (left-margin 0)
+  (right-margin 72))
+
+(defmethod brace-brace brace-brace ()
+  (setq <p> (flambda p 
+	      (when p (brace-brace.parprint p))
+	      (brace-brace.parskip)))
+  (setq <pre> (flambda p (brace-brace.preprint p)))
+  (setq <code> (flambda p (brace-brace.preprint p)))
+  (setq <li> (flambda p 
+	       (brace-brace.printf "{<li> ")
+	       (let ((left-margin (+ left-margin 2)))
+		 (brace-brace.parprint p))
+	       (brace-brace.printf "}")
+	       (brace-brace.cr)))
+  (setq <br> (flambda p 
+	       (when p (brace-brace.parprint p))
+	       (brace-brace.br)))
+  (setq <tt> (flambda p 
+	       (brace-brace.printf "{<tt> ")
+	       (brace-brace.parprint p)
+	       (brace-brace.printf "}")))
+  (setq <b> (flambda p 
+	      (brace-brace.printf "{<b> ")
+	      (brace-brace.parprint p)
+	      (brace-brace.printf "}")))
+  (setq <i> (flambda p 
+	      (brace-brace.printf "{<i> ")
+	      (brace-brace.parprint p)
+	      (brace-brace.printf "}")))
+  (setq <u> (flambda p 
+	      (brace-brace.printf "{<u> ")
+	      (brace-brace.parprint p)
+	      (brace-brace.printf "}")))
+  (setq <font> (flambda p 
+		 (brace-brace.printf "{<font> ")		 
+		 (brace-brace.parprint p)
+		 (brace-brace.printf "}")))
+  (setq <center> (flambda p 
+		   (brace-brace.printf "{<center>")
+		   (brace-brace.parprint p)
+		   (brace-brace.printf "}")))
+  (setq <img> (flambda p 
+		(brace-brace.printf "{<img> ")
+		(brace-brace.parprint p)
+		(brace-brace.printf "}")))
+  (setq <ul> (flambda p 
+	      (brace-brace.cr)
+	      (brace-brace.printf "{<ul> ")
+	      (let ((left-margin 2))
+		(brace-brace.cr)
+		(brace-brace.parprint p)
+		(brace-brace.printf "}"))
+	      (brace-brace.cr)))	      
+  (setq <div> (flambda p (brace-brace.parprint p)))
+  (setq <h1> (flambda p 
+	      (brace-brace.cr)
+	      (brace-brace.printf "{<h1> ")
+	      (brace-brace.parprint p)
+	      (brace-brace.printf "}")
+	      (brace-brace.cr)))
+  (setq <h2> (flambda p 
+	      (brace-brace.cr)
+	      (brace-brace.printf "{<h2> ")
+	      (brace-brace.parprint p)
+	      (brace-brace.printf "}")
+	      (brace-brace.cr)))
+  (setq <h3> (flambda p 
+	      (brace-brace.cr)
+	      (brace-brace.printf "{<h3> ")
+	      (brace-brace.parprint p)
+	      (brace-brace.printf "}")
+	      (brace-brace.cr)))
+  (setq <hlink> (flambda p 
+		  (brace-brace.printf "{<hlink> ")
+		  (brace-brace.parprint p)
+		  (brace-brace.printf "}")))
+  (setq <see> (flambda p 
+		(brace-brace.cr)
+		(brace-brace.printf "{<see> ")
+		(brace-brace.parprint p)
+		(brace-brace.printf "}")
+		(brace-brace.cr)))
+
+  ;; (setq <if-brace> (flambda p (brace-brace.parprint p)))
+  (setq <if-latex> (flambda p ()))
+  (setq <if-ogre> (flambda p ()))
+  (setq <if-text> (flambda p ()))
+
+  (setq <meta> (flambda p (brace-brace.meta p)))
+  )
+
+(defmethod brace-brace render (doc lmargin rmargin)
+  (setq cursor-pos 0)
+  (setq returns 0)
+  (setq left-margin lmargin)
+  (setq right-margin rmargin)
+  (==> this (brace-renderer . render) doc))
+
+(defvar *brace-brace* (new brace-brace))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; LATEX RENDERER
+
+;; print string
+(de brace-latex.printf (s) 
+  (printf (regex-subst "%" "%%%%" s))
+  (setq returns 0)
+  (incr cursor-pos (str-len s)))
+
+;; print string with appropriate escapes
+(de brace-latex.smart-printf (s) 
+  (setq s (regex-subst "\\\\" "@BCKS@" s)) 
+  (setq s (regex-subst "([_&#$])" "\\%0" s))
+  (setq s (regex-subst "@BCKS@" "$\\backslash$" s))
+  (setq s (regex-subst "\\^" "\\^{ }" s))
+  (setq s (regex-subst "%" "\\%%%%" s))
+  (setq s (regex-subst "%" "%%" s))
+  (setq s (regex-subst "<([^ >]+)>" "@@@%0@@@" s))
+  (setq s (regex-subst "@@@([^@]+)@@@" "{\\tt %0}" s))
+  (setq s (regex-subst ">" "$>$" s))
+  (setq s (regex-subst "<" "$<$" s))
+  (printf s)
+  (setq returns 0)
+  (incr cursor-pos (str-len s)))
+
+;; print n spaces
+(de brace-latex.sp (n)
+  (repeat n (printf " "))
+  (setq returns 0)
+  (incr cursor-pos n))
+
+;; go to beginning of next line, only if current line non empty
+(de brace-latex.br ()
+  (when (<> cursor-pos left-margin)
+    (printf "\\\\\n")
+    (incr returns)
+    (repeat left-margin (printf " "))
+    (setq cursor-pos left-margin)))
+
+;; unconditional carriage return
+(de brace-latex.cr ()
+  (printf "\n")
+  (incr returns)
+  (repeat left-margin (printf " "))
+  (setq cursor-pos left-margin))
+
+;; a single blank line (even for multiple calls)
+(de brace-latex.parskip ()
+  (while (< returns 1)
+    (printf "\n\n")
+    (incr returns))
+  (repeat left-margin (printf " "))
+  (setq cursor-pos left-margin))
+
+;; print word with possible word wrap
+(de brace-latex.print-word (s)
+  (when (> (+ cursor-pos (str-len s)) right-margin) 
+    (printf "\n") (setq cursor-pos 0))
+  (brace-latex.smart-printf s)
+  (printf " ") (incr cursor-pos 1))
+
+;; print paragraph (any brace list really)
+(de brace-latex.parprint (p)
+  (each ((x p))
+    (cond
+     ((consp x) (eval x))
+     ((stringp x) (brace-latex.print-word x))
+     (t ()))))
+
+;; print pre-formatted text
+(de brace-latex.preprint (p)
+  (printf "\n\\begin{verbatim}\n")
+  (let ((stop ()))
+    (while (and p (not stop))
+      (let ((x (car p)))
+	(cond
+	 ((member x '(</code> </pre> </CODE> </PRE>)) (setq stop t))
+	 ((stringp x) 
+	  (setq x (regex-subst "%" "\\%%%%" x))
+	  (setq x (regex-subst "\\\\" "\\\\" x))
+	  (setq x (regex-subst "$" "\\$" x))
+	  (printf x))
+	 ((= x -1) (printf "\n"))
+	 ((= x -2) (brace-latex.sp 7))
+	 ((and (numberp x) (>= x 1)) (brace-latex.sp x)))
+	(setq p (cdr p))))
+    (printf "\\end{verbatim}\n")
+    (setq cursor-pos left-margin)
+    (brace-latex.parprint p)))
+
+;; print title and header with available metadata
+(de brace-latex.meta (p)
+  (let (((author symbol location keywords date desc title type) p))
+    (when title
+      (printf "\n")
+      (selectq (length section-number)
+	(1 (printf "\\chapter{\n"))
+	(2 (printf "\\section{\n"))
+	(3 (printf "\\subsection{\n"))
+	(4 (printf "\\subsubsection{\n"))
+	(t (printf "{\\bf\n")))
+      (brace-latex.smart-printf title)
+      (printf "}\n")
+      ;(when type (brace-latex.smart-printf (concat "Type: " type)))
+      ;(when (and location (<> (str-right location 4) ".hlp"))
+	;(brace-latex.smart-printf (concat "(" location ")")))
+      (printf "\n"))
+    (when author 
+      (brace-latex.parprint (cons "Author(s): " author))
+      (printf "\n"))
+    ;;(when date (brace-latex.smart-printf date) (printf "\n"))
+    (when desc 
+      (brace-latex.parprint (cons "Description: " desc))
+      (printf "\n"))
+    (when keywords
+      (brace-latex.parprint (cons "Keywords: " keywords))
+      (printf "\n"))
+    (printf "\n")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defclass brace-latex brace-renderer
+  (returns 0)				; counts the number of successive CR
+  (cursor-pos 0)
+  (left-margin 0)
+  (right-margin 72))
+
+(defmethod brace-latex brace-latex ()
+  (setq <p> (flambda p 
+	      (when p (brace-latex.parprint p))
+	      (brace-latex.parskip)))
+  (setq <pre> (flambda p (brace-latex.preprint p)))
+  (setq <code> (flambda p (brace-latex.preprint p)))
+  (setq <li> (flambda p 
+	       (brace-latex.printf "\\item ")
+	       (let ((left-margin (+ left-margin 2)))
+		 (brace-latex.parprint p))
+	       (brace-latex.printf "\n")))
+  (setq <br> (flambda p 
+	       (when p (brace-latex.parprint p))
+	       (brace-latex.printf "\n")))
+  (setq <tt> (flambda p 
+	       (brace-latex.printf "{\\tt ")
+	       (brace-latex.parprint p)
+	       (brace-latex.printf "}")))
+  (setq <b> (flambda p 
+	      (brace-latex.printf "{\\bf ")
+	      (brace-latex.parprint p)
+	      (brace-latex.printf "}")))
+  (setq <i> (flambda p 
+	      (brace-latex.printf "{\\it ")
+	      (brace-latex.parprint p)
+	      (brace-latex.printf "}")))
+  (setq <u> (flambda p 
+	      (brace-latex.parprint p)))
+  (setq <c> (flambda p 
+	       (brace-latex.printf "{\\tt ")
+	       (brace-latex.parprint p)
+	       (brace-latex.printf "}")))
+  (setq <font> (flambda p (brace-latex.parprint p)))
+  (setq <center> (flambda p 
+		   (brace-latex.printf "\\begin{center}\n")
+		   (brace-latex.parprint p)
+		   (brace-latex.printf "\\end{center}\n")))
+  (setq <img> (flambda p 
+		(brace-latex.printf "[image ")
+		(brace-latex.parprint p)
+		(brace-latex.printf "]")))
+  (setq <ul> (flambda p 
+	      (brace-latex.printf "\\begin{itemize}")
+	      (brace-latex.parprint p)
+	      (brace-latex.printf "\\end{itemize}")))
+  (setq <div> (flambda p (brace-latex.parprint p)))
+  (setq <h1> (flambda p 
+	      (brace-latex.printf "\n\\section{")
+	      (brace-latex.parprint p)
+	      (brace-latex.printf "}\n")))
+  (setq <h2> (flambda p 
+	      (brace-latex.printf "\n\\subsection{")
+	      (brace-latex.parprint p)
+	      (brace-latex.printf "}\n")))
+  (setq <h3> (flambda p 
+	      (brace-latex.printf "\n\\subsubsection{")
+	      (brace-latex.parprint p)
+	      (brace-latex.printf "}\n")))
+  (setq <hlink> (flambda p 
+		  (brace-latex.printf "[")
+		  (brace-latex.parprint p)
+		  (brace-latex.printf "]")))
+  (setq <see> (flambda p 
+		(brace-latex.printf "\n\n")
+		(brace-latex.printf "See: ")
+		(brace-latex.parprint p)
+		(brace-latex.printf "\n\n")))
+
+  (setq <if-latex> (flambda p (brace-latex.parprint p)))
+  (setq <if-html> (flambda p ()))
+  (setq <if-ogre> (flambda p ()))
+  (setq <if-text> (flambda p ()))
+
+  (setq <meta> (flambda p (brace-latex.meta p)))
+  )
+
+(defmethod brace-latex render (doc section-number)
+  (setq cursor-pos 0)
+  (setq returns 0)
+  (setq left-margin 0)
+  (setq right-margin 72)
+  (==> this (brace-renderer . render) doc))
+
+(defvar *brace-latex* (new brace-latex))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(de render-brace-text (lm rm p) (==> *brace-text* render p lm rm))
+(de render-brace-graphics (x y w p) 
+  (let* ((z (==> *brace-ogre* render p w))
+	 (h (cadr (car z))))
+    (eval (cadr z))
+    (list x y w h)))
+(de render-brace-html (lm rm p)
+  (==> *brace-html* render p lm rm))
+(de render-brace-latex (sn p)
+  (==> *brace-latex* render p sn))
+
+

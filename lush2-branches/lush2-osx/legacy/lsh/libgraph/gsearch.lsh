@@ -1,0 +1,391 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; This file contains algorithms for searching and pruning a graph.
+
+
+#? *** Searching and Pruning Graphs
+;; searching the shortest path in a simple graph
+;; or a composed graph using Viterbi and such.
+
+(libload "dynamic.lsh")
+(libload "graph.lsh")
+(libload "gtransform.lsh")
+
+
+(dm MAXFLOAT(f) (real 1e38))
+
+(dm NULL-PTR(f p)
+    `(let ((c (= (gptr ()) (gptr ,p))))
+       (when c (printf ,(pname p) ) 
+             (error "This symbol cannot be (): ") )
+       c))
+
+
+
+
+;;; ========================================
+;;; VITERBI ON A SINGLE GRAPH
+;;; ========================================
+
+
+#? (g-viterbi <graph>)
+;; Applies viterbi algorithm to compute a graph whose single path is a copy of
+;; the best path of graph <graph>.  Graph <graph> should not have cycles.
+
+(de g-viterbi-sub(node ndflag path)
+    ((-obj- (GNode)) node)
+    ((-idx1- (-ubyte-)) ndflag)
+    ((-idx1- (-gptr-)) path)
+    (let ((mincost (MAXFLOAT))
+	  (minlink (gptr ())) )
+      (all-uplink (link node)
+	(let* ((upnode :link:upnode))
+	  (when (= 0 (ndflag :upnode:id))
+	    (ndflag :upnode:id 1)
+	    ;; Recursive cinline: no temporaries please!
+	    #{ C_g_viterbi_sub($upnode, $ndflag, $path);
+	    #} )
+	  (let ((upcost (+ :link:cost :upnode:acost)))
+	    (when (< upcost mincost)
+	      (setq mincost upcost)
+	      (setq minlink (gptr link)) ) ) ) )
+      ;; Now store min path cost into node
+      (setq :node:acost mincost)
+      (path :node:id minlink) ) )
+		 
+(de g-viterbi(graph)
+    ((-obj- (GGraph)) graph)
+    (if (NULL-PTR graph) (new GGraph)
+    (let ((ndflag (ubyte-array :graph:nnodes))
+	  (path (gptr-array :graph:nnodes)) )
+      ;; Perform a path in the graph
+      (ndflag :graph:endnode:id 1)
+      (ndflag :graph:startnode:id 1)
+      (setq :graph:startnode:acost 0)
+      (g-viterbi-sub :graph:endnode ndflag path)
+      ;; Build the result graph
+      (let* ((ngraph (new GGraph))
+	     (nnode1 :ngraph:endnode)
+	     (node1 :graph:endnode) 
+	     (glnk (gptr ())) )
+	(while (setq glnk (path :node1:id))
+	  (let ((link (obj GLink glnk)))
+	    (let* ((node2 :link:upnode)
+		   (nnode2 (if (= node2 :graph:startnode)
+			       :ngraph:startnode
+			     (==> ngraph newnode :node2:data) )) )
+	      (==> ngraph linkm nnode2 nnode1
+		   :link:cost :link:label :link:meaning :link:data )
+	      (setq nnode1 nnode2)
+	      (setq node1 node2) ) ) )
+	ngraph ) ) ) )
+
+
+
+
+;;; ========================================
+;;; VITERBI ON A COMPOSED GRAPH
+;;; ========================================
+
+
+
+#? (g-compose-viterbi <graph1> <graph2> <trans>)
+;; Applies viterbi algorithm to compute the cheapest path in the graph
+;; obtained by composing <graph1> and <graph2> by transformer <trans>. This
+;; routine returns a new graph containing only this path.
+
+
+(de g-compose-viterbi(agraph bgraph trans)
+    ((-obj- (GGraph)) agraph bgraph)
+    ((-obj- (GTrans)) trans)
+    (if (or (NULL-PTR agraph) (NULL-PTR bgraph))
+        (new GGraph)
+    (let ((ndflag (byte-array :agraph:nnodes :bgraph:nnodes))
+	  (ndacost (float-array :agraph:nnodes :bgraph:nnodes))
+	  (path (gptr-array :agraph:nnodes :bgraph:nnodes 2)))
+      ;; Prepare viterbi pass
+      (ndflag :agraph:endnode:id :bgraph:endnode:id 1)
+      (ndflag :agraph:startnode:id  :bgraph:startnode:id 1)
+      (ndacost :agraph:startnode:id :bgraph:startnode:id 0)
+      ;; Perform viterbi pass
+      (g-compose-viterbi-sub :agraph:endnode :bgraph:endnode 
+			     trans ndflag ndacost path )
+      ;; Retrieve path
+      (let* ((ngraph (new GGraph))
+	     (nnode1 :ngraph:endnode)
+	     (anode1 :agraph:endnode)
+	     (bnode1 :bgraph:endnode) 
+	     (alnk (gptr ()))
+	     (blnk (gptr ())) )
+	(while (and (setq alnk (path :anode1:id :bnode1:id 0))
+		    (setq blnk (path :anode1:id :bnode1:id 1)) )
+      (setq :nnode1:acost (ndacost :anode1:id :bnode1:id) )
+	  (let* ((alink (obj GLink alnk))
+		 (blink (obj GLink blnk))
+		 (anode2 :alink:upnode)
+		 (bnode2 :blink:upnode)
+		 (nnode2 (if (and (= anode2 :agraph:startnode)
+				  (= bnode2 :bgraph:startnode) )
+			     :ngraph:startnode
+			   (==> ngraph newnode (gptr ())) )) )
+	    ;;DBG;; (printf "%d(%d,%d) -> %d(%d,%d)\n" 
+	    ;;DBG;;	      :nnode2:id :anode2:id :bnode2:id
+	    ;;DBG;;	      :nnode1:id :anode1:id :bnode1:id )
+	    (==> trans build ngraph nnode2 nnode1 alink blink)
+	    (setq nnode1 nnode2)
+	    (setq anode1 anode2)
+	    (setq bnode1 bnode2) 
+        ))
+	;; Return graph
+	ngraph ) ) ) )
+
+
+(de g-compose-viterbi-sub(anode bnode trans ndflag ndacost path)
+    ((-obj- (GNode)) anode bnode)
+    ((-obj- (GTrans)) trans)
+    ((-idx2- (-flt-)) ndacost)
+    ((-idx2- (-byte-)) ndflag)
+    ((-idx3- (-gptr-)) path)
+    ;;DBG;; (printf "f(%d,%d)\n" :anode:id :bnode:id)
+    (let ((mincost (MAXFLOAT))
+	  (minlinka (gptr ()))
+	  (minlinkb (gptr ())) )
+      ;; Go
+      (all-uplink (alink anode)
+	(all-uplink (blink bnode)
+	  (when (==> trans check alink blink)
+	    (let* ((upanode :alink:upnode)
+		   (upbnode :blink:upnode) )
+	      (when (= 0 (ndflag :upanode:id :upbnode:id))
+		(ndflag :upanode:id :upbnode:id 1)
+		;; Recursive cinline: no temporaries please!
+		#{ C_g_compose_viterbi_sub($upanode,$upbnode,$trans,
+					   $ndflag,$ndacost,$path ); 
+		#} )
+	      (let ((upcost (ndacost :upanode:id :upbnode:id)))
+		(when (< upcost (MAXFLOAT))
+		  (incr upcost (==> trans vcost alink blink)) 
+		  (when (< upcost mincost)
+		    (setq mincost upcost)
+		    (setq minlinka (gptr alink))
+		    (setq minlinkb (gptr blink)) ) ) ) ) ) ) )
+      ;; Store best cost and path
+      (ndacost :anode:id :bnode:id mincost)
+      (path :anode:id :bnode:id 0 minlinka)
+      (path :anode:id :bnode:id 1 minlinkb) ) )
+
+
+
+      
+
+;;; ========================================
+;;; FORWARD ON A SINGLE GRAPH
+;;; ========================================
+
+
+#? (g-forward <graph>)
+;; Returns the log-added costs of all paths in lattice <graph>.
+;;
+;; REMARK: The graph should not have cycles.
+
+(de g-forward-sub(node ndflag)
+    ((-obj- (GNode)) node)
+    ((-idx1- (-byte-)) ndflag)
+    (let ((mincost (MAXFLOAT))
+	  (expsum 0))
+      (all-uplink (link node)
+	(let* ((upnode :link:upnode))
+	  (when (= 0 (ndflag :upnode:id))
+	    (ndflag :upnode:id 1)
+	    ;; Recursive cinline: no temporaries please!
+	    #{ C_g_forward_sub($upnode, $ndflag);
+	    #} )
+	  (let ((upcost (+ :link:cost :upnode:acost)))
+	    (if (>= upcost mincost)
+		(setq expsum (+ expsum (exp (- mincost upcost)))) 
+	      (setq expsum (+ 1 (* expsum (exp (- upcost mincost)))))
+	      (setq mincost upcost) ) ) ) )
+      ;; Now store logadded cost into node
+      (setq :node:acost (- mincost (log (max 1 expsum)))) ) )
+		 
+(de g-forward(graph)
+    ((-obj- (GGraph)) graph)
+    (if (NULL-PTR graph) 0
+    (let ((ndflag (byte-array :graph:nnodes)))
+      (ndflag :graph:endnode:id 1)
+      (ndflag :graph:startnode:id 1)
+      (setq :graph:startnode:acost 0)
+      (g-forward-sub :graph:endnode ndflag) ) ))
+
+
+
+
+
+
+;;; ========================================
+;;; FORWARD ON A COMPOSED GRAPH
+;;; ========================================
+
+
+#? (g-compose-forward <agraph> <bgraph> <trans>)
+;; This function returns the log-added costs of all paths in the lattice
+;; obtained by composing <agraph> and <bgraph> with transformer <gtrans>.
+;;
+;; REMARK: The composed graph should not have cycles.
+
+(de g-compose-forward(agraph bgraph trans)
+    ((-obj- (GGraph)) agraph bgraph)
+    ((-obj- (GTrans)) trans)
+    (if (or (NULL-PTR agraph) (NULL-PTR bgraph)) 0
+    (let ((ndflag (byte-array :agraph:nnodes :bgraph:nnodes))
+	  (ndacost (float-array :agraph:nnodes :bgraph:nnodes)))
+      ;; Prepare forward
+      (ndflag :agraph:endnode:id :bgraph:endnode:id 1)
+      (ndflag :agraph:startnode:id  :bgraph:startnode:id 1)
+      (ndacost :agraph:startnode:id  :bgraph:startnode:id 0)
+      ;; Perform forward
+      (g-compose-forward-sub :agraph:endnode :bgraph:endnode 
+			     trans ndflag ndacost) ) ))
+
+
+(de g-compose-forward-sub(anode bnode trans ndflag ndacost)
+    ((-obj- (GNode)) anode bnode)
+    ((-obj- (GTrans)) trans)
+    ((-idx2- (-flt-)) ndacost)
+    ((-idx2- (-byte-)) ndflag)
+    ;;DBG;; (printf "f(%d,%d)\n" :anode:id :bnode:id)
+    (let ((mincost (MAXFLOAT))
+	  (expsum 0))
+      ;; Go
+      (all-uplink (alink anode)
+	(all-uplink (blink bnode)
+	  (when (==> trans check alink blink)
+	    (let* ((upanode :alink:upnode)
+		   (upbnode :blink:upnode) )
+	      (when (= 0 (ndflag :upanode:id :upbnode:id))
+		(ndflag :upanode:id :upbnode:id 1)
+		;; Recursive cinline: no temporaries please!
+		#{ C_g_compose_forward_sub($upanode, $upbnode, $trans,
+						     $ndflag, $ndacost ); 
+		#} )
+	      (let ((upcost (ndacost :upanode:id :upbnode:id)))
+		(when (< upcost (MAXFLOAT))
+		  (incr upcost (==> trans fcost alink blink)) 
+		  (if (>= upcost mincost)
+		      (setq expsum (+ expsum (exp (- mincost upcost)))) 
+		    (setq expsum (+ 1 (* expsum (exp (- upcost mincost)))))
+		    (setq mincost upcost) ) ) ) ) ) ) ) 
+      ;; Now store logadded cost into node
+      (let ((ans (- mincost (log (max 1 expsum)))))
+	(ndacost :anode:id :bnode:id ans)
+	;;DBG;; (printf "f(%d,%d) --> %f\n" :anode:id :bnode:id ans)
+	;; Return cost
+	ans ) ) )
+    
+
+
+
+;;; ========================================
+;;; BACKWARD ALGORITHM
+;;; ========================================
+
+
+
+#? (g-clear-gradients <graph>)
+;; This function clears the gradients <dcost> and <dacost>
+;; in all reachable nodes and links of the graph <graph>.
+
+(de g-clear-gradients(graph)
+    ((-obj- (GGraph)) graph)
+    (all-nodes (node graph)
+      (setq :node:dacost 0)
+      ;; We do not clear the dcost of the links
+      ;; reachable only from the terminal node.
+      ;; We never use these and g-copy or g-compose
+      ;; destroy them anyway.
+      (all-downlink (link node)
+	(setq :link:dcost 0) ) ) )
+
+
+
+#? (g-backward <gradin> <graph>)
+;; When called immediatly after <g-forward>, this function credits a change
+;; <gradin> of the result of forward to the cost of each link. The result
+;; is added into the slots <dcost> of each reachable link.
+;;
+;; REMARK: The graph should not have cycles.
+		 
+(de g-backward-sub(node ndflag)
+    ((-obj- (GNode)) node)
+    ((-idx1- (-byte-)) ndflag)
+    (setq :node:dacost 0)
+    (let ((upcost :node:acost))
+      (all-downlink (link node)
+	(let* ((downnode :link:downnode)
+	       (downcost (+ :link:cost upcost)) )
+	  (when (= 0 (ndflag :downnode:id))
+	    (ndflag :downnode:id 1)
+	    ;; Recursive cinline: no temporaries please!
+	    #{ C_g_backward_sub($downnode, $ndflag); 
+	    #} )
+	  (let* ((dy (exp (- :downnode:acost downcost)))
+		 (dx (* :downnode:dacost dy)) )
+	    (setq :link:dcost (+ :link:dcost dx))
+	    (setq :node:dacost (+ :node:dacost dx)) ) ) ) )
+    :node:dacost )
+
+(de g-backward(gradin graph)
+    ((-flt-) gradin)
+    ((-obj- (GGraph)) graph)
+    (let ((ndflag (byte-array :graph:nnodes)))
+      (ndflag :graph:endnode:id 1)
+      (ndflag :graph:startnode:id 1)
+      (setq :graph:endnode:dacost gradin)
+      (g-backward-sub :graph:startnode ndflag) ) )
+
+
+
+
+
+;;; ========================================
+;;; MAKE
+;;; ========================================
+
+
+(dhc-make-sf "gsearch" 
+
+	  ;; Viterbi
+	  g-viterbi-sub g-viterbi
+	  g-compose-viterbi-sub g-compose-viterbi
+
+	  ;; Forward and backward
+	  g-forward-sub g-forward
+	  g-compose-forward-sub g-compose-forward
+	  g-clear-gradients
+	  g-backward-sub g-backward )
+

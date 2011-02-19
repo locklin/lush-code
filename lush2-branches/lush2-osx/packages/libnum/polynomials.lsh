@@ -1,0 +1,83 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: polynomials.lsh,v 1.2 2005/10/14 05:51:07 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libnum-config")
+(libload "overload")
+
+#? *** Polynomials
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun -poly-number (p x)
+  (declare (-idx1- (-double-)) p)
+  (declare (-double-) x)
+  (cpheader "#include <gsl/gsl_poly.h>")
+  (to-double #{ gsl_poly_eval( IDX_PTR($p,double) ,$(idx-dim p 0) ,$x) #} ))
+
+(defun -poly-vector (p xs)
+  (declare (-idx1- (-double-)) p xs)
+  (let ((l  (length p))
+        (vs (clone-array xs)) )
+    (declare (-int-) l)
+    (idx-bloop ((x xs) (v vs))
+      (v (to-double #{ gsl_poly_eval( IDX_PTR($p,double), $l, $(x)) #})) )
+    vs))
+
+#? (poly <p> <x>)
+;; Evaluate polynomial <p> at <x>.
+;;
+;; Vector <p> holds the polynomial coefficients, <x>
+;; may be a number or a double vector.
+(defoverload poly -poly-number -poly-vector)
+
+#? (poly-solve <p>)
+;; Find the roots of polynomial <p> and return as a vector.
+;;
+;; Vectpr <p> holds the polynomial coefficients. The return value
+;; is technically an nx2-matrix which holds the all the roots.
+(defun poly-solve (p)
+  (declare (-idx1- (-double-)) p)
+  (let* ((n (length p))
+	 (roots (double-array (- n 1) 2)) )
+    (declare (-int-) n)
+    #{ gsl_poly_complex_workspace *ws = gsl_poly_complex_workspace_alloc($n); #}
+    (with-check-gsl-error
+     #{ gsl_poly_complex_solve(IDX_PTR($p, double), $(idx-dim p 0), ws, \
+                              (gsl_complex_packed_ptr)IDX_PTR($roots, double)) #} )
+    #{ gsl_poly_complex_workspace_free(ws); #}
+    roots))
+
+(dhc-make-with-libs ()
+                    (list gsl-libgslcblas gsl-libgsl)
+                    -poly-number
+                    -poly-vector
+		    poly-solve)
+

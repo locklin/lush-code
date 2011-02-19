@@ -1,0 +1,547 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? (-> a b)
+;; Vector pointing from point <a> to point <b>.
+;; To be used within an 'with-points' form.
+(defmacro -> (a b)
+  (let ((ax (symbol-concat a 'x)) (ay (symbol-concat a 'y))
+        (bx (symbol-concat b 'x)) (by (symbol-concat b 'y)) )
+    (list `(- ,bx ,ax) `(- ,by ,ay)) ))
+
+#? (vecdot a b)
+;; Dot product of vectors <a> and <b>.
+(defmacro vecdot (a b)
+  (let (((ax ay) (apply macroexpand a ())) 
+	((bx by) (apply macroexpand b ())) )
+     `(+ (* ,ax ,bx) (* ,ay ,by))) )
+
+#? (veclen a)
+;; Length (Euclidean norm) of vector <a>.
+(defmacro veclen (a)
+  (let (((ax ay) (apply macroexpand a ())))
+    `(euclidean-norm ,ax ,ay)
+    ))
+
+
+(defmacro euclidean-norm-squared args
+  (let* ((vars ())
+	 (terms (domapcar ((arg args))
+		  (cond
+		   ((or (symbolp arg) (numberp arg)) 
+		    `(* ,arg ,arg))
+		   ((consp arg)
+		    (let ((v (gensym)))
+		      (setq vars (cons `(,v ,arg) vars))
+		      `(* ,v ,v) ))
+		   (t 
+		    (error "euclidean-norm: syntax error") )))))
+    (if (null vars)
+	`(+ ,@terms)
+      `(let (,@vars) (+ ,@terms))
+      )))
+
+(defmacro euclidean-norm args
+  `(sqrt (euclidean-norm-squared ,@args))
+  )
+
+(defmacro euclidean-distance-squared (p0 p1) 
+  `(let ((d.x (- (,p0 0) (,p1 0)))
+         (d.y (- (,p0 1) (,p1 1))) )
+     (euclidean-norm-squared d.x d.y) )
+  )
+
+(defmacro euclidean-distance (p0 p1)
+  `(let ((d.x (- (,p0 0) (,p1 0)))
+         (d.y (- (,p0 1) (,p1 1))) )
+     (euclidean-norm d.x d.y))
+  )
+
+(dmd tangent-vector (v)
+  `(let* ((v0 (,v 0)) (v1 (,v 1))
+          (en (euclidean-norm v0 v1)) )
+     (vector (/ v0 en) (/ v1 en)) )
+  )
+
+(dmd tangent-vector* (v)
+  `(let* ((v0 (,v 0)) (v1 (,v 1))
+          (en (euclidean-norm v0 v1)) )
+     (if (= en 0)
+         (vector 0 0)
+       (vector (/ v0 en) (/ v1 en)) ))
+  )
+
+(dmd tangent-vector! (v)
+  `(let* ((v ,v) (v0 (v 0)) (v1 (v 1))
+     (en (euclidean-norm v0 v1)) )
+     (v 0 (/ v0 en))
+     (v 1 (/ v1 en)) 
+     () )
+  )
+
+(dmd normal-vector (v)
+  `(let* ((v0 (,v 0)) (v1 (,v 1))
+          (en (euclidean-norm v0 v1)) )
+     (vector (/ (- v1) en) (/ v0 en)) ) 
+  )
+
+(dmd normal-vector* (v)
+  `(let* ((v0 (,v 0)) (v1 (,v 1))
+          (en (euclidean-norm v0 v1)) )
+     (if (= en 0)
+         (vector 0 0)
+       (vector (/ (- v1) en) (/ v0 en)) ))
+  )
+
+(dmd normal-vector! (v)
+  `(let* ((v ,v) (v0 (v 0)) (v1 (v 1))
+          (en (euclidean-norm v0 v1)) )
+     (v 0 (/ (- v1) en))
+     (v 1 (/ v0 en)) 
+     () )
+  )
+
+(dmd scale-vector! (v s)
+  `(let ((v ,v) (s ,s))
+     (v 0 (* (v 0) s))
+     (v 1 (* (v 1) s))
+     ())
+  )
+
+(dmd scale-vector (v s)
+  `(let ((v ,v) (s ,s))
+     (vector (* (v 0) s) (* (v 1) s)) )
+  )
+
+(defun vector-angle (v)
+  (let ((n (normal-vector v)))
+    (atan2 (n 1) (n 0)) ))
+
+(defun direction-cosine (u v)
+  (declare (-idx1- (-double-)) u v)
+  (let ((ux (u 0)) (uy (u 1))
+	(vx (v 0)) (vy (v 1)) )
+    (/ (+ (* ux vx) (* uy vy))
+       (* (euclidean-norm ux uy)
+	  (euclidean-norm vx vy) ))))
+
+(defun direction-cosine3 (u v)
+  (declare (-idx1- (-double-)) u v)
+  (let ((ux (u 0)) (uy (u 1)) (uz (u 2))
+	(vx (v 0)) (vy (v 1)) (vz (v 2)) )
+    (/ (+ (* ux vx) (* uy vy) (* uz vz))
+       (* (euclidean-norm ux uy uz)
+	  (euclidean-norm vx vy vz) ))))
+
+(defun direction-sine (u v)
+  (declare (-idx1- (-double-)) u v)
+  (let ((ux (u 0)) (uy (u 1))
+	(vx (v 0)) (vy (v 1)) )
+  (/ (- (* ux vy) (* uy vx))
+     (* (euclidean-norm ux uy)
+        (euclidean-norm vx vy) ))))
+
+;; with e_z as reference
+(defun direction-sine3 (u v)
+  (declare (-idx1- (-double-)) u v)
+  (let ((ux (u 0)) (uy (u 1)) (uz (u 2))
+	(vx (v 0)) (vy (v 1)) (vz (v 2)) )
+    (let ((x (- (* uy vz) (* uz vy)))
+	  (y (- (* uz vx) (* ux vz)))
+	  (z (- (* ux vy) (* uy vx))) )
+      (* (if (< z 0) -1 1)
+	 (sqrt 
+	  (/ (euclidean-norm-squared x y z)
+	     (* (euclidean-norm-squared ux uy uz)
+		(euclidean-norm-squared vx vy vz) )))) )))
+;; with e_z as reference
+;defun direction-sine3 (u v)
+; (declare (-idx1- (-double-)) u v)
+; (* (sqrt (- 1 (** (direction-cosine3 u v) 2))) (sgn (direction-sine u v))) )
+
+;; quantize into eight directions
+(defun quantize-direction! (v)
+  (declare (-idx1- (-double-)) v)
+  (let* ((en (euclidean-norm (v 0) (v 1)))
+         (vx (/ (v 0) en))
+         (vy (/ (v 1) en)) )
+    (cond
+     ((> vx 0.9239) (v 0 1) (v 1 0))
+     ((> vx 0.3827)
+      (if (> vy 0)
+          (progn (v 0 0.7071) (v 1 0.7071))
+        (progn (v 0 0.7071) (v 1 -0.7071)) ))
+     ((> vx -0.3827)
+      (if (> vy 0)
+          (progn (v 0 0) (v 1 1))
+        (progn (v 0 0) (v 1 -1)) ))
+     ((> vx -0.9239)
+      (if (> vy 0)
+          (progn (v 0 -0.7071) (v 1 0.7071))
+        (progn (v 0 -0.7071) (v 1 -0.7071)) ))
+     (t (v 0 -1) (v 1 0)) )
+    ()))
+
+(defmacro det2x2 (a b c d)
+  `(- (* ,a ,d) (* ,b ,c)) 
+  )
+
+#? (orient2d <A> <B> <V>)
+;; Two times the area of triangle <ABC>.
+;; The points <A>, <B>, and <C> may be given either as a two-element
+;; list or a two-element vector of coordinates, respectively.
+(defmacro orient2d (a b c)
+  (cond 
+   ;; A B C are given as explicit coordinates
+   ((and (consp a) (consp b) (consp c))
+    (let (((ax ay) a) ((bx by) b) ((cx cy) c))
+      `(det2x2 (- ,ax ,cx) (- ,ay ,cy) (- ,bx ,cx) (- ,by ,cy)) ))
+   
+   ;; A B C are variables in an 'with-points' form
+   ((and (symbolp a) (symbolp b) (symbolp c))
+    (let ((ax (symbol-concat a 'x)) (ay (symbol-concat a 'y))
+	  (bx (symbol-concat b 'x)) (by (symbol-concat b 'y))
+	  (cx (symbol-concat c 'x)) (cy (symbol-concat c 'y)) )
+      `(det2x2 (- ,ax ,cx) (- ,ay ,cy) (- ,bx ,cx) (- ,by ,cy)) ))
+
+    ;; A B C are given as coordinate vectors
+    (t
+     `(let* ((a ,a) (b ,b) (c ,c)
+	     (ax (a 0)) (ay (a 1)) (bx (b 0)) (by (b 1)) (cx (c 0)) (cy (c 1)))
+	(det2x2 (- ax cx) (- ay cy) (- bx cx) (- by cy)) ) )
+    ))
+
+(defalias signed-area2 orient2d)
+
+#? (leftp <P> <A> <B>)
+;; True if point <P> is left of segment <AB>.
+(defmacro leftp (P E D)
+  `(> (orient2d ,P ,E ,D) 0) 
+  )
+
+#? (collinearp <A> <B> <C>)
+;; True when points <A> <B> and <C> are collinear.
+(defmacro collinearp (A B C)
+  `(= (orient2d ,A ,B ,C) 0)
+  )
+
+#? (segments-intersect-proper-p <A> <B> <C> <D>)
+;; True when segments <AB> and <CD> intersect properly.
+(defun segments-intersect-proper-p (A B C D)
+  (declare (-idx1- (-double-)) A B C D)
+  (let ((Ax (A 0)) (Ay (A 1))
+	(Bx (B 0)) (By (B 1))
+	(Cx (C 0)) (Cy (C 1))
+	(Dx (D 0)) (Dy (D 1)) )
+    (and
+     (not (or (collinearp A B C) (collinearp A B D) (collinearp C D A) (collinearp C D B)))
+     (<> (leftp A B C) (leftp A B D)) 
+     (<> (leftp C D A) (leftp C D B)) )))
+
+#? (point-on-segment-p <P> <A> <B>)
+;; True when point <P> is on segment <AB>.
+(defun point-on-segment-p (C A B)
+  (declare (-idx1- (-double-)) A B C)
+  (let ((Ax (A 0)) (Ay (A 1))
+	(Bx (B 0)) (By (B 1))
+	(Cx (C 0)) (Cy (C 1)) )
+    (if (not (collinearp A B C))
+        ()
+      (let ((ACx (- Ax Cx)) (ACy (- Ay Cy))
+            (CBx (- Cx Bx)) (CBy (- Cy By)) )
+        (if (< (+ (* ACx CBx) (* ACy CBy)) 0)
+            ()
+          t)))))
+
+(defun -point-inside-triangle-p (Px Py Ax Ay Bx By Cx Cy)
+  (declare (-double-) Px Py Ax Ay Bx By Cx Cy)
+    (let ((sa-abc (signed-area2 A B C))
+          (sa-abp (signed-area2 A B P))
+          (sa-bcp (signed-area2 B C P))
+          (sa-cap (signed-area2 C A P)) )
+      (and (<> sa-abp 0) (<> sa-bcp 0) (<> sa-cap 0)
+           (= (sgn sa-abc) (sgn sa-abp))
+           (= (sgn sa-abp) (sgn sa-bcp))
+           (= (sgn sa-bcp) (sgn sa-cap)) )))
+
+#? (point-inside-triangle-p <P> <A> <B> <C>)
+;; True if point <P> is inside triangle <ABC>.
+(defun point-inside-triangle-p (P A B C)
+  (declare (-idx1- (-double-)) P A B C)
+  (let ((Px (P 0)) (Py (P 1))
+        (Ax (A 0)) (Ay (A 1))
+        (Bx (B 0)) (By (B 1))
+        (Cx (C 0)) (Cy (C 1)) )
+    (-point-inside-triangle-p Px Py Ax Ay Bx By Cx Cy) ))
+
+#? (distance-point-segment <P> <A> <B>)
+;; Euclidean distance of <P> to segment <AB>.
+(defun distance-point-segment (C A B)
+  (declare (-idx1- (-double-)) C A B)
+  (let* ((ax (A 0)) (ay (A 1))
+         (bx (B 0)) (by (B 1))
+         (abx (- bx ax)) (aby (- by ay))
+         (absq (+ (* abx abx) (* aby aby))) )
+    
+    (let* ((cx (C 0)) (cy (C 1))
+           (acx (- cx ax)) (acy (- cy ay))
+           (ab.ac (+ (* abx acx) (* aby acy)))
+           (dsq -1) )
+      (if (<= ab.ac 0.0)
+          (setq dsq (+ (* acx acx) (* acy acy)))     ; C is closest to A
+        (let* ((bcx (- cx bx)) (bcy (- cy by))
+               (ab.bc (+ (* acx bcx) (* acy bcy))) )
+          (if (>= ab.bc 0.0)
+              (setq dsq (+ (* bcx bcx) (* bcy bcy))) ; C is closest to B
+            (setq dsq (- (* bcx acy) (* bcy acx)))   ; C is closest to an interior point 
+            (setq dsq (/ (* dsq dsq) absq)) )))
+      (sqrt dsq))))
+
+#? (point-in-angle-p <P> <A> <B> <C>)
+;; True when point <P> is in angle <ABC> (the angle bounded by 
+;; rays <BA>, <BC>).
+(defun point-in-angle-p (P A B C)
+  (declare (-idx1- (-double-)) P A B C)
+  (let ((Px (P 0)) (Py (P 1))
+        (Ax (A 0)) (Ay (A 1))
+	(Bx (B 0)) (By (B 1))
+	(Cx (C 0)) (Cy (C 1)) )
+    (if (leftp A B C)
+        (and (leftp P A B) (leftp P B C))
+      (not (and (leftp P B A) (leftp P C B))) )))
+    
+#? (order-edges-by-direction <e> <es>)
+;; Order all directed edges in list <es> around direction of edge <e>,
+;; return the list of ordered edges. This function assumes a <Mesh>
+;; context.
+(defun order-edges-by-direction (e es)
+  (let* ((e0 (edges e 0))
+         (e1 (edges e 1))
+         (v (- (idx-select* points e1) (idx-select* points e0)))
+         (e0s (mapcar edges es (.cl 0)))
+         (e1s (mapcar edges es (.cl 1)))
+         (vs (domapcar ((e0 e0s) (e1 e1s))
+                       (- (idx-select* points e1) (idx-select* points e0)) ))
+         (sins (mapcar direction-sine (.cl v) vs))
+         (coss (mapcar direction-cosine (.cl v) vs))
+         (as (mapcar atan2 sins coss))   ; direction angles
+         (aes (mapcar cons as es))
+         (cmp (lambda (ae1 ae2) (> (car ae1) (car ae2)))) )
+    (mapcar cdr (sort-list aes cmp)) ))
+
+
+
+#? (point-intersecting-line-line <A> <B> <C> <D> [<result>])
+;; Point where lines <AB> and <CD> intersect.
+(defmacro point-intersecting-line-line (A B C D &optional result)
+  (let ((args ()))
+    (when (not (symbolp A)) (setq args (cons `(A ,A) args) A 'A))
+    (when (not (symbolp B)) (setq args (cons `(B ,B) args) B 'B))
+    (when (not (symbolp C)) (setq args (cons `(C ,C) args) C 'C))
+    (when (not (symbolp D)) (setq args (cons `(D ,D) args) D 'D))
+    (when (null result) (setq result `(double-array 2)))
+    (when (not (symbolp result)) (setq args (cons `(result ,result) args) result 'result))
+    `(let* (,@args
+	    (a-x (,A 0)) (a-y (,A 1))
+	    (c-x (,C 0)) (c-y (,C 1))
+	    (c-a-x (- (,C 0) a-x))
+	    (c-a-y (- (,C 1) a-y))
+	    (d-x (,D 0)) (d-y (,D 1))
+	    (d-c-x (- d-x c-x))
+	    (d-c-y (- d-y c-y))
+	    (d-a-x (- d-x a-x))
+	    (d-a-y (- d-y a-y))
+	    (b-a-x (- (,B 0) a-x))
+	    (b-a-y (- (,B 1) a-y))
+	    (alpha (/ (det2x2 c-a-x c-a-y d-a-x d-a-y)
+		      (det2x2 b-a-x b-a-y d-c-x d-c-y) )))
+       (,result 0 (+ a-x (* alpha b-a-x)))
+       (,result 1 (+ a-y (* alpha b-a-y)))
+       ,result)
+  ))
+
+#? (find-point-furthest-from-segment <points> <A> <B> [<distance>])
+;; Give the index to the point in <points> with the greatest distance to
+;; line segment <AB>.
+(defmacro find-point-furthest-from-segment args
+(let ((n (length args)))
+  (selectq n
+    (4 `(-find-point-furthest-from-segment . ,args) )
+    (3 `(-find-point-furthest-from-segment ,@args (double-array)) )
+    (t (error "syntax error")) )
+  ))
+
+
+(defun -find-point-furthest-from-segment (points A B distance)
+  (declare (-idx2- (-double-)) points)
+  (declare (-idx1- (-double-)) A B)
+  (declare (-idx0- (-double-)) distance)
+  
+  (let ((x (idx-select points 1 0))
+        (y (idx-select points 1 1))
+        (max-C -1)
+        (max-d-sq -1) )
+    (declare (-int-) max-C)
+    (let* ((a-x (A 0)) (a-y (A 1))
+           (b-x (B 0)) (b-y (B 1))
+           (a-b-x (- b-x a-x)) (a-b-y (- b-y a-y))
+           (a-b-sq (+ (* a-b-x a-b-x) (* a-b-y a-b-y))) 
+           (d-sq -1)
+           (i 0))
+      (declare (-int-) i)
+
+      (idx-bloop ((C points))
+        (let* ((c-x (C 0)) (c-y (C 1))
+               (a-c-x (- c-x a-x)) (a-c-y (- c-y a-y))
+               (a-b.a-c (+ (* a-b-x a-c-x) (* a-b-y a-c-y))) )
+          (if (<= a-b.a-c 0.0)
+              (setq d-sq (+ (* a-c-x a-c-x) (* a-c-y a-c-y)))  ; C is closest to A
+            (let* ((b-c-x (- c-x b-x)) (b-c-y (- c-y b-y))
+                   (a-b.b-c (+ (* a-c-x b-c-x) (* a-c-y b-c-y))) )
+              (if (>= a-b.b-c 0.0)
+                  (setq d-sq (+ (* b-c-x b-c-x) (* b-c-y b-c-y))) ; C is closest to B
+                (setq d-sq (- (* b-c-x a-c-y) (* b-c-y a-c-x)))    ; C is closest to an interior point 
+                (setq d-sq (/ (* d-sq d-sq) a-b-sq)) )))
+	  
+          (when (> d-sq max-d-sq)
+            (setq max-d-sq d-sq  max-C i) ))
+	(incr i)))
+    (distance (sqrt max-d-sq))
+    max-C))
+
+
+#? (find-point-closest-to-segment <points> <A> <B> [<distance>])
+;; Give the index to the point in <points> with the smallest distance to
+;; line segment <AB>.
+(defmacro find-point-closest-to-segment args
+(let ((n (length args)))
+  (selectq n
+    (4 `(-find-point-closest-to-segment . ,args) )
+    (3 `(-find-point-closest-to-segment ,@args (double-array)) )
+    (t (error "syntax error")) )
+  ))
+
+(defun -find-point-closest-to-segment (points A B distance)
+  (declare (-idx2- (-double-)) points)
+  (declare (-idx1- (-double-)) A B)
+  (declare (-idx0- (-double-)) distance)
+  
+  (let ((x (idx-select points 1 0))
+        (y (idx-select points 1 1))
+        (min-C -1)
+        (min-d-sq INF) )
+    (declare (-double-) min-d-sq)
+    (declare (-int-) min-C)
+    (let* ((a-x (A 0)) (a-y (A 1))
+           (b-x (B 0)) (b-y (B 1))
+           (a-b-x (- b-x a-x)) (a-b-y (- b-y a-y))
+           (a-b-sq (+ (* a-b-x a-b-x) (* a-b-y a-b-y))) 
+           (d-sq -1)
+           (i 0))
+      (declare (-int-) i)
+
+      (idx-bloop ((C points))
+        (let* ((c-x (C 0)) (c-y (C 1))
+               (a-c-x (- c-x a-x)) (a-c-y (- c-y a-y))
+               (a-b.a-c (+ (* a-b-x a-c-x) (* a-b-y a-c-y))) )
+          (if (<= a-b.a-c 0.0)
+              (setq d-sq (+ (* a-c-x a-c-x) (* a-c-y a-c-y)))  ; C is closest to A
+            (let* ((b-c-x (- c-x b-x)) (b-c-y (- c-y b-y))
+                   (a-b.b-c (+ (* a-c-x b-c-x) (* a-c-y b-c-y))) )
+              (if (>= a-b.b-c 0.0)
+                  (setq d-sq (+ (* b-c-x b-c-x) (* b-c-y b-c-y))) ; C is closest to B
+                (setq d-sq (- (* b-c-x a-c-y) (* b-c-y a-c-x)))   ; C is closest to an interior point 
+                (setq d-sq (/ (* d-sq d-sq) a-b-sq)) )))
+	  
+          (when (< d-sq min-d-sq)
+            (setq min-d-sq d-sq  min-C i) ))
+	(incr i)))
+    (distance (sqrt min-d-sq))
+    min-C))
+
+
+#? (circumcircle <A> <B> <C> [<result>])
+;; Calculate midpoint and radius of circumcircle of a triangle with
+;; vertices <A>, <B>, and <C> (coordinate vectors, respectively).
+;; The result is a three-element vector containing the coordinates
+;; of the midpoint and radius of the circumcircle. The radius is
+;; negative if points are given in clockwise order.
+;; For collinear points, the circumircle midpoint is undefined, and the
+;; radius is infinity.
+(defmacro circumcircle (A B C &optional result)
+  (let ((args ()))
+    (when (not (symbolp A)) (setq args (cons `(A ,A) args) A 'A))
+    (when (not (symbolp B)) (setq args (cons `(B ,B) args) B 'B))
+    (when (not (symbolp C)) (setq args (cons `(C ,C) args) C 'C))
+    (when (null result) (setq result `(double-array 3)))
+    (when (not (symbolp result)) (setq args (cons `(result ,result) args) result 'result))
+    `(let* (,@args
+	    (c-x (,C 0)) (c-y (,C 1))
+	    (a-c-x (- (,A 0) c-x))
+	    (b-c-x (- (,B 0) c-x))
+	    (a-b-x (- (,A 0) (,B 0)))
+	    (a-c-y (- (,A 1) c-y))
+	    (b-c-y (- (,B 1) c-y))
+	    (a-b-y (- (,A 1) (,B 1)))
+	    (a-c.a-c (+ (* a-c-x a-c-x) (* a-c-y a-c-y)))
+	    (b-c.b-c (+ (* b-c-x b-c-x) (* b-c-y b-c-y)))
+	    (a-b.a-b (+ (* a-b-x a-b-x) (* a-b-y a-b-y)))
+	    (4A (* (det2x2 a-c-x a-c-y b-c-x b-c-y) 2)) )
+       (if (= 4A 0)
+	   (progn
+	     (,result 0 NAN)
+	     (,result 1 NAN)
+	     (,result 2 INF)
+	     ,result)
+	 ;; cc coordinates
+	 (,result 0 (+ c-x (/ (det2x2 a-c.a-c a-c-y
+				      b-c.b-c b-c-y)
+			      4A)))
+	 (,result 1 (+ c-y (/ (det2x2 a-c-x a-c.a-c
+				      b-c-x b-c.b-c)
+			      4A)))
+	 ;; cc radius
+	 (,result 2 (/ (sqrt (* a-b.a-b b-c.b-c a-c.a-c)) 4A))
+	 ,result))
+    ))
+
+(dhc-make ()
+          direction-cosine
+          direction-sine
+	  direction-cosine3
+	  direction-sine3
+          quantize-direction!
+	  segments-intersect-proper-p
+          point-on-segment-p
+          -point-inside-triangle-p
+          point-inside-triangle-p
+          point-in-angle-p
+          distance-point-segment
+	  -find-point-furthest-from-segment
+	  -find-point-closest-to-segment)
+
+                          

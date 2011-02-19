@@ -1,0 +1,206 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? *** Overloading compiled functions
+;; Bla bla.
+
+
+
+
+#? (typematch (<dh1>...<dhn>) <...args...>)
+;; Apply the first of the DH functions <dh1>...<dhn>
+;; whose prototype matches the type of the 
+;; arguments <...args...>
+
+(dm typematch(fn dhlist . args)
+  (list 'typematch.sub (list 'quote dhlist) . args) )
+
+
+;; function dispatch table
+(defparameter *overload-dispatch* (htable 100))
+
+#? (defoverload <overloadname> <...dhfunctionnames...>)
+;; Define <overloadname> as an overloaded function
+;; and add <dhfunctioname> as one of its alternatives.
+(dm defoverload def
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((_ name . new-names) def))
+    (let ((names (*overload-dispatch* name)))
+      (domapc ((fn (reverse new-names)))
+        (when (not (member fn names))
+          (setq names (cons fn names)) ))
+      (*overload-dispatch* name names) )
+    (let ((tm `(mlambda (_ . args)
+                 (list 'typematch (*overload-dispatch* ',name) . args)) ))
+      `(progn 
+         (setq :,name ,tm)
+         ',name)
+      )))
+
+
+;; This function converts type descriptors
+;; returned by function dhinfo-t into type declarations.
+;; Why so many representations?
+(de typematch.typedecl(desc)
+  (while (and (consp desc) (= (car desc) 'ptr))
+    (setq desc (cadr desc)) )
+  (selectq (car desc)
+    ;; Simple types
+    (gptr '(-gptr-))
+    (bool '(-bool-))
+    (uchar '(-ubyte-))
+    (ubyte '(-ubyte- ))
+    (byte '(-byte-))
+    (char '(-byte- ))
+    (short '(-short- ))
+    (int '(-int- ))
+    (float '(-float- ))
+    (double '(-double-))
+    (str '(-str- ))
+    (list (cons '-list- (mapcar typematch.typedecl (cdr desc))))
+    (obj (list '-obj- (list (nth 1 desc))))
+    (idx 
+     (let* ((ndim (nth 2 desc))
+            (base (nth 3 desc)) )
+       (when (<> (car base) 'srg)
+         (error 'typematch "Illegal type descriptor" desc) )
+       (list (named (sprintf "-idx%d-" ndim))
+             (typematch.typedecl (nth 2 base)) ) ) )
+    (t
+     (error 'typematch "Unsupported type descriptor" desc) ) ) )
+
+;; This is the workhose of interpreted typematched calls
+(de typematch.sub(dhlist . args)
+  (let ((found ())
+        (nargs (length args)))
+    (while (not found)
+      (when (not (consp dhlist))
+        (error 'typematch "No type match for these arguments" ()) )
+      (let* ((name (car dhlist))
+             (func (eval name))
+             (info ()) )
+        (setq dhlist (cdr dhlist))
+        (when (isa func DH)
+          (setq info (dhinfo-t func)) )
+        (when (not info)
+          (error 'typematch "Not a compiled DH function" name) )
+        (setq info (mapcar typematch.typedecl (cadr info)))
+        (when (= (length info) nargs)
+          (let ((okay t))
+            (each ((d info)
+                   (a args))
+              (when okay
+                (let ((p (getp (car d) 'type-syntax)))
+                  (setq p (p 'typematch d))
+                  (when (not (p a))
+                    (setq okay ()) ) ) ) )
+            (when okay
+              (setq found func) ) ) ) ) )
+    (apply found args) ) )
+
+;; dhm-p
+(dhm-p typematch(source)
+  (if (and (consp source) (consp (cdr source)))
+      (cons (car source) (cons (cadr source) (dhc-pp-all (cddr source))))
+    source ) )
+
+;; compare types (ugly)
+(de typematch.typecheck(ot1 ot2)
+  (setq ot1 (==> ot1 copy))
+  (setq ot2 (==> ot2 copy))
+  ;; todo: create an api for this in dh-util
+  (let ((dhc-unif-error-flag t)
+        (dhc-unif-error (lambda args (setq dhc-unif-error-flag ()))) )
+    (dhc-unify-types ot1 ot2)
+    dhc-unif-error-flag ))
+
+;; dhm-t
+(dhm-t typematch(source)
+  (let (((_ fs . as) source)
+        (found-name ()) )
+    ;; Check
+    (dolist (f fs)
+      (when (not (symbolp f))
+        (dhc-error "A list of function names was expected" fs) ))
+    (let ((fnodes (mapcar dhc-parse-expr-t fs))
+          (anodes (mapcar dhc-parse-expr-t as)) )
+      ;; Search for function
+      (while (not found-name)
+        (when (not (consp fs))
+          (dhc-error "No type match for these arguments" (cdr source)) )
+        (let* ((f (car fs))
+               (fnode (car fnodes))
+               (ftype :fnode:type)
+               (ptypes (dhu-extra ftype)) )
+          (setq fs (cdr fs))
+          (setq fnodes (cdr fnodes))
+          (when (= (length ptypes) (length anodes))
+            (let ((okay t))
+              (domapc ((ptype ptypes) (anode anodes))
+                (when (and okay (not (typematch.typecheck ptype :anode:type)))
+                  (setq okay ()) )) 
+              (when okay
+                (setq found-name f) ))))))
+    ;; Select
+    (dhc-parse-replacement-source-t source (cons found-name as)) ))
+
+
+
+
+
+
+;;; Some tests
+
+
+(when ()
+
+  (libload "idx-float")
+  (libload "idx-double")
+  
+  (defoverload idx-dotc idx-d3dotc idx-d2dotc idx-d1dotc)
+  (defoverload idx-dotc idx-f3dotc)
+  (defoverload idx-dotc idx-f2dotc)
+  (defoverload idx-dotc idx-f1dotc)
+  
+  (de aa(a c b) ((-flt-) c) ((-idx1- (-flt-)) a b)
+      (idx-dotc a c b) )
+  (de ab(a c b) ((-flt-) c) ((-idx2- (-flt-)) a b)
+      (idx-dotc a c b) )
+  (de ac(a c b) ((-flt-) c) ((-idx3- (-flt-)) a b)
+      (idx-dotc a c b) )
+  (de ba(a c b) ((-real-) c) ((-idx1- (-real-)) a b)
+      (idx-dotc a c b) )
+  (de bb(a c b) ((-real-) c) ((-idx2- (-real-)) a b)
+      (idx-dotc a c b) )
+  (de bc(a c b) ((-real-) c) ((-idx3- (-real-)) a b)
+      (idx-dotc a c b) )
+
+  (dhc-make-sf "test" aa ab ac ba bb bc)
+
+)
+

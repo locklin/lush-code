@@ -1,0 +1,122 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar cv-libnames (list "libcv" "libcvaux"))
+(defvar cv-version ())
+(defvar cv-libs-loaded ())
+(defvar cv-libs ())
+(defvar cv-cpheader-cmd ())
+(defvar cv-include-path ())
+(defvar cv-flags "")
+
+(when (not cv-libs-loaded)
+  
+  ;; find library
+  (cond
+   ;; cv-libs was already defined, don't touch it
+   (cv-libs t)
+
+   ;; look for dynamic libopencv.so installed
+   ((find-shared-library (car cv-libnames))
+    (setq cv-libs (mapcar find-shared-library cv-libnames)) )
+   
+   ;; look for static libopencv.a installed
+   ((find-static-library  (car cv-libnames))
+    (setq cv-libs (mapcar find-static-library cv-libnames)) ) 
+   
+   ;; couldn't find it, complain loudly.
+   (t (printf "neither the %s.so nor %s.a could be found\n" (car cv-libnames) (car cv-libnames))
+      (printf "You can download cv from\n")
+      (printf "http://sourceforge.net/projects/opencvlibrary/\n")
+      (printf "compile it, and install it\n")
+      (printf "in standard paths (e.g. in /usr/local/lib) so that I can find it.\n")
+      (printf "If you have installed OpenCV and still get this message, please do\n")
+      (printf "(defparameter cv-libcv \"yourcvlibrary\") before loading this file\n")      
+      (printf "(see %s for more details)\n" file-being-loaded)
+      (error "cannot configure cv")))
+  
+  ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  (libload "libc/shell")
+  
+  ;; determine cv-include-path and add it to c-include-path
+  (let ((llcv (sprintf "lib/%s.%s" (car cv-libnames) (getconf "SOEXT")))
+        (libcv (car cv-libs)) )
+    (when (and (= (right libcv (len llcv)) llcv)
+               (not (member 
+                     (setq cv-include-path (concat-fname (left libcv (- (len libcv) (len llcv))) "include/opencv"))
+                     c-include-path)) )
+      (setq c-include-path (cons cv-include-path c-include-path)) ))
+  
+  ;; check that we find header files
+  (let* ((dlist c-include-path)
+         (hlist ()))
+    (while (and dlist (not hlist))
+      (setq hlist (glob ".*\\.h" (ls (car dlist)))) 
+      (setq dlist (cdr dlist)))
+    (if (not hlist)
+        (progn
+          (printf "Could not find OpenCV include files;\n")
+          (printf "please add the header directory to global\n")
+          (printf "list 'c-include-path'\n")
+          (error "Cannot find OpenCV header files"))
+
+      (setq cv-cpheader-cmd
+            '(progn
+               (cheader "#include <cv.h>")
+               (cheader "#include <cvaux.h>")
+               (cheader "#include <cvcompat.h>")
+               (cheader "#undef ptr") ))
+      (defmacro cv-cpheader ()
+	cv-cpheader-cmd)
+      (setq cv-flags " -fno-strict-aliasing -Wno-unused") ))
+  
+  ;; define cv-version
+  (if (not (filep (concat-fname cv-include-path "cvver.h")))
+      (printf "*** Warning: OpenCV version information not found")
+
+    (de -cv-version ()
+      (cpheader "#include <cvver.h>")
+      (to-double #{ atof(CV_VERSION) #}) )
+    (dhc-make () -cv-version)
+    (defparameter cv-version (-cv-version))
+    (delete -cv-version) )
+  
+  ;; load libraries
+  ;; THIS IS COMPLETELY WRONG **AGAIN**
+  ;; THE INTERFACE SHOULD USE DHC-MAKE-WITH-LIBS INSTEAD OF THIS HACK
+  (mapc mod-load cv-libs)
+  (setq cv-libs-loaded t) 
+
+  (defmacro dhc-make-cv args
+    `(let ((dhc-make-lushflags (concat dhc-make-lushflags cv-flags)))
+       (dhc-make ,@args) )
+    )
+  
+)
+
+(when (libload "opencv/error-handling")
+  (cv-set-error-mode-parent) )

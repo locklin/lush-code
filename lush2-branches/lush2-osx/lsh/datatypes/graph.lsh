@@ -1,0 +1,443 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "overload")
+(libload "datatypes/stack")
+(libload "datatypes/deque")
+(libload "datatypes/int-heap")
+(libload "datatypes/small-int-set")
+(libload "datatypes/graph-iterators")
+
+(defclass IGraph object
+  ((-int-) nv)                 ; number of vertices
+  ((-idx2- (-int-)) edges)     ; edges
+  ((-int-) max-degree)         ;
+  ((-int-) max-in-degree)      ;
+  ((-int-) max-out-degree)     ;
+  ((-obj- (IntHeap)) v-hp)     ; vertex heap (with vertex degree as key)
+  ((-idx2- (-int-)) v-es)      ; nv x (max-degree + 2) table of incident edges
+  )
+
+(in-namespace (class IGraph)
+(libload "datatypes/graph-utils" IGraph)
+
+(defmacro validate-vertex (v)
+  (assert (symbolp v))
+  `(progn 
+     (when (not (and (> ,v -1) (< ,v nv)))
+       (error "not a valid vertex") )
+     ,v)
+  )
+(defmacro check-itable () ; make sure incidence table exists
+  `(when (emptyp v-es)
+     (setq v-es (==> this -incidence-table)) )
+  )
+) ; in-namespace 
+
+
+(defmethod IGraph -incidence-table ()
+  ;; compute degrees
+  (let ((v-degrees (int-array nv 3))
+        (md 0) (mdi 0) (mdo 0) )
+    (declare (-int-) md mdi mdo)
+    (do-edges* e
+      (incr (v-degrees e.v0 0))
+      (incr (v-degrees e.v1 0))
+      (incr (v-degrees e.v1 1))
+      (incr (v-degrees e.v0 2)) )
+    (idx-bloop ((vd v-degrees))
+      (setq md (max md (vd 0)))
+      (setq mdi (max mdi (vd 1)))
+      (setq mdo (max mdo (vd 2))) )
+    (setq max-degree md  max-in-degree mdi  max-out-degree mdo)
+
+    ;; build incidence table
+    (let ((vis (idx-select v-degrees 1 0))
+          (ves (int-array nv (+ max-degree 2))) )
+      (array-clear vis 0)
+      (array-clear ves -1)
+      ;; out edges first
+      (do-edges* e
+        (ves e.v0 (vis e.v0) e) 
+        (incr (vis e.v0)) )
+      ;; a marker '-1'
+      (for* (v 0 nv)
+        (declare (-int-) v)
+        (incr (vis v)) )
+      ;; then in edges
+      (do-edges* e
+        (ves e.v1 (vis e.v1) e) 
+        (incr (vis e.v1)) )
+      ves)))
+
+
+(defmethod IGraph -degree-histogram ()
+  (let ((h (int-array 16)))
+    (for* (v 0 nv)
+      (declare (-int-) v)
+      (let ((d (vertex-degree v)))
+        (declare (-int-) d)
+        (while (>= d (length h))
+          (array-extend! h 0 (length h)) )
+        (incr (h d)) ))
+    ;; trim histogram
+    (let ((max-vd (- (length h) 1)))
+      (declare (-int-) max-vd)
+      (while (and (= (h max-vd) 0) (> max-vd -1))
+        (decr max-vd))
+      (assert (= max-vd max-degree))
+      (idx-trim! h 0 0 (+ max-vd 1)) )
+    h))
+
+#? (new <IGraph> <nv> <edges>)
+;; Create new graph with <nv> vertices and <edges>. The <edges>
+;; argument is a table of pairs of vertex indices (an <Ex2> integer
+;; array). Whether the edges are considered directed or undirected
+;; depends on the methods used. That is, the <IGraph> object does
+;; not per se represent a directed or an undirected graph.
+(defmethod IGraph IGraph (-nv -edges)
+  (declare (-int-) -nv)
+  (declare (-idx2- (-int-)) -edges)
+  (setq nv -nv)
+  (setq edges -edges)
+  (when (< nv 0)
+    (error "invalid value for number of vertices"))
+  (when (= nv 0)
+    (when (not (idx-emptyp edges))
+      (error "an empty graph has no edges") ))
+  ;; we are lazy and build the incidence table only when needed
+  (setq v-es (int-array nv 0))
+  (setq v-hp (new IntHeap))
+  ())
+
+
+#? (==> <IGraph> number-of-vertices)
+(defmethod IGraph number-of-vertices ()
+  nv)
+
+
+#? (==> <IGraph> number-of-edges)
+(defmethod IGraph number-of-edges ()
+  (length edges) )
+
+
+#? (==> <IGraph> vertex-degree <v>)
+;; Return degree of vertex <v>.
+(defmethod IGraph vertex-degree (v)
+  (declare (-int-) v)
+  (vertex-degree v) )
+
+
+#? (==> <IGraph> vertices-degree)
+;; Return degree for all vertices as a vector.
+(defmethod IGraph vertices-degree ()
+  (let ((v-degree (int-array nv)))
+    (declare (-idx1- (-int-)) v-degree)
+    (do-edges* e
+      (incr (v-degree e.v0))
+      (incr (v-degree e.v1)) )
+    v-degree))
+
+(defmethod IGraph -build-vertex-heap ()
+  (when (<> (==> v-hp number-of-items) nv)
+    (==> v-hp clear)
+    (let ((v-ds (==> this vertices-degree)))
+      (for* (v 0 nv)
+        (declare (-int-) v)
+        (==> v-hp insert (to-double (v-ds v)) v) )))
+  ())
+
+#? (==> <IGraph> singletons)
+;; Return vector of all zero-degree vertices.
+(defmethod IGraph singletons ()
+  (==> this -build-vertex-heap)
+  (let ((v-hp (copy-object v-hp))
+        (vs (int-array nv))
+        (n  0) )
+    (declare (-int-) n)
+    (do ((v v-hp))
+      (vs n v)
+      (setq continue (< (vertex-degree v) 1))
+      (when continue (incr n)) )
+    (idx-trim vs 0 0 n) ))
+
+#? (==> <IGraph> ends)
+;; Return vector of all one-degree vertices.
+(defmethod IGraph ends ()
+  (==> this -build-vertex-heap)
+  (let ((v-hp (copy-object v-hp))
+        (vs (int-array nv))
+        (n  0) )
+    (declare (-int-) n)
+    (do ((v v-hp))
+      (vs n v)
+      (let ((d (vertex-degree v)))
+        (declare (-int-) d)
+        (setq continue (< d 2))
+        (when (> d 0) (incr n)) ))
+    (idx-trim vs 0 0 n) ))
+
+#? (==> <IGraph> bifurcations)
+;; Return vector of all vertices of degree three or heigher.
+(defmethod IGraph bifurcations ()
+  (==> this -build-vertex-heap)
+  (let ((v-hp (copy-object v-hp))
+        (vs (int-array nv))
+        (n  0) )
+    (declare (-int-) n)
+    (do ((v v-hp))
+      (vs n v)
+      (when (> (vertex-degree v) 2) (incr n)) )
+    (idx-trim vs 0 0 n) ))
+
+#? (==> <IGraph> shortest-path <vs> <vd>)
+;; Return shortest path from vertex <vs> to vertex <vd> as a vector
+;; of edges. Return an empty array when there is no such path or
+;; when <vs> is equal to <vd>.
+(defmethod IGraph shortest-path (vs vd)
+  (declare (-int-) vs vd)
+  (setq vs (validate-vertex vs))
+  (setq vd (validate-vertex vd))
+
+  (let ((dist (int-array nv))
+        (es (int-array nv))
+        (d 0) (w 0) )
+    (declare (-int-) d w)
+    (do-bfs (v e from vd)
+      (when (<> v vd)
+        (if (= e -1)
+            (setq continue ())
+          (dist v (+ (dist v-from) 1))
+          (es v e) ))
+      (setq continue (and continue (<> v vs))) )
+    
+    (idx-trim! dist 0 0 (dist vs))
+    (when (not (idx-emptyp dist))
+      (setq w vs)
+      (do-while (<> w vd)
+        (dist d (es w))
+        (setq w (other-vertex (dist d) w))
+        (incr d) ))
+    dist))
+
+#? (==> <IGraph> shortest-path* <vs> <vd>)
+;; Return shortest path from vertex <vs> to vertex <vd> as a vector
+;; of vertices. Return an empty array when there is no such path.
+(defmethod IGraph shortest-path* (vs vd)
+  (declare (-int-) vs vd)
+
+  (let* ((es (==> this shortest-path vs vd))
+         (n 0) )
+    (declare (-int-) n)
+    (if (and (idx-emptyp es) (<> vs vd))
+        es
+      ;; write vertex data into vector es
+      (while (< n (length es))
+        (setq vd (other-vertex (es n) vs))
+        (es n vs)
+        (setq vs vd)
+        (incr n) )
+      (idx-extend! es 0 1)
+      (es n vs)
+      es)))
+
+#? (==> <IGraph> ccs)
+;; Return connected components as an iterator.
+(defmethod IGraph ccs ()
+  (check-itable)
+  (new IGraphCCIterator nv edges v-es) )
+
+
+#? (==> <IGraph> remove-vertex <v>)
+;; Remove vertex <v> from graph and return <()>.
+;; Only degree zero vertices can be removed.
+(defmethod IGraph remove-vertex (v)
+  (declare (-int-) v)
+  (setq v (validate-vertex v))
+  (when (> (vertex-degree v) 0)
+    (error "not a degree zero vertex") )
+
+  (decr nv)
+  (check-itable)
+  (when (not (emptyp v-es))
+    ;; fix data in edges
+    (do-edges-around e (vertex nv)
+      (if (= (edges e 0) nv)
+          (edges e 0 v)
+        (assert (= (edges e 1) nv))
+        (edges e 1 v) ))
+    (array-copy (idx-select v-es 0 nv) (idx-select v-es 0 v)) )
+    (idx-trim! v-es 0 0 nv)
+  t)
+
+
+#? (==> <IGraph> remove-singletons)
+;; Remove all degree-zero vertices and return the number of vertices
+;; removed.
+(defmethod IGraph remove-singletons ()
+  (let ((n 0))
+    (declare (-int-) n)
+    (for (v (- nv 1) 0 -1)
+      (declare (-int-) v)
+      (when (= (vertex-degree v) 0)
+        (incr n)
+        (==> this remove-vertex v) ))
+    n))
+
+
+#? (==> <IGraph> remove-edge <e>)
+;; Remove edge <e> from graph and return <()>.
+(defmethod IGraph remove-edge (e)
+  (declare (-int-) e)
+  (when (not (and (> e -1) (< e (length edges))))
+    (error "not a valid edge") ) 
+
+  (check-itable)
+  (let ((j 0) (f -1) (d0 0) (d1 0))
+    (declare (-int-) j f d0 d1)
+    ;; fix v-es
+    (when (not (idx-emptyp v-es))
+      (with-edges (e)
+        (for (i 0 (+ max-degree 1))
+          (declare (-int-) i)
+          (setq f (v-es e.v0 i))
+          (v-es e.v0 j (v-es e.v0 i))
+          (when (<> f e) (incr j))
+          (when (<> f -1) (incr d0)) )
+        (assert (= j (+ max-degree 1)))
+                
+        (setq j 0)
+        (for (i 0 (+ max-degree 1))
+          (declare (-int-) i)
+          (setq f (v-es e.v1 i))
+          (v-es e.v1 j (v-es e.v1 i))
+          (when (<> f e) (incr j))
+          (when (<> f -1) (incr d1)) )
+        (assert (= j (+ max-degree 1))))
+
+      (setq f (- (length edges) 1))
+      (with-edges (f)
+        (for (i 0 max-degree)
+          (declare (-int-) i)
+          (when (= (v-es f.v0 i) f)
+            (v-es f.v0 i e) ))
+        (for (i 0 max-degree)
+          (declare (-int-) i)
+          (when (= (v-es f.v1 i) f)
+            (v-es f.v1 i e) ))
+        (edges e 0 (edges f 0))
+        (edges e 1 (edges f 1))
+        (idx-extend! edges 0 -1) ))
+    
+;;     (when (not (idx-emptyp dhist))
+;;       (assert (<> d0 0))
+;;       (assert (<> d1 0))
+;;       (decr (dhist d0))
+;;       (incr (dhist (1- d0)))
+;;       (decr (dhist d1))
+;;       (incr (dhist (1- d1))) ))
+    )
+  ())
+
+(defmethod IGraph remove-edges-adjacent-to (v)
+  (declare (-int-) v)
+  (check-itable)
+  (while (<> (v-es v 0) -1)
+    (==> this remove-edge (v-es v 0)) )
+  (while (<> (v-es v 1) -1)
+    (==> this remove-edge (v-es v 1)) )
+  ())
+  
+
+;; #? (==> <IGraph> add-edge <v0> <v1>)
+;; ;; Add an edge connecting vertices <v0> and <v1>.
+;; (defmethod IGraph add-edge (v0 v1)
+;;   (declare (-int-) v0 v1)
+;;   (when (not (and (> v0 -1) (< v0 nv)))
+;;     (error "not a valid vertex") )
+;;   (when (not (and (> v1 -1) (< v1 nv)))
+;;     (error "not a valid vertex") )
+
+;;   (array-extend! edges 0 1)
+;;   (edges 0 v0)
+;;   (edges 1 v1)
+;;   (==> this discard-secondary-data) )
+
+
+#? (==> <IGraph> branches)
+;; Return branches as an iterator.
+(defmethod IGraph branches ()
+  (new IGraphBranchIterator nv edges v-es) )
+
+
+(defclass GraphIndicator object
+  ((-obj- (SmallIntSet)) vs)    ; a subset of vertices
+  ((-obj- (SmallIntSet)) es) )  ; a subset of edges
+
+(defmethod GraphIndicator GraphIndicator (vs es)
+  (declare (-obj- (SmallIntSet)) vs)
+  (declare (-obj- (SmallIntSet)) es)
+  (setq :this:vs vs)
+  (setq :this:es es)
+  ())
+
+(dhc-make-class () IGraph GraphIndicator)
+
+;;
+;; graph functions
+;; 
+
+#? (take-igraph <GraphIndicator> <IGraph>)
+;; Create a new IGraph object representing the indicated subgraph.
+(defun take-igraph (gi g)
+  (declare (-obj- (IGraph)) g)
+  (declare (-obj- (GraphIndicator)) gi)
+  (when (or (< (==> :gi:vs minimum) 0)
+            (>= (==> :gi:vs maximum) :g:nv))
+    (error "not a valid indicator: vertices out of bounds") )
+  (when (or (< (==> :gi:es minimum) 0)
+            (>= (==> :gi:es maximum) (length :g:edges)))
+    (error "not a valid indicator: edges out of bounds") )
+
+  (let ((vii (int-array* :g:nv))   ; inverse index
+        (edges (int-array* (==> :gi:es number-of-items) 2)) )
+    (array-clear vii -1)
+    (do ((v :gi:vs) (i (ints)))
+      (assert (= (vii v) -1))
+      (vii v i) )
+    (do ((e edges) (ie :gi:es))
+      (declare (-int-) ie)
+      (let ((e0 (vii (:g:edges ie 0))) (e1 (vii (:g:edges ie 1))))
+        (declare (-int-) e0 e1)
+        (when (or (= e0 -1) (= e1 -1))
+          (error (sprintf "invalid edge in graph indicator (%d)" ie)) )
+        (e 0 e0)
+        (e 1 e1) ))
+
+    (new IGraph (==> :gi:vs number-of-items) edges) ))
+
+(dhc-make "graph_functions" take-igraph)
