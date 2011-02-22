@@ -340,7 +340,7 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
       strcpy(bundle->name, tmpname("/tmp","bundle"));
 #endif
       sprintf(cmd, 
-	      "cc -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"", 
+	      "ld -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"", 
 	      fname, bundle->name);
       nsbundle_error = "Cannot create bundle from object file";
       if (system(cmd) == 0)
