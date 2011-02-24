@@ -2949,8 +2949,7 @@ define_symbol_of_main_program(const char *exec)
 #if defined(__CYGWIN32__) || defined(WIN32)
     if (! abfd)
       {
-        char *l = malloc(strlen(exec)+8);
-        ASSERT(l);
+        char *l = xmalloc(strlen(exec)+8);
         strcpy(l, exec);
         strcat(l, ".exe");
         abfd = bfd_openr(l, "default");

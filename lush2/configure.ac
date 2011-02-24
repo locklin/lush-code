@@ -57,20 +57,32 @@ esac
 # Overrides
 # ----------------------------------------
 
-ac_with_snapshot_gc=no
+require_readline=yes
+AC_ARG_WITH(readline,
+    AC_HELP_STRING([--without-readline],
+        [Build Lush without command line editing support.]),
+    [require_readline=$withval])
+
+require_bfd=yes
+AC_ARG_WITH(bfd,
+    AC_HELP_STRING([--without-bfd],
+        [Build Lush without the BFD library.]),
+    [require_bfd=$withval])
+
+require_snapshot_gc=no
 AC_ARG_WITH(snapshot-gc,
-    AC_HELP_STRING([--with-snapshot-gc], [Spawn child process for garbage collection]),
+    AC_HELP_STRING([--with-snapshot-gc], [Use child processes for garbage collection.]),
     [ if test $withval != no ; then
-        ac_with_snapshot_gc=yes
+        require_snapshot_gc=yes
     fi ])
-if test $ac_with_snapshot_gc = yes ; then
+if test $require_snapshot_gc = yes ; then
     AC_DEFINE(MM_SNAPSHOT_GC,1,[Define when compiling MM with snapshot GC.])
 fi
     
 ac_have_mpi=no
 AC_ARG_WITH(mpi,
             AC_HELP_STRING([--with-mpi],
-                       [Force compilation with MPI]),
+                       [Build Lush with MPI support.]),
         [ if test $withval != no ; then
             ac_have_mpi=yes
           fi ] )
@@ -132,25 +144,14 @@ AC_CHECK_LIB(dld,shl_load)
 AC_CHECK_LIB(util,openpty)
 
 # NSModule API
-require_bfd=yes
 AC_CHECK_FUNCS(NSLinkModule,[require_bfd=no])
 
 # bfd
-AC_ARG_WITH(bfd,
-    AC_HELP_STRING([--without-bfd],
-        [Compile Lush without the BFD library.]),
-    [require_bfd=$withval])
-
 if test x$require_bfd = xno ; then
     BFD_YES='#'
 else
     BFD_YES=''
     has_bfd=yes
-    AC_CHECK_LIB(iberty, xmalloc)
-    if test $ac_cv_lib_iberty_xmalloc = no; then
-      AC_CHECK_LIB(mmalloc, mmalloc)
-      AC_CHECK_LIB(iberty, xcalloc)
-    fi
     AC_CHECK_HEADER(bfd.h,,has_bfd=no)
     AC_CHECK_LIB(bfd, bfd_init,,[has_bfd=no])
 fi
@@ -248,12 +249,13 @@ AC_SUBST(X_YES)
 # threads
 AC_PATH_PTHREAD
 
-# readline
-AC_CHECK_LIB(curses,tputs)
-AC_CHECK_LIB(readline,readline)
+# libreadline
+if test $require_readline = yes; then
+    AC_CHECK_LIB(readline,readline)
+fi
+
+# libiconv
 AC_CHECK_LIB(iconv,libiconv_open)
-
-
 
 # ----------------------------------------
 # Header Files
@@ -269,7 +271,9 @@ AC_CHECK_HEADERS(unistd.h sys/mman.h termios.h pty.h util.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h fenv.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/types.h sys/ttold.h)
 AC_CHECK_HEADERS(sys/time.h sys/timeb.h locale.h bfd.h)
-AC_CHECK_HEADERS(readline/readline.h readline/history.h)
+if test $require_readline = yes; then
+    AC_CHECK_HEADERS(readline/readline.h readline/history.h)
+fi
 AC_SYS_LARGEFILE
 
 if test $ac_have_mpi = yes ; then
