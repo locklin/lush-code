@@ -38,6 +38,9 @@
 
 *********************************************************************** */
 
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE
+#endif
 
 /* Config */
 #ifdef HAVE_CONFIG_H
@@ -47,7 +50,6 @@
 #include "lushmake.h"
 
 /* UNIX header files */
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>

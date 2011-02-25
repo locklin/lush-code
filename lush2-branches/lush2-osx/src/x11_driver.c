@@ -76,7 +76,11 @@
 # undef class
 #endif
 
-//typedef unsigned int   uint;
+typedef unsigned int   _uint;  // avoid compiler warning because of redefine
+#ifdef uint
+# undef uint
+#endif
+#define uint _uint
 
 /* ============================  X11DRIVER STRUCTURES */
 
