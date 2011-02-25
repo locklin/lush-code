@@ -128,6 +128,10 @@
 # endif
 #endif
 
+#ifndef HAVE_RL_GETC
+# undef RL_READLINE_VERSION    /* not a readline we can work with (MacOS ?) */
+#endif
+
 typedef RETSIGTYPE (*SIGHANDLERTYPE)();
 
 

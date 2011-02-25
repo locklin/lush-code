@@ -306,6 +306,7 @@ AC_CHECK_FUNCS(tanh dlopen sigsetjmp waitpid openpty)
 AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(gethostbyname flockfile sysconf fpathconf tcsetattr)
 AC_CHECK_FUNCS(setenv putenv fseeko ftello)
+AC_CHECK_FUNCS(rl_getc)
 AC_FUNC_MBRTOWC
 AC_CHECK_FUNCS(setlocale nl_langinfo)
 

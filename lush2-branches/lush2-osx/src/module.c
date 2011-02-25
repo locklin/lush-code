@@ -177,7 +177,6 @@ static int
 nsbundle_exec(nsbundle_t *bundle)
 {
   NSObjectFileImage nsimg = bundle->nsimage;
-  int changed = 0;
   int savedexecutable = bundle->executable;
   if (bundle->recurse)
     {
