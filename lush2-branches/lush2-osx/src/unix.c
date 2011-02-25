@@ -38,10 +38,6 @@
 
 *********************************************************************** */
 
-#ifdef __APPLE__
-#define _DARWIN_C_SOURCE
-#endif
-
 /* Config */
 #ifdef HAVE_CONFIG_H
 # include "lushconf.h"
