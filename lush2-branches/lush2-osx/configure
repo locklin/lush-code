@@ -603,6 +603,8 @@ CC_EXP_FLAG
 SOEXT
 LDCC
 CPP_YES
+PTHREAD_FLAGS
+PTHREAD_LIBS
 X_YES
 PKGCONFIG
 X_EXTRA_LIBS
@@ -715,7 +717,9 @@ CCC
 F77
 FFLAGS
 CPP
-XMKMF'
+XMKMF
+PTHREAD_LIBS
+PTHREAD_FLAGS'
 
 
 # Initialize some variables set by options.
@@ -1365,6 +1369,10 @@ Some influential environment variables:
   FFLAGS      Fortran 77 compiler flags
   CPP         C preprocessor
   XMKMF       Path to xmkmf, Makefile generator for X Window System
+  PTHREAD_LIBS
+              Flags for linking pthread programs.
+  PTHREAD_FLAGS
+              Flags for compiling pthread programs.
 
 Use these variables to override the choices made by `configure' or to help
 it to find libraries and programs with nonstandard names/locations.
@@ -6524,7 +6532,201 @@ $as_echo "#define HAVE_XFT 1" >>confdefs.h
 
 
 # threads
-# AC_PATH_PTHREAD
+
+
+acx_pthread_ok=no
+# First, check if the POSIX threads header, pthread.h, is available.
+# If it isn't, don't bother looking for the threads libraries.
+ac_fn_c_check_header_mongrel "$LINENO" "pthread.h" "ac_cv_header_pthread_h" "$ac_includes_default"
+if test "x$ac_cv_header_pthread_h" = x""yes; then :
+
+else
+  acx_pthread_ok=noheader
+fi
+
+
+# We must check for the threads library under a number of different
+# names; the ordering is very important because some systems
+# (e.g. DEC) have both -lpthread and -lpthreads, where one of the
+# libraries is broken (non-POSIX).
+# First of all, check if the user has set any of the PTHREAD_LIBS,
+# etcetera environment variables, and if threads linking works.
+if test x${PTHREAD_LIBS+set} = xset ||
+   test x${PTHREAD_FLAGS+set} = xset ; then
+        save_CFLAGS="$CFLAGS"
+        CFLAGS="$CFLAGS $PTHREAD_FLAGS"
+        save_CXXFLAGS="$CXXFLAGS"
+        CXXFLAGS="$CXXFLAGS $PTHREAD_FLAGS"
+        save_LIBS="$LIBS"
+        LIBS="$PTHREAD_LIBS $LIBS"
+        { $as_echo "$as_me:${as_lineno-$LINENO}: checking provided PTHREAD_LIBS/PTHREAD_FLAGS." >&5
+$as_echo_n "checking provided PTHREAD_LIBS/PTHREAD_FLAGS.... " >&6; }
+        cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char pthread_join ();
+int
+main ()
+{
+return pthread_join ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  acx_pthread_ok=yes
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: $acx_pthread_ok" >&5
+$as_echo "$acx_pthread_ok" >&6; }
+        if test x"$acx_pthread_ok" = xno; then
+                PTHREAD_LIBS=""
+                PTHREAD_FLAGS=""
+        fi
+        LIBS="$save_LIBS"
+        CFLAGS="$save_CFLAGS"
+        CXXFLAGS="$save_CXXFLAGS"
+fi
+# Create a list of thread flags to try.  Items starting with a "-" are
+# C compiler flags, and other items are library names, except for "none"
+# which indicates that we try without any flags at all.
+acx_pthread_flags="pthreads none -Kthread -kthread lthread
+                   -pthread -pthreads -mthreads pthread
+                   --thread-safe -mt"
+# The ordering *is* (sometimes) important.
+# Some notes on the individual items follow:
+# pthreads: AIX (must check this before -lpthread)
+# none: in case threads are in libc; should be tried before -Kthread and
+#       other compiler flags to prevent continual compiler warnings
+# -Kthread: Sequent (threads in libc, but -Kthread needed for pthread.h)
+# -kthread: FreeBSD kernel threads (preferred to -pthread since SMP-able)
+# lthread: LinuxThreads port on FreeBSD (also preferred to -pthread)
+# -pthread: Linux/gcc (kernel threads), BSD/gcc (userland threads)
+# -pthreads: Solaris/gcc
+# -mthreads: Mingw32/gcc, Lynx/gcc
+# -mt: Sun Workshop C (may only link SunOS threads [-lthread], but it
+#      doesn't hurt to check since this sometimes defines pthreads too;
+#      also defines -D_REENTRANT)
+# pthread: Linux, etcetera
+# --thread-safe: KAI C++
+case "${host_cpu}-${host_os}" in
+        *solaris*)
+        # On Solaris (at least, for some versions), libc contains stubbed
+        # (non-functional) versions of the pthreads routines, so link-based
+        # tests will erroneously succeed.  (We need to link with -pthread or
+        # -lpthread.)  (The stubs are missing pthread_cleanup_push, or rather
+        # a function called by this macro, so we could check for that, but
+        # who knows whether they'll stub that too in a future libc.)  So,
+        # we'll just look for -pthreads and -lpthread first:
+        acx_pthread_flags="-pthread -pthreads pthread -mt $acx_pthread_flags"
+        ;;
+esac
+if test x"$acx_pthread_ok" = xno; then
+for flag in $acx_pthread_flags; do
+        case $flag in
+                none)
+                { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether pthreads work without any flags" >&5
+$as_echo_n "checking whether pthreads work without any flags... " >&6; }
+                ;;
+                -*)
+                { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether pthreads work with $flag" >&5
+$as_echo_n "checking whether pthreads work with $flag... " >&6; }
+                PTHREAD_FLAGS="$flag"
+                ;;
+                *)
+                { $as_echo "$as_me:${as_lineno-$LINENO}: checking for the pthreads library -l$flag" >&5
+$as_echo_n "checking for the pthreads library -l$flag... " >&6; }
+                PTHREAD_LIBS="-l$flag"
+                ;;
+        esac
+        save_LIBS="$LIBS"
+        save_CFLAGS="$CFLAGS"
+        save_CXXFLAGS="$CXXFLAGS"
+        LIBS="$PTHREAD_LIBS $LIBS"
+        CFLAGS="$CFLAGS $PTHREAD_FLAGS"
+        CXXFLAGS="$CXXFLAGS $PTHREAD_FLAGS"
+        # Check for various functions.  We must include pthread.h,
+        # since some functions may be macros.  (On the Sequent, we
+        # need a special flag -Kthread to make this header compile.)
+        # We check for pthread_join because it is in -lpthread on IRIX
+        # while pthread_create is in libc.  We check for pthread_attr_init
+        # due to DEC craziness with -lpthreads.  We check for
+        # pthread_cleanup_push because it is one of the few pthread
+        # functions on Solaris that doesn't have a non-functional libc stub.
+        # We try pthread_create on general principles.
+        cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <pthread.h>
+int
+main ()
+{
+pthread_t th; pthread_join(th, 0);
+                     pthread_attr_init(0); pthread_cleanup_push(0, 0);
+                     pthread_create(0,0,0,0); pthread_cleanup_pop(0);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  acx_pthread_ok=yes
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+        LIBS="$save_LIBS"
+        CFLAGS="$save_CFLAGS"
+        CXXFLAGS="$save_CXXFLAGS"
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: $acx_pthread_ok" >&5
+$as_echo "$acx_pthread_ok" >&6; }
+        if test "x$acx_pthread_ok" = xyes; then
+                break;
+        fi
+        PTHREAD_LIBS=""
+        PTHREAD_FLAGS=""
+done
+fi
+# Various other checks:
+if test "x$acx_pthread_ok" = xyes; then
+        save_LIBS="$LIBS"
+        LIBS="$PTHREAD_LIBS $LIBS"
+        save_CFLAGS="$CFLAGS"
+        CFLAGS="$CFLAGS $PTHREAD_FLAGS"
+        save_CXXFLAGS="$CXXFLAGS"
+        CXXFLAGS="$CXXFLAGS $PTHREAD_FLAGS"
+        { $as_echo "$as_me:${as_lineno-$LINENO}: checking if more special flags are required for pthreads" >&5
+$as_echo_n "checking if more special flags are required for pthreads... " >&6; }
+        flag=no
+        case "${host_cpu}-${host_os}" in
+                *-aix* | *-freebsd*)     flag="-D_THREAD_SAFE";;
+                *solaris* | alpha*-osf*) flag="-D_REENTRANT";;
+        esac
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: ${flag}" >&5
+$as_echo "${flag}" >&6; }
+        if test "x$flag" != xno; then
+                PTHREAD_FLAGS="$flag $PTHREAD_FLAGS"
+        fi
+        LIBS="$save_LIBS"
+        CFLAGS="$save_CFLAGS"
+        CXXFLAGS="$save_CXXFLAGS"
+fi
+
+
+# execute ACTION-IF-FOUND/ACTION-IF-NOT-FOUND:
+if test x"$acx_pthread_ok" = xyes; then
+
+$as_echo "#define HAVE_PTHREAD 1" >>confdefs.h
+
+        :
+else
+        :
+fi
+
 
 # readline
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for tputs in -lcurses" >&5

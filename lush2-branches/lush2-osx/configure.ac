@@ -247,7 +247,7 @@ AC_SUBST(X_CFLAGS)
 AC_SUBST(X_YES)
 
 # threads
-# AC_PATH_PTHREAD
+AC_PATH_PTHREAD
 
 # readline
 AC_CHECK_LIB(curses,tputs)
