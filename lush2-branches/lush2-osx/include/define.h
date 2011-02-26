@@ -228,10 +228,6 @@ typedef void* mptr;  /* for managed addresses */
 # endif
 #endif
 
-#ifdef HAVE_ALLOCA_H
-# include <alloca.h>
-#endif
-
 /* --------- GENERIC NAMES --------------- */
 
 /* These macros may be redefined in
