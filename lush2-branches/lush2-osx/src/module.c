@@ -28,6 +28,7 @@
 #include "header.h"
 #include "dh.h"
 
+
 /* ------- DLDBFD/NSBUNDLE HEADERS ------- */
 
 #if HAVE_LIBBFD
@@ -35,6 +36,7 @@
 # include "dldbfd.h"
 #elif HAVE_NSLINKMODULE
 # define NSBUNDLE 1
+# pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 # include <mach-o/dyld.h>
 #endif
 
