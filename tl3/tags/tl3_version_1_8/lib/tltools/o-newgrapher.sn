@@ -1,0 +1,2125 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;
+;;;  grapher.sn
+;;;  Graphic window with scrollbar and so on
+;;;  Copyright (C) 1993 Neuristique SA
+;;;  $Id: o-newgrapher.sn,v 1.1.1.1 2002-04-16 17:37:35 leonb Exp $
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? *** New Grapher
+
+
+
+;;; ----------------------------------------
+;;; D-DIAGRAM
+;;; ----------------------------------------
+
+
+
+#? ** Diagram Protocol
+;; A diagram object to include in a new style grapher should be a
+;; subclass of <d-diagram>.  It must handle messages <configure>,
+;; <setup> and <paint>.
+
+
+(defclass d-diagram object
+  (title "")
+  )
+
+;;; ----------------------------------------
+
+#? (==> <d-diagram> configure <w> <h> <hscrollbar> <vscrollbar>)
+;; This message is called when the diagram is installed in the new
+;; style grapher and when the diagram rectangle is changed.  It must
+;; configure the scrollbars (message <setrange>) according to the
+;; diagram rectangle size.
+
+(defmethod d-diagram configure(w h &optional hs vs)
+  (when hs (==> hs setrange 0 0))
+  (when vs (==> vs setrange 0 0))
+  )
+
+;;; ----------------------------------------
+
+#? (==> <d-diagram> setup <menubar> <toolbar>)
+;; This message is called when the diagram is installed in the new
+;; style grapher.  It must append its own control objects menus to the row <menubar>.
+
+(defmethod d-diagram setup(menubar toolbar)
+  () )
+
+;;; ----------------------------------------
+
+#? (==> <d-diagram> paint <x> <y> <w> <h> <hdata> <vdata> <colorp>)
+;; This message is called whenever the new style grapher is repainted.
+;; Flag <colorp> tells if color is available.
+
+(defmethod d-diagram paint(x y w h hdata vdata colorp)
+  () )
+
+;;; ----------------------------------------
+
+#? (==> <d-diagram> print <destinantion> <w> <h> <hdata> <vdata>)
+;; This message is called to save the graphics into a file <filename>.
+
+(defmethod d-diagram print(destination w h hdata vdata)
+  (let ((window window))
+    (print-window w h destination)
+    (clip 0 0 w h)
+    (==> diagobj paint 0 0 w h hdata vdata ()) ) )
+
+;;; ----------------------------------------
+
+#? (==> <d-diagram> save <filename> <w> <h> <hdata> <vdata>)
+;; This message is called to save the graphics into a file <filename>.
+
+(defmethod d-diagram save(filename w h hdata vdata)
+  (let ((window (ps-window 0 0 w h filename)))
+    (clip 0 0 w h)
+    (==> diagobj paint 0 0 w h hdata vdata ()) ) )
+
+;;; ----------------------------------------
+
+#? (==> <d-diagram> event <event>)
+;; This message is called whenever the area receives an event
+
+(defmethod d-diagram event(event)
+  'ignored )
+
+
+
+;;; ----------------------------------------
+;;; C-NEWGRAPHER
+;;; ----------------------------------------
+
+
+#? ** C-NewGrapher
+;; A new grapher is an object able to display a diagram object.
+
+(defclass c-newgrapher windowobject
+  toolbar
+  menubar
+  menuzero
+  hscroll
+  vscroll
+  freq
+  lpreq
+  diagx
+  diagy
+  diagw
+  diagh
+  diagr
+  diagobj  )
+
+
+
+;;; ----------------------------------------
+;;; GEOMETRY MANAGEMENT
+
+(defmethod c-newgrapher manage-geometry()
+  (let (((x y w h) rect)
+	((xt yt wt ht) :toolbar:rect)
+	((xr yr wr hr) :vscroll:rect)
+	((xb yb wb hb) :hscroll:rect) )
+    (setq w (max w (+ wr 10)))
+    (setq h (max h (+ ht hb 10)))
+    (setq diagx 0)
+    (setq diagy ht)
+    (setq diagw (- w wr))
+    (setq diagh (- h (+ ht hb)))
+    (setq diagr (list diagx diagy diagw diagh))
+    (==> toolbar geometry 0 0 w ht)
+    (==> vscroll geometry (- w wr) ht wr diagh)
+    (==> hscroll geometry 0 (- h hb) diagw hb)
+    (when diagobj
+	  (==> diagobj configure (- diagw 4) (- diagh 4) hscroll vscroll) ) ) )
+
+    
+;;; ----------------------------------------
+;;; REPAINTING
+
+(defmethod c-newgrapher backpaint-color()
+  (==> this (windowobject . backpaint-color))
+  (when (collide-rect (clip) diagr)
+	(gsave
+	 (addclip diagr)
+	 (fill-down-rect diagx diagy diagw diagh color-bg)
+	 (when diagobj
+	       (==> diagobj paint (+ diagx 2) (+ diagy 2) (- diagw 4) (- diagh 4)
+		    (==> hscroll getdata) (==> vscroll getdata) t ) ) ) ) )
+
+
+(defmethod c-newgrapher backpaint-bw()
+  (==> this (windowobject . backpaint-bw))
+  (when (collide-rect (clip) diagr)
+	(gsave
+	 (draw-rect diagx diagy diagw diagh)
+	 (addclip diagr)
+	 (when diagobj
+	       (==> diagobj paint (+ diagx 2) (+ diagy 2) (- diagw 4) (- diagh 4)
+		    (==> hscroll getdata) (==> vscroll getdata) () ) ) ) ) )
+
+
+;;; ----------------------------------------
+;;; EVENTS
+
+(defmethod c-newgrapher propagate-event(x y event)
+  (if (and (not modalobject) diagobj (point-in-rect x y diagr))
+      (==> diagobj event event)
+    (==> this (windowobject . propagate-event) x y event) ) )
+
+
+;;; ----------------------------------------
+;;; TLP INDEPENDENCY
+
+(if (not (functionp ml))
+    (dmd ml args `(quote ,(car args))) )
+
+(if (not (classp c-filerequester))
+    (setq c-filerequester filerequester) )
+
+
+
+;;; ----------------------------------------
+;;; CONSTRUCTOR
+
+#? (new c-newgrapher <name> &optional <diagram> <bb>)
+;; Creates a new new style grapher window with the specified name
+;; <name>, the specified optional bounding box <bb>. The
+;; diagram is initially set to <diagram>.
+
+(defmethod c-newgrapher makemenu()
+  ;; File requester
+  (setq freq (new c-filerequester this "ps"))
+  (==> freq setparm 
+       (ml "Save into file (.ps):" 
+	   "Enregistrer dans le fichier (.ps):")
+       'ask-oldfile )
+  ;; Print requester
+  (setq lpreq (new PrintRequester this))
+  ;; First menu
+  (setq menuzero (new menu (ml "View" "Vue")
+		      (ml "Print" "Imprimer")
+		      (lambda(c) (==> thiswindowobject print-action))
+		      (ml "Save" "Enregistrer")
+		      (lambda(c) (==> thiswindowobject save-action))
+		      (ml "Close" "Fermer")
+		      (lambda(c) (==> thiswindowobject delete)) ) ) )
+
+(defmethod c-newgrapher c-newgrapher(name &optional diagram bb)
+  (when ~bb (setq bb '(0 0 640 400)))
+  (let (((x y w h) bb))
+    (==> this makemenu)
+    (==> this windowobject x y w h (or name :diagram:title)
+	 (setq toolbar (new column (setq menubar (new row menuzero))))
+	 (setq hscroll (new HScrollbar 0 (lambda(c) (==> thiswindowobject expose))))
+	 (setq vscroll (new VScrollbar 0 (lambda(c) (==> thiswindowobject expose)))) )
+    (when diagram
+      (==> this setdiagram diagram) )
+    ) )
+
+;;; ----------------------------------------
+;;; ERROR MANAGEMENT
+
+(defmethod c-newgrapher error(&optional s)
+  (==> (new ErrorRequester this) popuphard (or s (errname))) )
+
+
+
+;;; ----------------------------------------
+;;; UTILITIES
+
+#? (==> <newgrapher> setdiagram <diagram>)
+;; Replace the diagram in <newgrapher> by a new diagram <diagram>.
+
+(defmethod c-newgrapher setdiagram(diagram)
+  (let ((lock (new GeometryLock this)))
+    (let ((lock (new GeometryLock toolbar)))
+      (let ((lock (new GeometryLock menubar)))
+	(setq diagobj diagram)
+	(==> hscroll setdata 0)
+	(==> vscroll setdata 0)
+	(==> toolbar removall)
+	(==> menubar removall)
+	(==> menubar insert menuzero) 
+	(==> toolbar insert menubar)
+	(==> diagobj setup menubar toolbar) ) ) )
+  (==> this expose) )
+
+
+;;; ----------------------------------------
+
+#? (==> <c-grapher> print-action [<destination>])
+;; Prints the object displayed in a grapher object.
+
+(defmethod c-newgrapher print-action(&optional destination)
+  (when (not destination)
+	(when (==> lpreq popuplock)
+	      (setq destination (==> lpreq getdata)) ) )
+  (when (and diagobj destination diagw diagh)
+	(on-error (==> thiswindowobject error)
+		  (==> diagobj print destination
+		    (- diagw 4) (- diagh 4)
+		    (==> hscroll getdata) (==> vscroll getdata) ) ) ) )
+
+
+;;; ----------------------------------------
+
+#? (==> <c-grapher> save-action [<fname>])
+;; Saves the object displayed in a grapher object into file <fname>.
+
+(defmethod c-newgrapher save-action(&optional fname)
+  (when (not fname)
+	(when (==> freq popuplock) 
+	      (setq fname (==> freq getdata)) ) )
+  (when (and diagobj fname diagw diagh)
+	(on-error (==> thiswindowobject error)
+		  (==> diagobj save fname
+		       (- diagw 4) (- diagh 4)
+		       (==> hscroll getdata) (==> vscroll getdata) ) ) ) )
+
+  
+;;; ----------------------------------------
+;;; C-NEWMULTIGRAPHER
+;;; ----------------------------------------
+
+
+#? ** C-NewMultiGrapher
+;; This class is similar to a standard mew style grapher with an
+;; additionnal menu for selecting one graphic out of several.
+
+(defclass c-newmultigrapher c-newgrapher
+  menudiag
+  diagrams )
+
+
+;;; ----------------------------------------
+
+#? (new c-newmultigrapher <name> <diagrams> &optional <bb>)
+;; Creates a new new style multigrapher window named <name> with
+;; bounding box <bb>. Argument diagrams must be a list with the
+;; following format:
+;;.VP
+;; ( (<menutitle1> <diagram1>) ... (<menutitleN> <diagramN>) )
+
+
+(defmethod c-newmultigrapher makemenu()
+  (==> this (c-newgrapher . makemenu))
+  (setq menudiag (new menu (ml "Graphs" "Graphes")))
+  (setq menuzero (new row menuzero menudiag))
+  (each (((item diagram) diagrams))
+	(==> menudiag insert
+	     (new menuitem item
+		  (eval `(lambda(c) 
+			   (==> :c:itscontainer cleardata)
+			   (==> c setdata t)
+			   (==> thiswindowobject setdiagram ,diagram) ) ) ) ) ) )
+  
+(defmethod c-newmultigrapher c-newmultigrapher(name adiagrams &optional bb)
+  (setq diagrams adiagrams)
+  (==> this c-newgrapher name (cadar diagrams) bb) 
+  (==> (car (==> menudiag finditems 0)) setdata t) )
+
+
+
+
+;;; ----------------------------------------
+;;; PREDEFINED DIAGRAMS
+;;; ----------------------------------------
+
+#? ** Predefined diagrams
+
+
+
+;;; ----------------------------------------
+;;; D-TEXT: TEXT DIAGRAM
+;;; ----------------------------------------
+
+#? (new d-text <title> <lines>)
+;; This diagram displays a text in a new style grapher.
+;; String <title> is displayed on top of the grapher.  
+;; The strings in list <line> are then displayed below the title.
+;; Example:
+;;.VP
+;; (new d-text "title" (reverse (files)))
+
+(defclass d-text d-diagram
+  lines )
+
+(defmethod d-text d-text(atitle alines)
+  (setq title (or atitle "TL Text")
+	lines alines) )
+
+(defmethod d-text configure(w h &optional hs vs)
+  (font "Courier-12")
+  (let ((tw (sup (all ((line lines)) (text-width line)))))
+    (when hs (==> hs setrange 0 tw w))
+    (when vs (==> vs setrange 0 (length lines) (div h (+ 6 (text-height "0")))))
+    ) )
+
+(defmethod d-text paint(x y w h hpos vpos colorp)
+  (setq x (- x hpos))
+  (when (< vpos 1)
+	(font "Helvetica-Bold-18")
+	(let ((tw (text-width title))
+	      (th (text-height title)))
+	  (draw-text (max (+ x 6) (+ x (div w 2) (- (div tw 2))))
+		     (+ y (* 1.5 th)) title)
+	  (incr y (* th 2))
+	  (incr h (* th -2)) 
+	  (setq vpos 1) ) )
+  (font "Courier-12")
+  (let ((th (+ 6 (text-height "0"))))
+    (each ((line (nthcdr (1- vpos) lines)))
+	  (incr y th)
+	  (when (> h 0)
+		(draw-text (+ x 6) y line)
+		(incr h (- th)) ) ) ) )
+
+;; disabled to match the doc (lyb 0994)
+;;(defmethod d-text save(fname w h hpos vpos)
+;;  (writing fname
+;;	   (printf "*** %s ***\n\n" title)
+;;	   (each ((line lines))
+;;		 (printf "%s\n" line) ) ) )
+
+;;; ----------------------------------------
+;;; D-PIE: PIE DIAGRAM
+;;; ----------------------------------------
+
+
+#? (new d-pie <title> <data>)
+;; The diagram class <d-pie> displays a pie diagram in a new style
+;; grapher.  Creates a new diagram class <d-pie> suitable for a new
+;; grapher.  String <title> is displayed on top of the diagram.
+;; Argument <data> must have form:
+;;.VP
+;; ( (<ratio1> <color1> <label1>)
+;;   ...
+;;   (<ratioN> <colorN> <labelN>) )
+;;.PP
+;; The pie diagram contains <N> pie slices whose relative sizes if
+;; given by the numbers <ratio1> to <ratioN>.  Each slice is filled
+;; with the X11 color named after the strings <color1> to <colorN>. A
+;; label <label1> to <labelN> is displayed close to each slice.
+;;
+;; Example:
+;;.VP
+;; (new d-pie "hello" 
+;;     `((5 "blue" "Blue side")
+;;       (50 "red" "Red part")  
+;;       (20 "yellow" "Yellow slice")
+;;       (10 "brown" "Brownies") ) )
+
+(defclass d-pie d-diagram
+  parts
+  (minw 500)
+  (minh 350) )
+
+(defmethod d-pie d-pie(atitle adata)
+  (setq title (or atitle "TL Pie"))
+  (setq parts adata) )
+
+(defmethod d-pie configure(w h &optional hs vs)
+  (when hs (==> hs setrange 0 minw w))
+  (when vs (==> vs setrange 0 minh h))
+  )
+
+(quote
+ ;; Example of using setup.
+ (defmethod d-pie setup(menubar toolbar)
+   (==> menubar insert
+	(new menu "Pie zoom" "50%" (lambda(c) ())
+	     "100%" (lambda(c) ()) ) )
+   (==> toolbar insert
+	(new row 
+	     (new tinybutton "kill window" (lambda(c) (==> thiswindowobject delete)))
+	     (new string "buckets:")
+	     (new editnumber 5 4) ) ) ) )
+
+(defmethod d-pie paint(x y w h hpos vpos colorp)
+  (setq x (- x hpos))
+  (setq y (- y vpos))
+  (setq w (max minw w))
+  (setq h (max minh h))
+  
+  (font "Helvetica-Bold-18")
+  (let ((tw (text-width title))
+	(th (text-height title)))
+    (draw-text (max (+ x 6) (+ x (div w 2) (- (div tw 2))))
+	       (+ y (* 1.5 th)) title)
+    (incr y (* th 2))
+    (incr h (* th -2)) )
+  
+  (let ((cx (+ x (div w 2)))
+	(cy (+ y (div h 2)))
+	(cr (div (min w h) 3)) 
+	(now 0)
+	(sum 0) 
+	(langle -1) )
+    (each (((ratio colname label) parts))
+	  (incr sum ratio))
+    (setq now 0)
+    (each (((ratio colname label) parts))
+	  (when (> ratio 0)
+		(let* ((newnow (+ now ratio))
+		       (start (int (/ (* 360 now) sum)))
+		       (end (int (/ (* 360 newnow) sum))) )
+		  (color (get-color colname))
+		  (if (> end start)
+		      (fill-arc cx cy cr start end) )
+		  (setq now newnow) ) ) )
+    (color color-fg)
+    (draw-circle cx cy cr)      
+    (font "Helvetica-12")
+    (setq now 0)
+    (each (((ratio colname label) parts))
+	  (when (> ratio 0)
+		(let* ((twopi (2* 3.141592654))
+		       (angle (* twopi (/ (int (/ (* 360 now) sum)) 360))))
+		  (draw-line cx cy 
+			     (+ cx (int (+ 0.5 (* cr (cos angle)))))
+			     (- cy (int (+ 0.5 (* cr (sin angle))))) ) )
+		(when label
+		      (incr langle (/ (2* (text-height "0")) cr))
+		      (setq langle (max langle (* 6.28 (/ (+ now (div ratio 2)) sum)) ))
+		      (when (numberp label) 
+			    (setq label (str label)) )
+		      (when (and (classp |DATE|) (is-of-class label |DATE|))
+			    (setq label (date-to-string label)) )
+		      (setq label (sprintf "%s (%d%%)" label (* 100 (/ ratio sum))))
+		      (let* ((ax (* 1.1 cr (cos langle)))
+			     (ay (* -1.1 cr (sin langle)))
+			     (tw (text-width label))
+			     (th (text-height label)) )
+			(cond
+			 ((and (>= ax 0) (>= ay 0))
+			  (draw-text (+ cx ax) (+ cy ay th) label))
+			 ((and (>= ax 0) (<= ay 0))
+			  (draw-text (+ cx ax) (+ cy ay) label))
+			 ((and (<= ax 0) (>= ay 0))
+			  (draw-text (+ cx ax (- tw)) (+ cy ay th) label))
+			 ((and (<= ax 0) (<= ay 0))
+			  (draw-text (+ cx ax (- tw)) (+ cy ay) label)) ) ) )
+		(incr now ratio) ) ) ) )
+
+  
+  
+;;; ----------------------------------------
+;;; D-HISTOGRAM: HISTOGRAM DIAGRAM
+;;; ----------------------------------------
+
+#? (new d-histogram <title> <parts>)
+;; This diagram displays an histogram in a new style grapher.  String
+;; <title> is displayed on top of the grapher.  List <parts> takes the
+;; following form:
+;;.VP
+;; ( (<size1> <color1> <label1>)
+;;   ...
+;;   (<sizeN> <colorN> <labelN>) )
+;;.PP
+;; The histogram contains <N> bars whose relative sizes if given by
+;; the numbers <size1> to <sizeN>.  Each bar is filled with the X11
+;; color named after the strings <color1> to <colorN>. A short label
+;; <label1> to <labelN> is displayed below each bar.
+;;
+;; Example:
+;;.VP
+;; (new d-histogram "title" 
+;;   '( (5 "blue" "A")
+;;      (50 "red" "B")  
+;;      (20 "yellow" "AA")
+;;      (10 "brown" "BB") ) ) )
+
+
+(defclass d-histogram d-diagram
+  parts
+  minw
+  (minh 350) )
+
+(defmethod d-histogram d-histogram(atitle adata)
+  (setq title (or atitle "TL Histogram"))
+  (setq parts adata) 
+  (let ((barw (max 10 (* 4 (sup (all ((part parts)) (len (last part))))))))
+    (setq minw (+ 100 (* (length parts) barw))) ) )
+
+(defmethod d-histogram configure(w h &optional hs vs)
+  (when hs (==> hs setrange 0 minw w))
+  (when vs (==> vs setrange 0 minh h))
+  )
+
+(defmethod d-histogram paint(x y w h hpos vpos colorp)
+  (setq x (- x hpos))
+  (setq y (- y vpos))
+  (setq w (max minw w))
+  (setq h (max minh h))
+
+  (font "Helvetica-Bold-18")
+  (let ((tw (text-width title))
+	(th (text-height title)))
+    (draw-text (max (+ x 6) (+ x (div w 2) (- (div tw 2))) )
+	       (+ y (* 1.5 th)) title)
+    (incr y (* th 2))
+    (incr h (* th -2)) )
+
+  (font "Helvetica-12")
+  (let* ((nparts (length parts))
+	 (barw (min 60 (/ (- w 100) nparts)))
+	 (bare (1+ (div barw 10)))
+	 (barl (+ x (div (- w (* nparts barw)) 2)))
+	 (bary (+ y h -40))
+	 (maxs (sup (mapcar car parts)))
+	 (barc (/ (- h 60) maxs)) )
+    (let* ((x barl)
+	   (y (+ bary (text-height "0") 6))
+	   (yy (+ y y (text-height "0") 6)) )
+      (each (((size colname label) parts))
+	    (when label
+		  (when (numberp label) 
+			(setq label (str label)) )
+		  (when (and (classp |DATE|) (is-of-class label |DATE|))
+			(setq label (date-to-string label)) )
+		  (if (= (left label 1) "@")
+		      (when (> x barl)
+			    (setq label (mid label 2))
+			    (draw-line x (- bary 2) x (+ bary 2))
+			    (gprintf (- x (div (text-width label) 2)) y 
+				     "%s" label ) )
+		    (gprintf (+ x (div (- barw (text-width label)) 2)) y 
+			     "%s" label ) )
+		  (setq y (- yy y)) )
+	    (incr x barw) ) )
+    (let ((x barl))
+      (each (((size colname label) parts))
+	    (color (get-color colname))
+	    (let ((sz (int (+ 0.5 (* size barc)))))
+	      (fill-rect (+ x bare) (- bary sz) (- barw (2* bare)) sz) )
+	    (incr x barw) ) )
+    (color color-fg)
+    (incr barl (- bare))
+    (draw-line barl bary (+ bare barl (* nparts barw)) bary)
+    (draw-line barl bary barl (+ y 20))
+    (each ((label (nice-scale 0 maxs)))
+	  (let ((y (- bary (* barc label)))
+		(lname (str label)))
+	    (draw-line (- barl 3) y (+ barl 2) y)
+	    (gprintf (- barl (+ 6 (text-width lname))) y "%s" lname) ) ) ) )
+
+
+;;; ----------------------------------------
+;;; D-CURVE: XD CURVE DIAGRAM
+;;; ----------------------------------------
+
+
+#? (new d-curve <data> &optional <op>)
+;; This diagram displays curves in a new style grapher.
+;; String <title> is displayed on top of the grapher.
+;; Argument <op> contains various information.
+;;
+;; The d-curve contains <N-1> curves whose values are taken from
+;; the vectors which are in the list <data>.
+;; Indeed, all these vectors must have the same size.
+;;
+;; Conventionaly, the first vector may be <()>, standing for a natural
+;; subscript matrix.
+;; When it is an effective matrix, it is assumed to be already
+;; sorted, in order to take full benefit of the clip information at
+;; repaint time.
+;;
+;; Optional argument <op> is an ''alist''
+;; which may include th following key values:
+;;.IP
+;; 'colors <color1> ... <colorn>
+;;
+;; Each curve is drawn with the X11 color
+;; named after the strings <color1> to <colorN>.
+;; The first color is not verty usefull since it is dedicated to the X axe.
+;;.IP
+;; 'colors <mark1> ... <markn>
+;;
+;; Each curve is drawn with the X11 color
+;; using graphical marks <mark1> to <markn>.
+;;.IP
+;; 'titles <name1> ... <nameN>
+;;
+;; Each curve is named with its label taken in <name1> to <nameN>.
+;;
+;;.IP
+;; 'types <type1> ... <typeN>
+;;
+;; Optional arguments <type1> to <typeN> provide information
+;; for defining the labels along the axes or inside the curve area.
+;; By default, labels are numerical arithmetic series.
+;; Valid types are |NUMBER|, |DATE|, (list |DATE| <from> [<to>]).
+;;
+;;.IP
+;; 'zoom
+;; This 
+
+(defclass d-curve d-diagram
+
+  todo  ;; list of lambda calls before repainting
+
+  dd
+
+  xdata
+  xscale
+  xaxe
+
+  ydatas
+  ycolors
+  ymarks
+  yscale
+  yaxe
+
+  ycolors0
+  ymarks0
+
+  rect        ;; overall rect in window according to last paint and configure info
+  curve-rect  ;; visible curve rect in window
+  domain-rect ;; visible curve rect in values space
+  domain      ;; full    curve rect in values space
+  legend-rects ;; each rect dedicated to a legend
+  curve-highlight
+
+  rwinit  ;; initial ratio of full curve pixel width  / visible pixel width
+  rhinit  ;; initial ratio of full curve pixel height / visible pixel height
+
+  badscroll
+
+  options
+  )
+
+;;; title
+(defmethod d-curve d-curve (data &optional opts)
+
+  ;; options formated as alists.
+  (setq options (cons (list ()) (all ((o opts)) (or (consp o) (cons o t)))))
+
+  (setq xdata  (car data))
+  (setq ydatas (cdr data))
+
+  ;; let us include X with Ys temporarily.
+  (let* ((titles (alist-get 'titles options))
+	 (types  (alist-get 'types  options))
+	 )
+    (setq dd (new dataheader
+		  ()
+		  (mapfor (i 0 (1- (length data)))
+		    (or (nth i titles) (if (0= i) "X" (sprintf "Y%d" i))) )
+		  (mapfor (i 0 (1- (length data)))
+		    (or (nth i types) '|NUMBER|) )
+		  )) )
+
+  (setq ycolors (alist-get 'colors options))
+  (setq ycolors (cdr ycolors))
+
+  (setq ymarks  (alist-get 'marks options))
+  (setq ymarks  (cdr ymarks))
+
+  (setq ycolors0 ycolors ymarks0 ymarks)
+  (==> this set-marks t)
+  (setq ymarks0 ymarks)
+  (==> this init-colors ycolors)
+
+  (setq xscale (new-scale (==> dd types 0)))
+  (setq xaxe   (new niceaxe xscale text-width 0.3 15))
+
+  (setq yscale (new-scale (==> dd types 1)))
+  (setq yaxe   (new niceaxe yscale font-fullheight 1 10))
+
+  (setq title (or (alist-get 'title options)
+		  (sprintf "%s  vs  %s"
+			   (apply concat (cdr (flatten (all ((ti (cdr (==> dd titles))))
+							 (list " , " ti)
+							 ))))
+			   (==> dd titles 0)
+			   )))
+
+  (let* ((xx0  (if xdata (inf-mat xdata) 0))
+	 (xx1  (if xdata (sup-mat xdata) (bound (car ydatas) 1)))
+	 (yy0  ())
+	 (yy1  ())
+	 (lyy0 (mapcar inf-mat ydatas))
+	 (lyy1 (mapcar sup-mat ydatas))
+	 )
+
+    ;; inf
+    (each ((yy lyy0))
+	  (when (and ~(nanp yy) (or ~yy0 (< yy yy0)))
+		(setq yy0 yy)
+		) )
+
+    ;; sup
+    (each ((yy lyy1))
+	  (when (and ~(nanp yy) (or ~yy1 (> yy yy1)))
+		(setq yy1 yy)
+		) )
+
+    ;; void curves
+    (when (or ~yy0 ~yy1)
+	  (error (ml "There is no valid point !" "Il n'y a aucun point valide!"))
+	  )
+
+    ;; flat curves
+    (when (= yy0 yy1)
+	  (setq yy0 (* yy0 0.5))
+	  (setq yy1 (* yy0 3))
+	  (when (= yy0 yy1)
+		(setq yy1 (1+ yy0))
+		) )
+
+    ;; narrow curves
+    (when (= xx0 xx1)
+	  (setq xx0 (* xx0 0.5))
+	  (setq xx1 (* xx0 3))
+	  (when (= xx0 xx1)
+		(setq xx1 (1+ xx0))
+		)
+    )
+
+    (setq domain (list xx0 yy0 (- xx1 xx0) (- yy1 yy0)))
+    )
+
+  (let (((xx0 yy0 ww0 hh0) domain)
+	(         wwi      ()) ;;; value range of initial window
+	(( x   y   w   h ) '(0 0 250 400)) ;;; approximated initial curve-rect
+	(          wi      ())
+	)
+    (setq wwi (min ww0
+		   (max 2 (* (/ w 5) ;; max number of points per window
+			     (if xdata
+				 (/ (* 3 (sdev-mat xdata))
+				    (max 1 (bound xdata 1)) ) ;; std delta value
+			       1))
+			) ))
+    (setq domain-rect (list xx0 yy0 wwi hh0))
+    (setq curve-rect  (list x y w h))
+    (setq rwinit (/ (==> xscale mapon `(,xx0 ,wwi) `(,x ,w) ww0 t) w))
+    (setq rhinit 1)
+    )
+
+  (setq rect (list 0 0 400 500)) ;; any initialisation will fit
+  (setq badscroll t)
+  )
+
+(defmethod d-curve addtodo (f)
+  (setq todo (nconc1 todo f))
+  )
+
+(defmethod d-curve do ()
+  (while todo
+    ((car todo))
+    (setq todo (cdr todo))
+    ) )
+
+(defmethod d-curve setup (menubar toolbar)
+  (when ~(and (assoc 'zoom options) ~(alist-get 'zoom options))
+	(eval `(==> menubar insert
+		    (new row
+			 (new menu (ml "Options" "Options")
+			      (ml "Grid" "Grille")
+			      (lambda l
+				(==> ,this switch-option 'axe-grid)
+				)
+			      (ml "Color" "Couleur")
+			      (lambda l
+				(==> ,this set-colors 'switch)
+				)
+			      (ml "Marks" "Marques")
+			      (lambda l
+				(==> ,this set-marks 'switch)
+				)
+			      )
+			 (new tinybutton " >< "  (lambda(c) (==> ,this zoom  0.5)))
+			 (new tinybutton " <> "  (lambda(c) (==> ,this zoom  2)))
+			 (new tinybutton ">><<"  (lambda(c) (==> ,this zoom  0.125)))
+			 (new tinybutton "<<>>"  (lambda(c) (==> ,this zoom  8)))
+			 (new tinybutton " 25%"  (lambda(c) (==> ,this scale 0.25)))
+			 (new tinybutton "100%"  (lambda(c) (==> ,this scale 1)))
+			 (new tinybutton "400%"  (lambda(c) (==> ,this scale 4)))
+			 ) ))
+	) )
+
+(defmethod d-curve switch-option (o)
+  (==> this set-option o ~(alist-get o options))
+  (==> thiswindowobject expose)
+  )
+
+(defmethod d-curve set-option (o v)
+  (setq options (alist-add o v options))
+  )
+
+
+(defmethod d-curve init-colors (&optional yc)
+  (if window
+      (progn
+	(when yc (setq ycolors0 yc))
+	(==> this set-colors (colorp))
+	(setq ycolors0 ycolors)
+	(when (colorp) (==> this set-marks ()))
+	)
+    (==> this addtodo (eval `(lambda l
+			       (if window
+				   (==> ,this init-colors (quote ,yc))
+				 (error "window required to define colors")
+				 ) ) )) ) )
+
+(defmethod d-curve set-colors (yc)
+  (when (= yc 'switch)
+    (setq yc (when ~(alist-get 'ycolors options)
+		   ycolors0 ))
+    )
+  (setq ycolors
+	(cond ((consp yc)
+	       (==> this set-option 'ycolors t)
+	       yc
+	       )
+	      (~yc
+	       (==> this set-option 'ycolors ())
+	       (makelist (length ydatas) ())
+	       )
+	      (t
+	       (==> this set-option 'ycolors t)
+	       (mapfor (i 0 (1- (length ydatas)))
+		 (or (nth i ycolors0)
+		     (nth% i 
+			   (if (gdriver-feature 'lookup-color 'strict)
+			       '("darkturquoise" "orange" "mediumorchid" "limegreen"
+				 "deeppink" "blue" "brown" )
+			     '((0 0.81 0.82) (1 0.65 0) (0.73 0.33 0.83)
+			       (0.20 0.80 0.20) (1 0.08 0.58) (0 0 1)
+			       (0.65 0.16 0.16))
+			     )
+			   )) ) )
+	      )
+	)
+  (let* ((window (or window :thiswindowobject:window)))
+    (setq ycolors (all ((ycolor ycolors)) (or (get-color ycolor) color-fg)))
+    )
+  (==> thiswindowobject expose)
+  )
+
+
+
+(defmethod d-curve set-marks (ym)
+  (when (= ym 'switch)
+    (setq ym (when ~(alist-get 'ymarks options)
+		   ymarks0 ))
+    )
+  (setq ymarks
+	(cond ((consp ym)
+	       (==> this set-option 'ymarks t)
+	       ym
+	       )
+	      (~ym
+	       (==> this set-option 'ymarks ())
+	       (makelist (length ydatas) ())
+	       )
+	      (t
+	       (==> this set-option 'ymarks t)
+	       (mapfor (i 0 (1- (length ydatas)))
+		 (or (nth i ymarks0)
+		     (nth% i '(open-square closed-square        open-circle
+					   closed-up-triangle   open-down-triangle
+					   closed-down-triangle open-up-triangle
+					   closed-square
+					   )) ) )
+	       )
+	      ) )
+  (when thiswindowobject (==> thiswindowobject expose))
+  )
+
+
+(defmethod d-curve configure (w h &optional hs vs)
+  (when badscroll
+	(==> this change-scroll hs vs)
+	(setq badscroll ())
+	) )
+
+(defmethod d-curve event (event)
+  (if (not (consp event))
+      'ignored
+    (selectq (car event)
+      ('mouse-up
+       (let (((xmu0 ymu0 xmu ymu) (cdr event))
+             ((xx yy ww hh) domain-rect)
+             ((x  y  w  h)  curve-rect)
+	     ((xxmu yymu) '(() ()))
+             )
+	 (cond
+	  ;; MOUSE-UP IN THE CURVE AREA
+	  ((point-in-rect xmu ymu curve-rect)
+	   (incr y h)
+	   (setq h (- h))
+	   (setq xxmu (==> xscale mapoff `(,x ,w) `(,xx ,ww) xmu))
+	   (setq yymu (==> xscale mapoff `(,y ,h) `(,yy ,hh) ymu))
+	   (when curve-highlight
+	     (let* ((i (if xdata
+			   (mseek-up xdata xxmu)
+			 (if (= xxmu (int xmu)) xxmu (1+ (int xxmu)))
+			 )))
+	       (setq curve-highlight (list (car curve-highlight) i))
+	       (setq xxmu (if xdata (xdata i) i))
+	       (setq yymu ((nth (car curve-highlight) ydatas) i))
+	       )
+	     )
+	   (==> this draw-comment xxmu yymu
+		(sprintf "( %s , %s )"
+			 ((==> dd make-cvt-to-str 0) ((==> dd make-cvt-from-num 0) xxmu))
+			 (let* ((i (1+ (or (car curve-highlight) 0))))
+			   ((==> dd make-cvt-to-str i) ((==> dd make-cvt-from-num i) yymu))
+			   ) ) )
+	   )
+	  ;; MOUSE-UP IN THE LEGEND RECT
+	  ((and legend-rects (point-in-rect xmu ymu (car legend-rects)))
+	   (setq curve-highlight
+		 (flatten (all ((i (range 0 (1- (length ydatas))))
+				(r (cdr legend-rects))
+				)
+			    (when (point-in-rect xmu ymu r) i)
+			    )) )
+	   (==> thiswindowobject expose (car legend-rects))
+	   )
+	  ;; MOUSE-UP ELSEWHERE
+	  (t
+	   (setq curve-highlight ())
+	   (when legend-rects
+	     (==> thiswindowobject expose (car legend-rects))
+	     )
+	   )
+	  ) ) )
+      ;; OTHER EVENTS
+      (t
+       'ignored)
+      ) ) )
+
+
+(defmethod d-curve draw-comment (xx1 yy1 s)
+  ((gdriver-feature 'text-to-clip 'loose) s)
+  (when (and (not-nan xx1) (not-nan yy1))
+    (let (((x  y  w  h ) curve-rect)
+	  ((xx yy ww hh) domain-rect)
+	  ((x1 y1) '(() ()))
+	  )
+      (incr y h)
+      (setq h (- h))
+      (setq x1 (==> xscale mapon `(,xx ,ww) `(,x ,w) xx1))
+      (setq y1 (==> xscale mapon `(,yy ,hh) `(,y ,h) yy1))
+      (draw-circle x1 y1 2)
+      (draw-label x1 y1 s)
+      ) ) )
+
+
+(de draw-label (x y s &optional cf cb)
+    (when ~cf (setq cf color-fg))
+    (when ~cb (setq cb color-bg))
+    (gsave
+     (graphics-batch
+      (let (((xf yf wf hf) (x-rect-font))
+	    ((x1 y1 w1 h1) (x-rect-text x y s))
+	    )
+	(color cb)
+	(fill-rect (- x1 2) (- y1 (+ h1 2)) (+ w1 4) (+ h1 4))
+	(color cf)
+	(draw-rect (- x1 2) (- y1 (+ h1 2)) (+ w1 4) (+ h1 4))
+	(gprintf x1 y1 s)
+	(list (- x1 2) (- y1 (+ h1 2)) (+ w1 4) (+ h1 4))
+	) ) ) )
+
+
+(defmethod d-curve change-domain (hpos vpos)
+;;;  (print 'change-domain)
+  (when ydatas
+	;; compute domain-rect from scrollbar position
+	(let (((xx  yy  ww  hh ) domain-rect)
+	      ((xx0 yy0 ww0 hh0) domain) )
+	  (when hp
+		(setq xx hpos) )
+	  (when vp
+		(setq yy vpos) )
+	  (setq domain-rect (list xx yy ww hh)) ) ) )
+
+
+(defmethod d-curve change-scroll (hs vs)
+;;;  (print 'change-scroll)
+  (when ydatas
+	;; scrollbars
+	(let (((xx  yy  ww  hh ) domain-rect)
+	      ((xx0 yy0 ww0 hh0) domain) )
+	  (when hs
+		(if (<= ww0 ww)
+		    (==> hs setrange xx0 xx0)
+		  (==> hs setrange xx0 (+ xx0 ww0) ww)
+		  (==> hs setstep (* 0.25 ww))
+		  (==> hs setdata xx) ) )
+	  (when vs
+		(if (<= hh0 hh)
+		    (==> vs setrange yy0 yy0)
+		  (==> vs setrange yy0 (+ yy0 hh0) hh)
+		  (==> vs setstep (* 0.25 hh))
+		  (==> vs setdata yy) ) ) ) ) )
+
+
+(defmethod d-curve screen (&optional x1 y1 w1 h1)
+;;;  (print 'screen)
+  (when ydatas
+
+	(let ((( x   y   w   h ) curve-rect)
+	      (( x0  y0  w0  h0) '(() () () ())) ;; full curve
+	      ((xx  yy  ww  hh ) domain-rect)
+	      ((xx0 yy0 ww0 hh0) domain)
+	      ((xx1 yy1 ww1 hh1) domain-rect)   ;; new domain-rect
+	      )
+
+	  (when (or x1 w1)
+
+		(when ~w1 (setq w1 w))
+		(when ~x1 (setq x1 (+ x (2/ (- w w1)))))
+
+		(setq x0 (==> xscale mapon `(,xx ,ww) `(,x ,w) xx0))
+		(setq w0 (==> xscale mapon `(,xx ,ww) `(,x ,w) ww0 t))
+
+		(setq x1 (max x1 x0))
+		(setq w1 (min w1 (+ w0 (- x0 x1))))
+
+		(setq ww1 (==> xscale mapoff `(,x ,w) `(,xx ,ww) w1 t))
+		(setq xx1 (==> xscale mapoff `(,x ,w) `(,xx ,ww) x1))
+		)
+
+	  (when (or y1 h1)
+
+		(when ~h1 (setq h1 h))
+		(when ~y1 (setq y1 y))
+
+		(setq y0 (==> xscale mapon `(,yy ,hh) `(,y ,h) yy0))
+		(setq h0 (==> xscale mapon `(,yy ,hh) `(,y ,h) hh0 t))
+
+		(setq y1 (max y1 y0))
+		(setq h1 (min h1 (+ h0 (- h0 h1))))
+
+		(setq hh1 (==> yscale mapoff `(,y ,h) `(,yy ,hh) h1 t))
+		(setq yy1 (==> yscale mapoff `(,y ,h) `(,yy ,hh) y1))
+		)
+
+	  (when (or x1 w1 y1 h1)
+
+		(setq domain-rect (list xx1 yy1 ww1 hh1))
+		(==> thiswindowobject expose)
+		(==> thiswindowobject manage-geometry)
+		)
+
+	  ) ) )
+
+
+(defmethod d-curve scale (&optional zw zh)
+  (when ydatas
+	(let ((         (w0  h0) '(() ()))
+	      ((xx0 yy0 ww0 hh0) domain)
+	      ((xx  yy  ww  hh ) domain-rect)
+	      (( x   y   w   h ) curve-rect)
+	      )
+
+	  (setq w0 (==> xscale mapon `(,xx ,ww) `(,x ,w) ww0 t))
+	  (setq h0 (==> yscale mapon `(,yy ,hh) `(,y ,h) hh0 t))
+
+	  (==> this screen
+	       () ()
+	       (when zw (/ (/ w0 rwinit) zw))
+	       (when zh (/ (/ h0 rhinit) zh))
+	       )
+	  ) ) )
+
+
+(defmethod d-curve zoom (&optional zw zh)
+  (when ydatas
+	(let ((( x  y  w  h) curve-rect)
+	      )
+	  (==> this screen
+	       () ()
+	       (when zw (max 2 (/ w zw)))
+	       (when zh (max 2 (/ h zh)))
+	       )
+	  ) ) )
+
+
+(defmethod d-curve prepaint (x y w h colorp &optional nopaint)
+
+  (==> this do)
+
+  (when ydatas
+
+	(setq rect (list x y w h))
+
+	;; TITLE
+	(font "Helvetica-Bold-18")
+	(let ((tw (text-width title))
+	      (th (text-height title)))
+	  (when ~nopaint
+		(let* ((w1 (caddr (scope thiswindowobject rect))))
+		  (setq w1 (min w1 w))
+		  (draw-text (+ x (div w1 2) (- (div tw 2)))
+			     (+ y (* 1.5 th)) title)configure ()
+			     ) )
+	  (incr y (* th 3))
+	  (incr h (* th -3))
+	  )
+
+	;; LEGEND
+	(font "Helvetica-12")
+	(let* ((x (+ x 10))
+	       (x1 x)
+	       (x0 ())
+	       (rf (x-rect-font))
+	       (hh (- (nth 3 rf) (nth 1 rf)))
+	       (ww 0)
+	       )
+	  (incr y (nth 3 rf)) ;;; original baseline
+	  (setq legend-rects
+		(all ((name (cdr (==> dd titles))) (mark ymarks) (ycolor ycolors)
+		      (i (range 0 (1- (length ymarks)))) )
+		  (setq x0 x1)
+		  (while name
+		    (setq ww (+ 50 (text-width name)))
+		    (cond
+		     ((<= h 0) ;;
+		      (setq name ())
+		      )
+		     ((or (<= (+ x1 ww) (+ x w)) (and (= x1 x) (> ww w)))
+		      (when ~nopaint
+			(when (and colorp ycolor)
+			  (color ycolor) )
+			(draw-line (+ x1 9) (- y (div hh 2)) (+ x1 20) (- y (div hh 2)))
+			(when mark ((eval mark) (+ x1 15) (- y (div hh 2))))
+			(color color-fg)
+			(draw-text (+ x1 30) (- y (div hh 4)) name)
+			(when (= i (car curve-highlight))
+			  (draw-rect x1 (- y (1- hh)) (- ww 11) (1- hh))
+			  )
+			)
+		      (incr x1 ww)
+		      (setq name ())
+		      )
+		     (t
+		      (incr y hh)
+		      (incr h (- hh))
+		      (setq x1 x)
+		      )
+		     ) )
+		  (list (- x1 ww) (- y (1- hh)) ww hh)
+		  ) )
+	  (setq legend-rects (cons (apply bounding-rects legend-rects) legend-rects))
+	  (incr y (- (nth 1 rf)))
+	  (incr h (nth 1 rf))
+	  )
+
+	;; returns the remaining rectangle available for the curves
+	(setq curve-rect
+	      (list (+ x  80)
+		    (+ y  20)
+		    (- w 120)
+		    (- h  60)
+		    ) )
+	) )
+
+
+(defmethod d-curve paint (x y w h hp vp colorp)
+
+  (when ydatas
+	(color color-fg)
+
+	;; draw all but the curves, then define the space let for the curves
+	(==> this prepaint x y w h colorp)
+	(mapcar setq '(x y w h) curve-rect)
+
+	;; compute domain-rect from scrollbar position
+	(==> this change-domain hp vp)
+
+	(when (and (> h 0) (> w 0))
+
+	      ;; WARNING the following two code lines may have strange effects
+	      ;; define the reference corner as lower left
+	      (incr y h)
+	      (setq h (- h))
+
+	      (let (((xx yy ww hh) domain-rect))
+
+		;; AXES
+		(font "default")
+		(let* ((lshaft 2)
+		       (margin (+ lshaft (* 1.5 (nth 3 (x-rect-font)))))
+		       (hf (text-fullheight))
+		       )
+		  ;; x axis
+		  (draw-line x y (+ x w) y)
+		  (==> xaxe adjust xx ww w)
+		  (each ((label (==> xaxe getlabels))
+			 (pos   (graphic-bound (==> xaxe getpixels)))
+			 )
+			(draw_line (+ x pos) (- y lshaft) (+ x pos) (+ y lshaft))
+			(when (alist-get 'axe-grid options)
+			  (color color-gray)
+			  (draw_line (+ x pos) (+ y (- lshaft) 1) (+ x pos) (+ y h))
+			  (color color-fg)
+			  )
+			(draw_text (+ x pos (- (div (text-width label) 2)))
+				   (+ y margin)
+				   label ) )
+		  ;; y axis
+		  (draw-line x y x (+ y h))
+		  (==> yaxe adjust yy hh h)
+		  (each ((label (==> yaxe getlabels))
+			 (pos   (graphic-bound (==> yaxe getpixels)))
+			 )
+			(draw-line (- x lshaft) (+ y pos) (+ x lshaft) (+ y pos))
+			(when (alist-get 'axe-grid options)
+			  (color color-gray)
+			  (draw_line (+ x lshaft 1) (+ y pos) (+ x w) (+ y pos))
+			  (color color-fg)
+			  )
+			(draw_text (- x (+ margin (text-width label)))
+				   (+ y pos (div (text-height label) 3))
+				   label ) )
+		  )
+		;; CURVES
+		(let (((xc  yc  wc  hc)  (expand-rect (or (clip) curve-rect) 3 0))
+		      ((xo  yo  xn  yn)  '(() () () ()))
+		      ((xxc yyc wwc hhc) '(() () () ()))
+		      ((i1 i2 i3 i4) '(() () () ()))
+		      (getpoint (lambda (k &optional flag) ;; k is an array subscript
+				  (let* ((xxk ((or xdata range-num) k))
+					 (yyk ((or ydata range-num) k))
+					 (res ())
+					 )
+				    (setq yyk (if (numberp yyk)
+						  (not-nan yyk)
+						(mapcar not-nan yyk))
+					  )
+				    (setq res
+					  (list (==> xscale mapon `(,xx ,ww) `(,x ,w) xxk)
+						(==> yscale mapon `(,yy ,hh) `(,y ,h) yyk)
+						) )
+				    (when flag
+					  (setq res (list (graphic-bound (car res))
+							  (graphic-bound (cadr res))
+							  )) )
+				    (if (consp (car res))
+					(mapcar list (car res) (cadr res))
+				      res
+				      )
+				    ) ))
+		      )
+		  (when (collide-rect (list xc yc wc hc) curve-rect)
+
+			(setq xc (max xc x))
+			(setq wc (min wc (- (+ x w) xc)))
+		  
+			(setq xxc (==> xscale mapoff `(,x ,w) `(,xx ,ww) xc))
+			(setq wwc (==> xscale mapoff `(,x ,w) `(,xx ,ww) wc t))
+		  
+			(setq yc (+ yc hc) hc (- hc))
+			(setq yc (min yc y))
+			(setq hc (max hc (- (+ y h) yc)))
+		  
+			(setq yyc (==> yscale mapoff `(,y ,h) `(,yy ,hh) yc))
+			(setq hhc (==> yscale mapoff `(,y ,h) `(,yy ,hh) hc t))
+		  
+			(cond (xdata
+			       (setq i1 (apply max (flatten (list (mseek-down xdata xxc) 0))))
+			       (setq i4 (apply min (flatten (list (mseek-up xdata (+ xxc wwc))
+								  (bound xdata 1) ))))
+			       (setq i2 (if (= xxc (xdata i1))
+					    i1
+					  (or (mseek-up xdata xxc) (bound xdata 1))
+					  ))
+			       (setq i3 (if (= (+ xxc wwc) (xdata i4))
+					    i4
+					  (or (mseek-down xdata (+ xxc wwc)) 0)
+					  ))
+			       )
+			      (t
+			       (setq i1 (max 0 xxc))
+			       (setq i4 (min (bound (car ydatas) 1) (+ 1 xxc wwc)))
+			       (setq i2 (if (= i1 (int i1)) i1 (1+ i1)))
+			       (setq i3 (if (= i4 (int i4)) i4 (1- i4)))
+			       (setq i1 (int i1) i2 (int i2) i3 (int i3) i4 (int i4)) 
+			       ) )
+		  
+			;; for each curve
+			(each ((ycolor ycolors)
+			       (ymark  ymarks)
+			       (yname  (cdr (==> dd titles)))
+			       (ydata  ydatas)
+			       )
+			
+			      (when (and colorp color)
+				    (color ycolor) )
+			      (when ymark (setq ymark (eval ymark)))
+			
+			      ;; draw the relevant parts of outranging segments
+			      (gsave
+			       (addclip (list xc (+ yc hc) wc (- hc)))
+			       (when (< i1 i2)
+				     (mapcar setq '(xo yo) (getpoint i1 t))
+				     (mapcar setq '(xn yn) (getpoint i2 t))
+				     (when (and xo yo xn yn) (draw-line xo yo xn yn))
+				     )
+			       (when (< i3 i4)
+				     (mapcar setq '(xo yo) (getpoint i3 t))
+				     (mapcar setq '(xn yn) (getpoint i4 t))
+				     (when (and xo yo xn yn) (draw-line xo yo xn yn))
+				     ) )
+			
+			       ;; draw the fully visible segments
+			       (setq xo () yo ())
+			       (when (<= i2 i3)
+
+				     (each (((xn yn) (getpoint (list i2 i3))))
+
+					   (when (and xn yn)
+				   
+						 (when (and xo yo) (draw-line xo yo xn yn))
+						 (when ymark (ymark xn yn))
+						 (setq  xo xn yo yn)
+						 )
+			     
+					   (setq xo xn yo yn)
+
+					   ) )
+			       ) ) )
+		  ) ) )
+  (setq badscroll t)
+;;;  (printf "scroll declared as bad\n")
+  )
+
+
+
+;;;---------------------------------------------------------------------
+;;;
+;;;                           INOUT-SIDERS
+;;;
+;;;---------------------------------------------------------------------
+
+
+
+;;; ----------------------------------------
+;;; sequence
+;;; ----------------------------------------
+
+#? sequence
+;; Class sequence is an abstract class which defines a protocole for handling sequences.
+;; Each sequence object remembers its current position in the sequence.
+;;
+;; Several methods are assumed to be available for each sequence object.
+;; Method set sets the position of the object close to its argument.
+;; Method get returns the current position when it is called without argument,
+;; and returns the position of the object close to its argument otherwise.
+;; Method next returns the next position after the current one.
+;; Method previous returns the previous position before the current one.
+;;.SEE scale
+
+(defclass sequence object
+  data
+  )
+
+(defmethod sequence set (x)
+  (setq data (==> this get x))
+  )
+
+(defmethod sequence get (&optional x)
+  data
+  )
+
+(defmethod sequence next (&optional (n 1))
+  data
+  )
+
+(defmethod sequence previous (&optional (n 1))
+  data
+  )
+
+
+;;; ----------------------------------------
+;;; scale
+;;; ----------------------------------------
+
+
+#? scale
+;; An interesting abstract subclass of sequence is scale.
+;; The current position of the sequence stands for the scale factor.
+;; This class provides several specific methods.
+;; 
+;; Method rounddown rounds down its argument given the scale factor.
+;; Method roundup   rounds up   its argument given the scale factor.
+;; Method roundin   rounds-inside  a segment when possible. It returns ().
+;; Method roundout  rounds-outside a segment when possible. It returns ().
+;; Method text returns a text for its argument given the scale factor.
+;; Method range returns a list of values ranging between its both arguments.
+;; Any two successive values of the returned list are separated
+;; by the current scale factor.
+;; The values of the returned list are usually not rounded,
+;; unless the first argument is rounded.
+;; Method roundin, roundout and range (resp. mapon and mapoff) may take a width
+;; instead of a value as second (resp. third) argument.
+;; For this purpose, the flag provided as optional last argument sould be t.
+;; Method mapon maps a value aera on a numerical aera for a value or value list.
+;; This method is usefull for drawing curves.
+;;
+;; Function new-scale takes a type (atomic or constructed)
+;; or a dataheader object as argument
+;; and creates a new scale of correponding class.
+
+
+(de new-scale (desc)
+    (let* ((type (or (atomp desc) (car desc))))
+      (selectq type
+	(|DATE|
+	 (if (and (consp desc) (member (cadr desc) '(hour minute second)))
+	     ;; '(|DATE| <hour>...) '(|DATE| <minute>...) '(|DATE| <second>...)
+	     (new day-scale () 'hour)
+	   (new day-scale)
+	   ) )
+	(t
+	 (new 1-2-5-scale)
+	 ) ) ) )
+
+;;; ------------
+
+(defclass scale sequence
+  )
+
+(defmethod scale rounddown (x)
+  ()
+  )
+
+(defmethod scale roundup (x)
+  ()
+  )
+
+(defmethod scale roundin (x y &optional flag)
+  (when flag (incr y x))
+  (setq x (==> this roundup x))
+  (setq y (==> this rounddown y))
+  (when (<= x y) (list x (if flag (- y x) y)))
+  )
+
+(defmethod scale roundout (x y &optional flag)
+  (when flag (incr y x))
+  (setq x (==> this rounddown x))
+  (setq y (==> this roundup   y))
+  (when (<= x y)
+	(setq y (==> this roundup (+ x (/ data 1000))))
+	)
+  (list x (if flag (- y x) y))
+  )
+
+(defmethod scale text (x)
+  ()
+  )
+
+(defmethod scale range (x y &optional flag)
+  ()
+  )
+
+(defmethod scale mapon ((xx ww) (x w) values &optional flag)
+  ()
+  )
+
+(defmethod scale mapoff ((x w) (xx ww) pixels &optional flag)
+  ()
+  )
+
+;;; ------------
+
+(defclass numerical-scale scale
+  )
+
+(defmethod numerical-scale rounddown (x)
+  (if (numberp x)
+      (* data (int (/ x data)))
+    (all ((x x)) (* data (int (/ x data))))
+    ) )
+
+(defmethod numerical-scale roundup (x)
+  (if (numberp x)
+      (let* ((r (/ x data)))
+	(if (= r (int r))
+	    x
+	  (* data (1+ (int r)))
+	  ) )
+    (all ((x x))
+	 (let* ((r (/ x data)))
+	   (if (= r (int r))
+	       x
+	     (* data (1+ (int r)))
+	     ) )
+	 )
+    ) )
+
+(defmethod numerical-scale text (x)
+  (cond (~x        ())
+	((consp x) (mapcar str x))
+	(t         (str x))
+	) )
+
+(defmethod numerical-scale range (b e &optional flag)
+  (when flag (setq e (+ e b)))
+  (range b e data)
+  )
+
+(defmethod numerical-scale mapon ((xx ww) (x w) vv &optional flag)
+  (if (numberp vv)
+      (+ (if flag 0 x) (* (/ w ww) (if flag vv (- vv xx))))
+    (all ((vv vv)) (when vv (+ (if flag 0 x) (* (/ w ww) (if flag vv (- vv xx))))))
+    ) )
+
+(defmethod numerical-scale mapoff ((x w) (xx ww) p &optional flag)
+  (if (numberp p)
+      (+ (if flag 0 xx) (* (/ ww w) (if flag p (- p x))))
+    (all ((p p)) (when p (+ (if flag 0 xx) (* (/ ww w) (if flag p (- p x))))))
+    ) )
+
+;;; ------------
+
+(defclass 1-2-5-scale numerical-scale
+  )
+
+(defmethod 1-2-5-scale 1-2-5-scale (&optional x)
+  (when ~x (setq x 1))
+  (==> this set x)
+  )
+
+(defmethod 1-2-5-scale get (&optional x)
+  (if ~x
+      data
+    (setq x (abs x))
+    (min 1e50
+	 (max 1e-50 1e-12
+	      (let* ((p (round x 0))
+		     (x (/ x p))
+		     )
+		(cond ((>= x 5) (* 5 p))
+		      ((>= x 2) (* 2 p))
+		      (t             p )
+		      )
+		) ) )
+    ) )
+
+(defmethod 1-2-5-scale next ()
+  (min 1e50
+       (selectq (/ data (round data 0))
+		(5  (* data 2  )) ;;; 5 -> 10
+		(2  (* data 2.5)) ;;; 2 ->  5
+		(1  (* data 2  )) ;;; 1 ->  2
+		) ) )
+
+(defmethod 1-2-5-scale previous ()
+  (max 1e-50 1e-12
+       (selectq (/ data (round data 0))
+		(5  (/ data 2.5)) ;;;  5 -> 2
+		(2  (/ data 2  )) ;;;  2 -> 1
+		(1  (/ data 2  )) ;;; 10 -> 5
+		) ) )
+
+;;; ------------
+
+(defclass day-scale scale
+  indx
+  sym
+  base
+  unit
+  step
+  numscale
+  from
+  to
+  )
+
+(defmethod day-scale day-scale (&optional x f)
+  (when ~x (setq x 1))
+  (setq from (or f 'year))
+  (setq numscale (new 1-2-5-scale))
+  (==> this set x)
+  )
+
+(defmethod day-scale restrict (f o)
+  (when f (setq from f))
+  (when o (setq to   (selectq o ((halfmonth week) 'day) (t o))))
+  )
+
+(defmethod day-scale get (&optional x)
+  (when ~x (setq x data))
+  (let* ((i (mseek-down day-scale-mat x))
+	 (base ())
+	 )
+    (setq indx i)
+    (setq x
+	  (cond
+	   ;; small scale
+	   (~i
+	    (setq base (day-scale-mat 0))
+	    (setq indx 0)
+	    (* base (==> numscale get (max 1 (/ x base)))) ;; fractions not supported
+	    )
+	   ;; big scale
+	   ((= i (day-scale-mat (bound day-scale-mat 1)))
+	    (setq base (day-scale-mat (bound day-scale-mat 1)))
+	    (* base (==> numscale get (/ x base)))
+	    )
+	   (t
+	    (day-scale-mat i)
+	    )
+	   ) )
+    (list indx x)
+    ) )
+
+(defmethod day-scale set (x)
+  (let (((in da) (if (consp x) x (==> this get x))))
+    (setq data da)
+    (setq indx in)
+    )
+  (let (((sy ba un st) (day-scale-array indx ())))
+    (setq sym  sy)
+    (setq base ba)
+    (setq unit un)
+    (==> this restrict () unit)
+    (==> numscale set (/ data ba))
+    (setq step (* st (==> numscale get)))
+    )
+  (list indx data)
+  )
+
+(defmethod day-scale next ()
+  (or (cond ((= indx (bound day-scale-mat 1))    ;;; big scales
+	     (list indx (* base (==> numscale next (/ data base))))
+	     )
+	    ((and (= indx 0) (> base data))      ;;; small scales
+	     (when (> base data) (list 0 (* base (==> numscale next (/ data base)))))
+	     )
+	    )
+      (list (1+ indx) (day-scale-mat (1+ indx))) ;;; default
+      ) )
+
+(defmethod day-scale previous ()
+  (==> this get (* 0.9999 data))
+  )
+
+(defmethod day-scale roundup (x)
+  (let* ((y (==> this rounddown x)))
+    (if (numberp x)
+	(if (= y x) x (day-add y unit))
+      (all ((x x)(y y)) (if (= y x) x (day-add y unit)))
+      ) ) )
+
+(defmethod day-scale rounddown (x)
+  (if (numberp x)
+      (day-round x unit)
+    (all ((x x)) (day-round x unit))
+    ) )
+
+(defmethod day-scale text (x)
+  (setq x (==> this rounddown x))
+  (if (numberp x)
+      (day-to-string x from to)
+    (all ((x x)) (day-to-string x from to))
+    ) )
+
+(defmethod day-scale range (x y &optional flag)
+  (when flag (incr y x))
+  (let* ((res ())
+	 (step (max step 1))
+	 )
+    (setq x (day-to-date x))
+    (while (<= (date-to-day x) y)
+      (setq res (cons x res))
+      (setq x (date-add x unit step))
+      )
+    (mapcar date-to-day (reverse res))
+    ) )
+
+(defmethod day-scale mapon ((xx ww) (x w) vv &optional flag)
+  (if (numberp vv)
+      (+ (if flag 0 x) (* (/ w ww) (if flag vv (- vv xx))))
+    (all ((vv vv)) (when vv (+ (if flag 0 x) (* (/ w ww) (if flag vv (- vv xx))))))
+    ) )
+
+(defmethod day-scale mapoff ((x w) (xx ww) p &optional flag)
+  (if (numberp p)
+      (+ (if flag 0 xx) (* (/ ww w) (if flag p (- p x))))
+    (all ((p p)) (when p (+ (if flag 0 xx) (* (/ ww w) (if flag p (- p x))))))
+    ) )
+
+;;; ----------------------------------------
+;;; axe class
+;;; ----------------------------------------
+
+
+#? axe
+;; Class axe provides tools for handling axes.
+;; Each object of this class owns an object of class scale.
+;; This class owns several interesting methods.
+;; Method value2pixel converts a value given as argument into a pixel position.
+;; Method pixel2value converts a pixel position given as argument into a value.
+;; Method check is a boolean method which returns () only when labels overlap.
+;; Method adjust finds the most precise scale in which no label overlap.
+;; As a side effect, it sets conformingly the scale of its scaler field.
+;; Object of this class have no memory of the position they are drawn.
+
+
+(defclass axe object
+  scaler   ;; object of class scale
+  size     ;; function computing the pixel size of a string
+  values   ;; list of values
+  pixels   ;; list of values maped on a numerical space
+  labels   ;; list of labels
+  sizes    ;; list of label sizes
+  )
+
+(defmethod axe axe (sc ts)
+  (setq scaler sc)
+  (setq size ts)
+  )
+
+(defmethod axe setup (xx0 ww0 w)
+  (let (((xx ww) (or (==> scaler roundin  xx0 ww0 t)
+		     (==> scaler roundout xx0 ww0 t) )))
+    (setq values (==> scaler range xx ww t))
+    (setq labels (==> scaler text values))
+    (setq pixels (==> scaler mapon (list xx0 ww0) (list 0 w) values))
+    (setq sizes ())
+    )
+  values
+  )
+
+(defmethod axe adjust (xx ww w)
+  (let* ((oscale ())
+	 (stop ())
+	 )
+    (==> scaler set ww)
+    (do-while (and ~stop (or ~oscale (==> this check)))
+	      (setq oscale (or (==> scaler get) oscale))
+	      (==> scaler set (==> scaler previous))
+	      (==> this setup xx ww w)
+	      (when (= oscale (==> scaler get)) (setq stop t))
+	      )
+    
+    (==> scaler set oscale)
+    (==> this setup xx ww w)
+    ) )
+
+;; Method check returns () only when labels overlap
+(defmethod axe check ()
+  (setq sizes (mapcar size labels))
+  (let* ((ox (car pixels))
+	 (ow (car sizes))
+	 (res ())
+	 )
+    (setq res
+	  (if ~(cdr sizes)
+	    1
+	    (inf (all ((nw (cdr sizes))
+		       (nx (cdr pixels))
+		       )
+		      (prog1
+			  (- (abs (- nx ox)) (+ 2 (* 0.5 (abs (+ ow nw)))))
+			(setq ow nw)
+			(setq ox nx)
+			) )) ) )
+    (when (> res 0) res) ;; returned value
+    ) )
+
+(defmethod axe getlabels ()
+  (append labels)
+  )
+
+(defmethod axe getpixels ()
+  (append pixels)
+  )
+
+
+;;; ------------
+
+(defclass niceaxe axe
+  minfactor
+  minsize
+  )
+
+(defmethod niceaxe niceaxe (sc ts &optional mf ms)
+  (setq minfactor (or mf  0.5))
+  (setq minsize   (or ms  6))
+  (==> this axe sc ts)
+  )
+
+(defmethod niceaxe check ()
+  (let* ((dst (==> this (axe . check))))
+    (when (and dst (> dst (max minsize (* minfactor (sup sizes)))))
+	  dst
+	  )
+    ) )
+
+
+
+;;;---------------------------------------------------------------------
+;;;
+;;;                           OUTSIDERS
+;;;
+;;;---------------------------------------------------------------------
+
+
+(de range-num (x)
+    (or (numberp x) (apply range x)) )
+
+
+
+;;; ----------------------------------------
+;;; graphics
+;;; ----------------------------------------
+
+
+(de get-color (c)
+    (cond
+     ((stringp c) ;; color name
+      ((gdriver-feature 'lookup-color) c) ;; error on failure
+      )
+     ((numberp c) ;; color number
+      c
+      )
+     ((consp c) ;; rgb
+     (apply alloccolor c)
+     )
+     ) )
+
+(de bounding-rects l
+    (let* ((rect1 (car l)))
+      (each ((rect2 l))
+	(setq rect1 (bounding-rect rect1 rect2))
+	) ) )
+
+;;;-------------
+
+(de x-rect-text (x y s)
+    (let ((window :thiswindowobject:window))    
+      (rect-text x y s) ) )
+
+(de x-rect-font (&optional fn)
+    (let ((window :thiswindowobject:window))
+      (gsave
+       (when fn (font fn))
+       (bounding-rect
+	(rect-text 0 0 "0")
+	(rect-text 0 0 "q") ) ) ) )
+
+(de text-fullheight (&optional s)
+    (let ((r (if s (x-rect-text 0 0 s) (x-rect-font))))
+      (- (nth 3 r) (nth 1 r)) ) )
+
+(de font-fullheight (&optional s)
+    (let ((r (x-rect-font)))
+      (- (nth 3 r) (nth 1 r)) ) )
+
+(de graphic-bound (x)
+    (let* ((ub 1e4)
+	   (lb -1e4)
+	   (l (when ~(numberp x) (length x)))
+	   )
+      (if l
+	  (mapcar min (makelist l ub) (mapcar max (makelist l lb) x))
+	(min ub (max lb x))
+	) ) )
+
+
+;;; ----------------------------------------
+;;; dates
+;;; ----------------------------------------
+
+
+(de day-in-the-month (d)
+    (alist-get 'day (split-date d))
+    )
+
+(de day-add (day unit &optional step)
+    (when ~step (setq step 1))
+    (date-to-day (date-add (day-to-date day) unit step))
+    )
+
+(de date-add-halfmonth (d &optional (c 1))
+    (setq d (date-add-month d (div c 2))) ;;; add full monthes
+    (when (> (mod c 2) 0) ;;; if c is odd, add the last halfmonth
+	  (if (> 15 (day-in-the-month d))
+	      (setq d (date-add-day d 15))
+	    (setq d (date-add-day (date-add-month d 1) -15))
+	    ) )
+    d
+    )
+
+(de date-add (dat unit step)
+    (selectq unit
+	     (year      (date-add-year       dat step))
+	     (halfmonth (date-add-halfmonth  dat step))
+	     (month     (date-add-month      dat step))
+	     (week      (date-add-day        dat (* 7 step)))
+	     (day       (date-add-day        dat step))
+	     (hour      (date-add-hour       dat step))
+	     (minute    (date-add-minute     dat step))
+	     (second    (date-add-second     dat step))
+	     (t         (error "Internal error : date symbol expected" unit))
+	     ) )
+
+(de day-round (day &optional unit step)
+    (when ~unit (setq unit 'day))
+    (when ~step (setq step 1))
+    (selectq unit
+	     ((year halfmonth month)
+	      (date-to-day (date-round (day-to-date day) unit step))
+	      )
+	     (week   (- day (mod (+ 4 day) 7)))
+	     (day    (* step (div day step)))
+	     (hour   (* step (/ (div (* 24 day) step) 24)))
+	     (minute (* step (/ (div (* 24 60 day) step) (* 24 60))))
+	     (second (* step (/ (div (* 24 60 60 day) step) (* 24 60 60))))
+	     (t      (error "Internal error : date symbol expected" unit))
+	     ) )
+
+(de date-round (dat &optional unit step)
+    (when ~unit (setq unit 'day))
+    (when ~step (setq step 1))
+    (let (((from to) (date-type dat)))
+      (date-extend
+       (selectq unit
+		((week day hour minute second)
+		 (day-to-date (day-round (date-to-day dat) unit step))
+		 )
+		(year
+		 (let* ((spd (split-date dat))
+			(year (mod (alist-get 'year spd) step))
+			)
+		   (date-add-year dat (- year))
+		   ) )
+		(month
+		 (let* ((spd (split-date dat))
+			(year (alist-get 'year spd))
+			(month (mod (+ (* 12 year) (alist-get 'month spd)) step))
+			)
+		   (date-add-month (date-extend dat from 'month) (- month))
+		   ) )
+		(halfmonth
+		 (let* ((spd (split-date dat))
+			(year      (alist-get 'year  spd))
+			(month     (+ (* 12 year) (alist-get 'month spd)))
+			(day       (day-in-the-month spd))
+			(upper     (<= 15 day))
+			(halfmonth (mod (+ (if upper 1 0) (* 2 month)) step))
+			)
+		   (setq month (div halfmonth 2))
+		   (setq day 0)
+		   (when (and ~upper (= 1 (mod halfmonth 2)))
+			 (incr month)
+			 (setq day 15)
+			 )
+		   (when (and upper (= 0 (mod halfmonth 2)))
+			 (setq day 15)
+			 )
+		   (date-add-day (date-extend
+				  (date-add-month
+				   (date-extend dat from 'month)
+				   (- month)
+				   )
+				  from 'day
+				  )
+				 day
+				 )
+		   ) )
+		(t
+		 (error "Internal error : date symbol expected" unit)
+		 )
+		)
+       from to
+       ) ) )
+
+(setq day-scale-list
+      (reverse
+       '((year        365       year       1)
+	 (semester    182       month      6)
+	 (quarter      91       month      4)
+	 (bimester     60       month      2)
+	 (month        30       month      1)
+	 (halfmonth    14       halfmonth  1)
+	 (week          7       week       1)
+	 (twodays       2       day        2)
+	 (day           1       day        1)
+	 (halfday       0.5     hour      12)
+	 (sixhours      0.3     hour       6)
+	 (threehours    0.15    hour       3)
+	 (twohours      0.08    hour       2)
+	 (hour          0.04    hour       1)
+	 (halfhour      0.02    minute    30)
+	 (quarterhour   0.01    minute    15)
+	 (tenminutes    0.007   minute    10)
+	 (fiveminutes   0.0035  minute     5)
+	 (twominutes    0.0017  minute     2)
+	 (minute        0.0007  minute     1)
+	 (halfminute    0.0003  second    30)
+	 (quarterminute 0.00015 second    15)
+	 (tenseconds    0.0001  second    10)
+	 (fiveseconds   0.00006 second     5)
+	 (twoseconds    0.00002 second     2)
+	 (second        0.00001 second     1)
+	 ) ) )
+(setq day-scale-array (array (length day-scale-list)
+			     (length (car day-scale-list))) )
+(day-scale-array () () day-scale-list)
+
+(setq day-scale-mat (matrix (length day-scale-list)))
+(day-scale-mat () (day-scale-array () 1))
+
+(day-scale-array () 1 (day-scale-mat ())) ;;; prevent irrelevant failures of equality tests
+
+
+;;; ----------------------------------------
+;;; TESTS FOR X11
+;;; ----------------------------------------
+
+'(
+(setq pie1
+      (new d-pie "hello" 
+	   `((5 "blue" "Blue side")
+	     (50 "red" "Red part")  
+	     (20 "yellow" "Yellow slice")
+	     (10 "brown" "Brownies") ) ) )
+
+(setq txt1
+      (new d-text "title" (reverse (files))) )
+
+(setq hist1
+      (new d-histogram "title" 
+	   '( (5 "blue" "A")
+	      (50 "red" "B")  
+	      (20 "yellow" "AA")
+	      (10 "brown" "BB") ) ) )
+
+(setq hist2
+      (new d-histogram "hello" 
+	   `((5 "blue" "Blue side")
+	     (50 "red" "Red part")  
+	     (20 "yellow" "Yellow slice")
+	     (10 "brown" "Brownies") ) ) )
+
+(setq curve1 (new d-curve
+		  '( ([1   3  4] "time")
+		     ([10 20 30] "red star"    () "red")
+		     ([16 11  6] "yellow sun"  () "yellow")
+		     ([12 22 10] "brown wood"  () "brown")
+		     ) ))
+
+(setq ng (new c-newmultigrapher "essai"
+	      `(("curve" , curve1)
+		("pie"   , pie1  )
+		("txt"   , txt1  )
+		("hist1" , hist1 )
+		("histo2", hist2 )
+		) ) )
+
+
+)
