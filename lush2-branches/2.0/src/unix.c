@@ -38,7 +38,6 @@
 
 *********************************************************************** */
 
-
 /* Config */
 #ifdef HAVE_CONFIG_H
 # include "lushconf.h"
@@ -47,7 +46,6 @@
 #include "lushmake.h"
 
 /* UNIX header files */
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>
@@ -126,6 +124,10 @@
 # ifdef HAVE_MPI_H
 #  include <mpi.h>
 # endif
+#endif
+
+#ifndef HAVE_RL_GETC
+# undef RL_READLINE_VERSION    /* not a readline we can work with (MacOS ?) */
 #endif
 
 typedef RETSIGTYPE (*SIGHANDLERTYPE)();

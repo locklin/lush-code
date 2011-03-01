@@ -871,7 +871,7 @@ static void
 write_const_pointer(void **pointer, void *value)
 {
 #if HAVE_MPROTECT
-  int pagesize = getpagesize();
+  int pagesize = sysconf(_SC_PAGESIZE);
   bfd_vma start = ptrvma(pointer) & ~(pagesize-1);
   mprotect( vmaptr(start), pagesize, PROT_READ|PROT_WRITE);
 #endif
@@ -2442,24 +2442,6 @@ clear_all_executable_flags(module_entry *chain)
 }
 
 
-/* getpagesize replacement */
-
-#if HAVE_MPROTECT
-#if ! HAVE_GETPAGESIZE
-static int
-getpagesize()
-{
-#if defined(_SC_PAGESIZE)
-  return sysconf(_SC_PAGESIZE);
-#elif defined(_SC_PAGE_SIZE)
-  return sysconf(_SC_PAGE_SIZE);
-#else  
-  return 4096; // guess!
-#endif
-}
-#endif
-#endif
-
 /* compute_executable_flag -- computes executable flag for a module */
 
 static int
@@ -2491,7 +2473,7 @@ compute_executable_flag(module_entry *module)
       {
         asection *p;
         bfd *abfd = module->abfd;
-        int pagesize = getpagesize();
+        int pagesize = sysconf(_SC_PAGESIZE);
         /* Call mprotect */
         for (p=abfd->sections; p; p=p->next)
           if ((p->flags & SEC_LOAD) && (p->flags & SEC_CODE))

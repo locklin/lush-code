@@ -136,14 +136,8 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
        AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"],
 	  [ opt="-mcpu=${ac_cpu-${host_cpu}}"
             AC_CHECK_CC_OPT([$opt], [OPTS="$OPTS $opt"]) ] )
-       if test -z "$ac_cpu" -a "$host_cpu" = "i686" ; then
-            AC_CHECK_CC_OPT([-mmmx],[OPTS="$OPTS -mmmx"
-              AC_MSG_WARN([use --with-cpu=cpuname to avoid assuming that MMX works.])])
-            if test -r /proc/cpuinfo && grep -q sse /proc/cpuinfo ; then
-              AC_CHECK_CC_OPT([-msse],[OPTS="$OPTS -msse"
-                AC_MSG_WARN([use --with-cpu=cpuname to avoid assuming that SSE works.])])
-            fi
-       fi
+      AC_CHECK_CC_OPT([-mmmx],[OPTS="$OPTS -mmmx"])
+      AC_CHECK_CC_OPT([-msse],[OPTS="$OPTS -msse"])
      fi
    fi
 ])
