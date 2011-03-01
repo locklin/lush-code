@@ -5,7 +5,6 @@
 
 AC_PREREQ(2.50)
 AC_INIT(Lush2, 2.0)
-AC_REVISION($Id: configure.ac,v 1.54 2008/01/23 22:45:03 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -103,9 +102,11 @@ fi
 
 AC_PROG_MAKE_SET
 
-AC_PROG_CC
+AC_PROG_CC_C99
+if test $ac_cv_prog_cc_c99 = no; then
+    AC_MSG_ERROR([Cannot find C99 compliant compiler.])
+fi
 AC_CC_COMPLEX
-AC_CHECK_CC_OPT([-std=c99],[CFLAGS="$CFLAGS -std=c99"])
 AC_CC_OPTIMIZE
 AC_SUBST(GCC)
 AC_PROG_CXX
@@ -310,6 +311,7 @@ AC_CHECK_FUNCS(tanh dlopen sigsetjmp waitpid openpty)
 AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(gethostbyname flockfile sysconf fpathconf tcsetattr)
 AC_CHECK_FUNCS(setenv putenv fseeko ftello)
+AC_CHECK_FUNCS(rl_getc)
 AC_FUNC_MBRTOWC
 AC_CHECK_FUNCS(setlocale nl_langinfo)
 

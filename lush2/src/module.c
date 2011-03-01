@@ -28,6 +28,7 @@
 #include "header.h"
 #include "dh.h"
 
+
 /* ------- DLDBFD/NSBUNDLE HEADERS ------- */
 
 #if HAVE_LIBBFD
@@ -35,6 +36,7 @@
 # include "dldbfd.h"
 #elif HAVE_NSLINKMODULE
 # define NSBUNDLE 1
+# pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 # include <mach-o/dyld.h>
 #endif
 
@@ -177,7 +179,6 @@ static int
 nsbundle_exec(nsbundle_t *bundle)
 {
   NSObjectFileImage nsimg = bundle->nsimage;
-  int changed = 0;
   int savedexecutable = bundle->executable;
   if (bundle->recurse)
     {
@@ -340,7 +341,7 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
       strcpy(bundle->name, tmpname("/tmp","bundle"));
 #endif
       sprintf(cmd, 
-	      "cc -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"", 
+	      "ld -bundle -flat_namespace -undefined suppress /usr/lib/bundle1.o \"%s\" -o \"%s\"", 
 	      fname, bundle->name);
       nsbundle_error = "Cannot create bundle from object file";
       if (system(cmd) == 0)
