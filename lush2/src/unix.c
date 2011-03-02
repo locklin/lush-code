@@ -970,7 +970,7 @@ void console_getline(char *prompt, char *buf, int size)
       if (!break_attempt)
          if (!feof(stdin)) {
             errno = 0;
-            if (!fgets(buf,size-2,stdin))
+            if (!fgets(buf,size-2,stdin) && errno)
                fprintf(stderr, "*** Warning: %s\n", strerror(errno));
          }
       return;
@@ -986,7 +986,7 @@ void console_getline(char *prompt, char *buf, int size)
          if (!break_attempt)
             if (!feof(stdin)) {
                errno = 0;
-               if (!fgets(buf,size-2,stdin))
+               if (!fgets(buf,size-2,stdin) && errno)
                   fprintf(stderr, "*** Warning: %s\n", strerror(errno));
             }
          return;
@@ -1051,8 +1051,9 @@ void console_getline(char *prompt, char *buf, int size)
    if (feof(stdin))
       return;
    errno = 0;
-   if (!fgets(buf,size-2,stdin))
+   if (!fgets(buf,size-2,stdin) && errno) {
       fprintf(stderr, "*** Warning: %s\n", strerror(errno));
+   }
 }
 
 #endif
