@@ -1,0 +1,528 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; interface to Video4Linux-V2 (V4L2)
+;; See http://www.linuxtv.org/downloads/video4linux/API/V4L2_API/
+;; for API documentation.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** v4l2device
+;; the v4l2 device is the main class through
+;; which video frames can be grabbed using the Video4Linux v2
+;; API. This requires a v4l2 compatible video grabbing card
+;; or webcam.
+;; 
+;; Although the v4l2 API supports a variety of video formats
+;; for grabbing, this interface only grabs images in the
+;; YUV422 format (also known as YUYV). The image can be
+;; converted to RGB is required using the <convert-yuv422-to-rgb>
+;; found in <libimage/img-util>
+;;
+;; Here is an example of code that repeatedly grabs an image
+;; from the composite video input and displays it on the screen:
+;;{<code>
+;; (de v4l2-test (d width height fps)
+;;   (libload "libimage/img-util")
+;;   (let  ((z (new v4l2device d width height fps 4))
+;; 	 (frame-rgb (ubyte-matrix height width 3)))
+;;     (when (not window) (new-window 0 0 (+ width 20) (+ height 20) "v4l2"))
+;;     (cls)
+;;     (repeat 1000
+;;       (==> z get-frame-rgb frame-rgb)
+;;       (rgb-draw-matrix 10 10 frame-rgb)) ))
+;; (v4l2-test "/dev/video0" 640 480 30)
+;; </code>}
+
+(defclass v4l2device object
+  ((-int-) fd)
+  ((-int-) width)
+  ((-int-) height)
+  ((-int-) started)
+  ((-idx1- (-gptr-)) buffers)
+  ((-idx1- (-int-)) bsizes)
+  ((-gptr- "struct v4l2_capability *") capptr)
+  ((-gptr- "struct v4l2_cropcap *") cropcapptr)
+  ((-gptr- "struct v4l2_crop *") cropptr)
+  ((-gptr- "struct v4l2_format *") fmtptr)
+  ((-gptr- "struct v4l2_requestbuffers *") rbptr)
+  )
+
+#? (new v4l2device <devname> <w> <h> <fps> <nb>)
+;; Open video device (webcam etc) <devname> (e.g. <"/dev/video0">)
+;; preparing to grab images of resoltion <w> by <h>.
+;; <fps> is the number of frames per seconds that the v4l2
+;; subsystem will grab. The period between two frames obtained
+;; from the device may be longer the <1/fps> if Lush spends too
+;; much time between calls to one of the <get-frame-XXX> methods.
+;; <nb> is the number of v4l2 buffers requested. Typical numbers
+;; are 2 or 4.
+(defmethod v4l2device v4l2device (devname w h fps nb)
+  ((-str-) devname)
+  ((-int-) w h fps nb)
+  (setq width w)
+  (setq height h)
+  (setq buffers (gptr-matrix nb))
+  (setq bsizes (int-matrix nb))
+  (setq capptr (to-gptr ()))
+  (setq cropcapptr (to-gptr ()))
+  (setq cropptr (to-gptr ()))
+  (setq fmtptr (to-gptr ()))
+  (setq fd -1)
+  (setq started 0)
+  (setq fd (to-int #{ open((char *)$devname, O_RDWR) #}))
+  (when (= fd -1) (error "could not open v4l2 device"))
+  (let ((ret 0))
+    ((-int-) ret)
+    (setq capptr (to-gptr #{ malloc(sizeof(struct v4l2_capability)) #}))
+    #{ memset($capptr, 0, sizeof(struct v4l2_capability));
+       $ret = ioctl($fd, VIDIOC_QUERYCAP, $capptr);
+    #}
+    (when (< ret 0) 
+      (==> this cleanup)
+      (error "could not query v4l2 device"))
+    (when (= 0 (to-int #{ $capptr->capabilities & V4L2_CAP_VIDEO_CAPTURE #}))
+      (==> this cleanup)
+      (error "v4l2 device does not support video capture"))
+    (when (= 0 (to-int #{ $capptr->capabilities & V4L2_CAP_STREAMING #}))
+      (==> this cleanup)
+      (error "v4l2 device does not support streaming i/o"))
+
+    ;; resetting cropping to full frame
+    (setq cropcapptr (to-gptr #{ malloc(sizeof(struct v4l2_cropcap)) #}))
+    (setq cropptr (to-gptr #{ malloc(sizeof(struct v4l2_crop)) #}))
+    #{ memset($cropcapptr, 0, sizeof(struct v4l2_cropcap));
+       $cropcapptr->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+       if (0 == ioctl($fd, VIDIOC_CROPCAP, $cropcapptr)) {
+         $cropptr->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+         $cropptr->c = $cropcapptr->defrect; 
+         ioctl($fd, VIDIOC_S_CROP, $cropptr);
+       }
+    #}
+
+    ;; set format
+    (setq fmtptr (to-gptr #{ malloc(sizeof(struct v4l2_format)) #}))
+    #{ memset($fmtptr, 0, sizeof(struct v4l2_format));
+       $fmtptr->type                = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+       $fmtptr->fmt.pix.width       = $width; 
+       $fmtptr->fmt.pix.height      = $height;
+       $fmtptr->fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
+       $fmtptr->fmt.pix.field       = V4L2_FIELD_ANY;
+    #}
+    (when (< (to-int #{ ioctl($fd, VIDIOC_S_FMT, $fmtptr) #}) 0)
+      (==> this cleanup)
+      (error "unable to set v4l2 format"))
+
+    ;; set framerate
+    #{{ struct v4l2_streamparm* setfps;  
+        setfps=(struct v4l2_streamparm *) calloc(1, sizeof(struct v4l2_streamparm));
+        memset(setfps, 0, sizeof(struct v4l2_streamparm));
+        setfps->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        setfps->parm.capture.timeperframe.numerator=1;
+        setfps->parm.capture.timeperframe.denominator=$fps;
+        ioctl($fd, VIDIOC_S_PARM, setfps); 
+    } #}
+
+    ;; allocate and map the buffers
+    (setq rbptr (to-gptr #{ malloc(sizeof(struct v4l2_requestbuffers)) #}))
+    (let ((nbuf (idx-dim buffers 0)))
+      ((-int-) nbuf)
+      #{ $rbptr->count = $nbuf;
+         $rbptr->type =  V4L2_BUF_TYPE_VIDEO_CAPTURE;
+         $rbptr->memory = V4L2_MEMORY_MMAP;
+         $ret = ioctl($fd, VIDIOC_REQBUFS, $rbptr);
+      #}
+      (when (< ret 0)
+	(==> this cleanup)
+	(error "could not allocate v4l2 buffers"))
+      (setq ret 0)
+      #{{ void **bufp; int *sizep;
+          int i;
+          bufp = IDX_PTR($buffers,void*);
+          sizep = IDX_PTR($bsizes,int);
+          for (i=0; i<$nbuf; i++) { 
+            struct v4l2_buffer buf;
+	    int r;
+            memset(&buf, 0, sizeof(struct v4l2_buffer));
+            buf.index = i;
+	    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	    buf.memory = V4L2_MEMORY_MMAP;
+
+	    r = ioctl($fd, VIDIOC_QUERYBUF, &buf);
+            /* printf("i=%u, length: %u, offset: %u, r=%d\n", i, buf.length, buf.m.offset, r); */
+            if (r < 0) { $ret = -(i+1); }
+            if ($ret == 0) {
+  	      bufp[i] = mmap(0, buf.length, PROT_READ + PROT_WRITE, MAP_SHARED, $fd, buf.m.offset);
+              sizep[i] = buf.length;
+	      if ( bufp[i] == MAP_FAILED) { $ret = -(i+1000); }
+            }
+          }
+         }#} )
+      (when (< ret 0)
+	(printf "ret=%d\n" ret)
+	(if (> ret -1000) 
+	    (progn
+	      (printf "query buffer %d\n" (- (+ 1 ret)))
+	      (==> this cleanup)
+	      (error "could not query v4l2 buffer")))
+	(printf "map buffer %d\n" (- (+ 1000 ret)))
+	(==> this cleanup)
+	(error "could not map v4l2 buffer"))
+      ())))
+
+#? (==> <v4l2device> set-input <n>)
+;; Set active input to <n>.
+;; return 0 on success, -1 on failure.
+(defmethod v4l2device set-input (n)
+  ((-int-) n)
+  (to-int #{ ioctl($fd, VIDIOC_S_INPUT, &$n) #}))
+
+
+#? (==> <v4l2device> get-frame-rgb <frame>)
+;; Get the next available frame from the v4l2 device
+;; and place it in <frame> in RGB format.
+;; <frame> must be an idx3 of ubytes of size
+;; <height> by <width> by <bpp>, where <bpp>
+;; must be at least 3.
+;; The underlying frame is actually grabbed in
+;; YUYV and converted to RGB.
+(defmethod v4l2device get-frame-rgb (frame) 
+  ((-idx3- (-ubyte-)) frame)
+  (when (or (< (idx-dim frame 2) 3) 
+	    (<> (idx-dim frame 0) height)
+	    (<> (idx-dim frame 1) width))
+    (error "frame has wrong size"))
+  (when (= 0 started) (==> this start))
+  (let ((ret 0)
+	(m0 (idx-modulo frame 0))
+	(m1 (idx-modulo frame 1)))
+    ((-int-) ret m0 m1)
+    #{{ struct v4l2_buffer buf;
+        void **buffers;
+        unsigned char *src, *dst;
+        int *bsizes, i, j, k;
+        buffers = IDX_PTR($buffers,void *);
+        bsizes = IDX_PTR($bsizes,int);
+        memset(&buf, 0, sizeof(struct v4l2_buffer));
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        $ret = ioctl ($fd, VIDIOC_DQBUF, &buf);
+        src = (unsigned char *)(buffers[buf.index]);
+        dst = IDX_PTR($frame,unsigned char);
+        for (i=0; i<$height; i++) {
+          for (j=0, k=0; j<$width; j++, k+=$m1) {
+            float f, y, u, v;
+            int j2;
+            j2 = j<<1;
+            y = src[j2]; 
+            if (j & 1) {
+              u = src[j2-1]; v = src[j2+1];
+            } else {
+              u = src[j2+1]; v = src[j2+3];
+            }
+            f = 1.164383*(y-16) + 1.596027*(v-128);
+            dst[k] = (f>=255)?0xff:((f<0)?0x00:(unsigned char)f);
+            f = 1.164383*(y-16) - 0.812968*(v-128) - 0.391726*(u-128);
+            dst[k+1] = (f>=255)?0xff:((f<0)?0x00:(unsigned char)f);
+            f = 1.164383*(y-16) + 2.017232*(u-128);
+            dst[k+2] = (f>=255)?0xff:((f<0)?0x00:(unsigned char)f);
+          }
+          src += $width << 1;
+          dst += $m0;
+        }
+        $ret += ioctl($fd, VIDIOC_QBUF, &buf);
+     }#} ret))
+
+
+#? (==> <v4l2device> get-frame-grey <frame>)
+;; Get the next available frame from the v4l2 device
+;; and place it in <frame> in greyscale format.
+;; <frame> must be an idx2 of ubytes of size
+;; <height> by <width>.
+(defmethod v4l2device get-frame-grey (frame) 
+  ((-idx2- (-ubyte-)) frame)
+  (when (or (<> (idx-dim frame 0) height)
+	    (<> (idx-dim frame 1) width))
+    (error "frame has wrong size"))
+  (when (= 0 started) (==> this start))
+  (let ((ret 0))
+    ((-int-) ret)
+    #{{ struct v4l2_buffer buf;
+        void **buffers;
+        unsigned char *buffer, *grey;
+        int *bsizes, i, j;
+        buffers = IDX_PTR($buffers,void *);
+        bsizes = IDX_PTR($bsizes,int);
+        memset(&buf, 0, sizeof(struct v4l2_buffer));
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        $ret = ioctl ($fd, VIDIOC_DQBUF, &buf);
+        buffer = (unsigned char *)(buffers[buf.index]);
+        grey = IDX_PTR($frame,unsigned char);
+        for (i=0; i<$height; i++) {
+          for (j=0; j<$width; j++) {
+            int k = i*$width+j;
+            grey[k] = buffer[k<<1];
+          }
+        }
+        $ret += ioctl($fd, VIDIOC_QBUF, &buf);
+     }#} ret))
+
+#? (==> <v4l2device> get-frame-yuv <frame>)
+;; Get the next available frame from the v4l2 device
+;; and place it in <frame> in YUV format.
+;; Unlike with YUV422, the U and V components are
+;; not subsampled.
+;; <frame> must be an idx3 of ubytes of size
+;; <height> by <width> by <bpp>, where <bpp>
+;; must be at least 3.
+;; The underlying frame is actually grabbed in
+;; YUYV (aka YUV422) and converted to YUV.
+(defmethod v4l2device get-frame-yuv (frame) 
+  ((-idx3- (-ubyte-)) frame)
+  (when (or (< (idx-dim frame 2) 3) 
+	    (<> (idx-dim frame 0) height)
+	    (<> (idx-dim frame 1) width))
+    (error "frame has wrong size"))
+  (when (= 0 started) (==> this start))
+  (let ((ret 0)
+	(m0 (idx-modulo frame 0))
+	(m1 (idx-modulo frame 1)))
+    ((-int-) ret m0 m1)
+    #{{ struct v4l2_buffer buf;
+        void **buffers;
+        unsigned char *src, *dst;
+        int *bsizes, i, j, k;
+        buffers = IDX_PTR($buffers,void *);
+        bsizes = IDX_PTR($bsizes,int);
+        memset(&buf, 0, sizeof(struct v4l2_buffer));
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        $ret = ioctl ($fd, VIDIOC_DQBUF, &buf);
+        src = (unsigned char *)(buffers[buf.index]);
+        dst = IDX_PTR($frame,unsigned char);
+        for (i=0; i<$height; i++) {
+          for (j=0, k=0; j<$width; j++, k+=$m1) {
+            int j2;
+            j2 = j<<1;
+            dst[k] = src[j2]; 
+            if (j & 1) {
+              dst[k+1] = src[j2-1]; dst[k+2] = src[j2+1];
+            } else {
+              dst[k+1] = src[j2+1]; dst[k+2] = src[j2+3];
+            }
+          }
+          src += $width << 1;
+          dst += $m0;
+        }
+        $ret += ioctl($fd, VIDIOC_QBUF, &buf);
+     }#} ret))
+
+
+#? (==> <v4l2device> get-frame-yuv422 <frame>)
+;; Get the next available frame from the v4l2 device
+;; and place it in <frame> in yuv422 format
+;; (also known as YUYV). <frame> must be an idx3 of 
+;; ubytes of size <height> by <width> by <2>.
+;; This is the most efficient of the <get-frame-XXX>
+;; functions as YUYV is the native format of
+;; many devices.
+(defmethod v4l2device get-frame-yuv422 (frame) 
+  ((-idx3- (-ubyte-)) frame)
+  (when (or (<> (idx-dim frame 2) 2) 
+	    (<> (idx-dim frame 0) height)
+	    (<> (idx-dim frame 1) width))
+    (error "frame has wrong size"))
+  (when (= 0 started) (==> this start))
+  (let ((ret 0))
+    ((-int-) ret)
+    #{{ struct v4l2_buffer buf;
+        void **buffers;
+        int *bsizes;
+        buffers = IDX_PTR($buffers,void *);
+        bsizes = IDX_PTR($bsizes,int);
+        memset(&buf, 0, sizeof(struct v4l2_buffer));
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        $ret = ioctl ($fd, VIDIOC_DQBUF, &buf);
+        memcpy(IDX_PTR($frame,unsigned char), buffers[buf.index], bsizes[buf.index]);
+        $ret += ioctl($fd, VIDIOC_QBUF, &buf);
+     }#} ret))
+
+
+#? (==> v4l2device <start>)
+;; Tells the v4l2 device to start grabbing frames.
+;; There is no need to call this method explicitely as it 
+;; is called automatically when the first
+;; call to one of the <get-frame-XXX" methods is performed.
+(defmethod v4l2device start () 
+  (let ((ret 0))
+    ((-int-) ret)
+    ;; queue all buffers
+    (idx-gloop ((i) (b buffers))
+      #{{ struct v4l2_buffer buf;
+          memset(&buf, 0, sizeof(struct v4l2_buffer));
+          buf.type        = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+          buf.memory      = V4L2_MEMORY_MMAP;
+          buf.index       = $i;
+          $ret += ioctl ($fd, VIDIOC_QBUF, &buf);
+      }#})
+    (when (< ret 0) (printf "WARNING: could not enqueue v4l2 buffers\n"))
+    #{{ enum v4l2_buf_type type;
+        type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        $ret = ioctl ($fd, VIDIOC_STREAMON, &type);
+    }#}
+    (if (< ret 0) 
+	(progn
+	  (printf "WARNING: could not start v4l2 capture\n")
+	  (setq started 0))
+      (setq started 1))
+    ()))
+
+#? (==> v4l2device <start>)
+;; Tells the v4l2 device to stop grabbing frames.
+;; There is no need to call this method explicitely as it 
+;; is called automatically when the device is destroyed.
+(defmethod v4l2device stop ()
+  (let ((ret -1))
+    ((-int-) ret)
+    (when (<> -1 fd)
+      #{{ enum v4l2_buf_type type;
+	  type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  	  $ret = ioctl($fd, VIDIOC_STREAMOFF, &type);
+      }#})
+    (if (< ret 0) 
+	(printf "WARNING: could not stop v4l2 streaming\n")
+      (setq started 0))
+    ret))
+
+#? (==> <v4l2device> cleanup)
+;; private method to cleanup allocated objects in a v4l2 device.
+(defmethod v4l2device cleanup ()
+  (when (<> 0 started) (==> this stop))
+  #{ if ($capptr != NULL) { free($capptr); $capptr = NULL; }
+     if ($cropcapptr != NULL) { free($cropcapptr); $cropcapptr = NULL; }
+     if ($cropptr != NULL) { free($cropptr); $cropptr = NULL; }
+     if ($fmtptr != NULL) { free($fmtptr); $fmtptr = NULL; }
+     if ($rbptr != NULL) { free($rbptr); $rbptr = NULL; }
+  #} 
+  (let ((ret 0) (n (idx-dim buffers 0)))
+    ((-int-) ret n)
+    #{{ void **bufp; int *sizep, i;
+        bufp = IDX_PTR($buffers,void*);
+        sizep = IDX_PTR($bsizes,int);
+        for (i=0; i<$n; i++) { $ret += munmap( bufp[i], sizep[i] ); }
+    }#}
+    (when (< ret 0) (printf "WARNING: could not unmap v4l2 buffers\n")))
+  (when (<> -1 fd) #{ close($fd); #})
+  ())
+
+(defmethod v4l2device -destructor ()
+  (==> this cleanup) ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; demo/test
+
+#? * v4l2 demos
+
+#? (v4l2-demo [<device>] [<width>] [<height>] [<input>] [<nbuf>] [<fps>] [<mode>])
+;; Testing/demo function for <v4l2device>: grabs 1000 video frames
+;; and simultaneously displays them in a Lush graphic window.
+;; All arguments are optional:
+;; <device>: video device (default: <"/dev/video0">).
+;; <width>, <height>: dimensions of the images to be grabbed
+;; (default: 320 by 240).
+;; <input>: input number from which frames will be grabbed (generally 0, 1, or 2). 
+;;  Default is -1, which leaves the input unchanged from the last time the
+;;  device was used.
+;; <nbuf>: number of frame buffers (default: 2).
+;; <mode>: 0 for RGB, 1 for grayscale, 2 for YUYV with "manual"
+;; conversion to RGB before display (default: 0).
+;; <fps>: frame rate at which v4l2 will grab frames.
+;; The actual frame rate is displayed on the screen. It may
+;; be lower than the one requested in <fps> (generally half).
+;; Example:
+;; {<code>
+;; (v4l2-demo "/dev/video0" 960 720 0 2 30 0)
+;; </code>}
+(de v4l2-demo (&optional (d "/dev/video0") (width 320) (height 240) (input -1) (nb 2) (fps 30) (mode 0))
+  (libload "libimage/img-util")
+  (libload "libc/stopwatch")
+  (let  ((z (new v4l2device d width height fps nb))
+	 (frame-grey (ubyte-matrix height width))
+	 (frame-yuv (ubyte-matrix height width 2))
+	 (frame-rgb (ubyte-matrix height width 3))
+	 (sw (new stopwatch))
+	 (tim 0))
+    (when (>= input 0) 
+      (when (< (==> z set-input input) 0) 
+	(printf "input=%d\n" input)
+	(error "could not select input")))
+    (when (not window) (new-window 0 0 (+ width 20) (+ height 20) "v4l2"))
+    (cls)
+    (setq tim (==> sw get))
+    (repeat 1000
+      (graphics-batch
+       (selectq mode
+	 ;; RGB (internal conversion from YUYV)
+	 (0 (==> z get-frame-rgb frame-rgb)
+	    (rgb-draw-matrix 10 10 frame-rgb))
+	 ;; greyscale
+	 (1 (==> z get-frame-grey frame-grey)
+	    (rgb-draw-matrix 10 10 frame-grey))
+	 ;; YUYV with "manual" conversion to RGB
+	 (2 (==> z get-frame-yuv422 frame-yuv)
+	    (convert-yuv422-to-rgb frame-yuv frame-rgb)
+	    (rgb-draw-matrix 10 10 frame-rgb))
+	 (t (error "unknown mode")))
+       (let ((ntim (==> sw get)))
+	 (color-rgb 0.2 0.2 1)
+	 (gprintf 12 30 "%4.1f FPS" (/ 1 (- ntim tim)))
+	 (setq tim ntim))))))
+
+  
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make-sf
+ ()
+ #{ #include <fcntl.h>              /* low-level i/o */
+    #include <unistd.h>
+    #include <errno.h>
+    #include <malloc.h>
+    #include <sys/stat.h>
+    #include <sys/types.h>
+    #include <sys/time.h>
+    #include <sys/mman.h>
+    #include <sys/ioctl.h>
+    #include <asm/types.h>          /* for videodev2.h */
+    #include <linux/videodev2.h>
+  #}
+ (v4l2device start stop cleanup v4l2device -destructor set-input
+	     get-frame-yuv422 get-frame-grey get-frame-yuv get-frame-rgb)
+ )

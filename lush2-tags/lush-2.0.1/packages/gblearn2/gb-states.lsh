@@ -1,0 +1,379 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: gb-states.lsh,v 1.4 2003/04/29 20:56:32 profshadoko Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; states
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gblearn2/gb-config")
+(libload "libidx/idx-float")
+(libload "libidx/idx-double")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** gb-states
+;; {<author> Yann LeCun}
+;; states are the main objects used to store state
+;; variables in or between modules.
+(defclass gb-state object)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+#? (each-idx-slots <o> <s> <f1> [<f2>...[<fn>]])
+;; evaluates lists in <f> for all active idx slots of object <o>, 
+;; (as returned by (==> <o> idx-slots)) with
+;; <s> successively taking the values of the slots in question.
+(dmd each-idx-slots (o s . f)
+  (cons (list 'each `((,s (letslot ,o (mapcar eval (==> ,o idx-slots)))))) 
+	f))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx-state
+;; an idx-state is a state that contains vector or matrix variables.
+(defclass idx-state gb-state)
+
+#? (==> <idx-state> idx-slots)
+;; return the complete list of idx slots.
+(defmethod idx-state idx-slots () (allslots this))
+
+#? (new idx-state [<params>])
+;; create a new simple-state.
+;; if <params> is absent, the simple-state is left unsized.
+;; Otherwise <params> must be a list of integer (possibly empty), which 
+;; will be used to determine the size of the object.
+;; <params> has the same meaning as the 2nd parameter of the functions new-index.
+(defmethod idx-state idx-state params
+  (each ((s (==> this idx-slots)))
+	(set s (apply new-index (cons (float-storage) params)))))
+
+#? (==> <idx-state> resize [<list-of-dims>])
+;; resize all the idx slots (as returned by idx-slots)
+;; <list-of-dims> is a list with p numbers specifying the
+;; size of the last p dimensions of each slot.
+;; If <list-of-dim> is absent, all the active slots are undimed. 
+;;.SEE (==> <idx-state> idx-slots)
+(defmethod idx-state redim params
+  (if (not params) 
+      (==> this undim)
+    (apply ==> (cons this (cons 'resize params)))))
+
+#? (==> <idx-state> undim)
+;; undim all the active idx slots of <idx-state>.
+(defmethod idx-state undim () 
+  (each-idx-slots this s (idx-undim s)))
+
+#? (==> idx-state clear)
+;; fill all the active idx slots with zeroes
+;;.SEE (==> <idx-state> idx-slots)
+(defmethod idx-state clear () 
+  (each-idx-slots this s (array-clear s 0)))
+  
+#? (==> <idx-state> load <s>)
+;; fill slot x with content of file <s>
+(defmethod idx-state load (s)
+  (let ((m (load-matrix s))) (array-copy m x)))
+
+#? (==> <idx-state> save <s>
+;; save content of slot x into file <s>.
+(defmethod idx-state save (s) (save-matrix x s))
+
+#? (==> <idx-state> dump <s>
+;; save the entire object into file <s>
+(defmethod idx-state dump (s) (write-binary s this))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx0-state
+(defclass idx0-state idx-state ((-idx0- (-float-)) x))
+(defmethod idx0-state idx0-state () 
+  (setq x (float-array))
+  ())
+
+#? ** idx0-dstate
+(defclass idx0-dstate idx0-state ((-idx0- (-float-)) dx))
+(defmethod idx0-dstate idx0-dstate () 
+  (setq x (float-array))
+  (setq dx (float-array))
+  ())
+
+#? ** idx0-ddstate
+(defclass idx0-ddstate idx0-dstate ((-idx0- (-float-)) ddx))
+(defmethod idx0-ddstate idx0-ddstate () 
+  (setq x (float-array))
+  (setq dx (float-array))
+  (setq ddx (float-array))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx1-state
+(defclass idx1-state idx-state ((-idx1- (-float-)) x))
+(defmethod idx1-state idx1-state (d0 ) 
+  (declare (-int-) d0 )
+  (setq x (float-array d0 ))
+  ())
+(defmethod idx1-state resize (d0 ) 
+  (declare (-int-) d0 )
+  (midx-m1resize x    d0)
+  ())
+
+#? ** idx1-dstate
+(defclass idx1-dstate idx1-state ((-idx1- (-float-)) dx))
+(defmethod idx1-dstate idx1-dstate (d0 ) 
+  (declare (-int-) d0 )
+  (setq x (float-array d0 ))
+  (setq dx (float-array d0 )))
+  ())
+(defmethod idx1-dstate resize (d0 ) 
+  (declare (-int-) d0)
+  (midx-m1resize x    d0)
+  (midx-m1resize dx   d0)
+  ())
+
+
+#? ** idx1-ddstate
+(defclass idx1-ddstate idx1-dstate ((-idx1- (-float-)) ddx))
+(defmethod idx1-ddstate idx1-ddstate (d0 ) 
+  (declare (-int-) d0 )
+  (setq x (float-array d0 ))
+  (setq dx (float-array d0 ))
+  (setq ddx (float-array d0 ))
+  ())
+(defmethod idx1-ddstate resize (d0 ) 
+  (declare (-int-) d0)
+  (midx-m1resize x    d0)
+  (midx-m1resize dx   d0)
+  (midx-m1resize ddx  d0)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx2-state
+(defclass idx2-state idx-state ((-idx2- (-float-)) x))
+(defmethod idx2-state idx2-state (d0 d1 ) 
+  (declare (-int-) d0 d1 )
+  (setq x (float-array d0 d1 ))
+  ())
+(defmethod idx2-state resize (d0 d1 ) 
+  (declare (-int-) d0 d1)
+  (idx-f2resize x    d0 d1)
+  ())
+
+#? ** idx2-dstate
+(defclass idx2-dstate idx2-state ((-idx2- (-float-)) dx))
+(defmethod idx2-dstate idx2-dstate (d0 d1 ) 
+  (declare (-int-) d0 d1 )
+  (setq x (float-array d0 d1 ))
+  (setq dx (float-array d0 d1 ))
+  ())
+(defmethod idx2-dstate resize (d0 d1) 
+  (declare (-int-) d0 d1)
+  (idx-f2resize x    d0 d1)
+  (idx-f2resize dx   d0 d1)
+  ())
+
+#? ** idx2-ddstate
+(defclass idx2-ddstate idx2-dstate ((-idx2- (-float-)) ddx))
+(defmethod idx2-ddstate idx2-ddstate (d0 d1 ) 
+  (declare (-int-) d0 d1 )
+  (setq x (float-array d0 d1 ))
+  (setq dx (float-array d0 d1 ))
+  (setq ddx (float-array d0 d1 ))
+  ())
+(defmethod idx2-ddstate resize (d0 d1) 
+  (declare (-int-) d0 d1)
+  (idx-f2resize x    d0 d1)
+  (idx-f2resize dx   d0 d1)
+  (idx-f2resize ddx  d0 d1)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx3-state
+(defclass idx3-state idx-state ((-idx3- (-float-)) x))
+(defmethod idx3-state idx3-state (d0 d1 d2 ) 
+  (declare (-int-) d0 d1 d2 )
+  (setq x (float-array d0 d1 d2 ))
+  ())
+(defmethod idx3-state resize (d0 d1 d2) 
+  (declare (-int-) d0 d1 d2)
+  (idx-f3resize x    d0 d1 d2)
+  ())
+
+#? ** idx3-dstate
+(defclass idx3-dstate idx3-state ((-idx3- (-float-)) dx))
+(defmethod idx3-dstate idx3-dstate (d0 d1 d2 ) 
+  (declare (-int-) d0 d1 d2 )
+  (setq x (float-array d0 d1 d2 ))
+  (setq dx (float-array d0 d1 d2 ))
+  ())
+(defmethod idx3-dstate resize (d0 d1 d2) 
+  (declare (-int-) d0 d1 d2)
+  (idx-f3resize x    d0 d1 d2)
+  (idx-f3resize dx   d0 d1 d2)
+  ())
+
+#? ** idx3-ddstate
+(defclass idx3-ddstate idx3-dstate ((-idx3- (-float-)) ddx))
+(defmethod idx3-ddstate idx3-ddstate (d0 d1 d2 ) 
+  (declare (-int-) d0 d1 d2 )
+  (setq x (float-array d0 d1 d2 ))
+  (setq dx (float-array d0 d1 d2 ))
+  (setq ddx (float-array d0 d1 d2 ))
+  ())
+(defmethod idx3-ddstate resize (d0 d1 d2) 
+  (declare (-int-) d0 d1 d2)
+  (idx-f3resize x    d0 d1 d2)
+  (idx-f3resize dx   d0 d1 d2)
+  (idx-f3resize ddx  d0 d1 d2)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** idx4-state
+(defclass idx4-state idx-state ((-idx4- (-float-)) x))
+(defmethod idx4-state idx4-state (d0 d1 d2 d3) 
+  (declare (-int-) d0 d1 d2 d3)
+  (setq x (float-array d0 d1 d2 d3))
+  ())
+(defmethod idx4-state resize (d0 d1 d2 d3) 
+  (declare (-int-) d0 d1 d2 d3)
+  (idx-f4resize x    d0 d1 d2 d3)
+  ())
+
+#? ** idx4-dstate
+(defclass idx4-dstate idx4-state ((-idx4- (-float-)) dx))
+(defmethod idx4-dstate idx4-dstate (d0 d1 d2 d3) 
+  (declare (-int-) d0 d1 d2 d3)
+  (setq x (float-array d0 d1 d2 d3))
+  (setq dx (float-array d0 d1 d2 d3))
+  ())
+(defmethod idx4-dstate resize (d0 d1 d2 d3) 
+  (declare (-int-) d0 d1 d2 d3)
+  (idx-f4resize x    d0 d1 d2 d3)
+  (idx-f4resize dx   d0 d1 d2 d3)
+  ())
+
+#? ** idx4-ddstate
+(defclass idx4-ddstate idx4-dstate ((-idx4- (-float-)) ddx))
+(defmethod idx4-ddstate idx4-ddstate (d0 d1 d2 d3) 
+  (declare (-int-) d0 d1 d2 d3)
+  (setq x (float-array d0 d1 d2 d3))
+  (setq dx (float-array d0 d1 d2 d3))
+  (setq ddx (float-array d0 d1 d2 d3))
+  ())
+(defmethod idx4-ddstate resize (d0 d1 d2 d3) 
+  (declare (-int-) d0 d1 d2 d3)
+  (idx-f4resize x    d0 d1 d2 d3)
+  (idx-f4resize dx   d0 d1 d2 d3)
+  (idx-f4resize ddx  d0 d1 d2 d3))
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** class-state
+;; a special kind of state used to store the output of a classifier.
+;; class-state are generated by modules such as class-max, and used
+;; by meters such as classifier-meter. No backprop is possible through 
+;; a class-state.
+(defclass class-state gb-state
+  ((-int-) output-class)
+  ((-float-) confidence)
+  ((-idx1- (-int-)) sorted-classes)
+  ((-idx1- (-float-)) sorted-scores))
+
+(defmethod class-state class-state (n)
+  (declare (-int-) n)
+  (setq sorted-classes (int-array n))
+  (setq sorted-scores  (float-array n))
+  ())
+
+(defmethod class-state resize (n)
+  (declare (-int-) n)
+  (idx-i1resize sorted-classes n)
+  (idx-f1resize sorted-scores n)
+  ())
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** lclass-state
+;; a special kind of state used to store the output of a spatial 
+;; classifier such as ledist-classer.
+(defclass lclass-state gb-state
+  ((-idx2- (-int-)) output-class)
+  ((-idx2- (-float-)) confidence)
+  ((-idx3- (-int-)) sorted-classes)
+  ((-idx3- (-float-)) sorted-scores))
+
+(defmethod lclass-state lclass-state (maxi maxj n)
+  (declare (-int-) n maxi maxj)
+  (setq output-class (int-array maxi maxj))
+  (setq confidence (float-array maxi maxj))
+  (setq sorted-classes (int-array n maxi maxj))
+  (setq sorted-scores  (float-array n maxi maxj))
+  ())
+
+(defmethod lclass-state resize (si sj)
+  (declare (-int-) si sj)
+  (idx-i2resize output-class si sj)
+  (idx-f2resize confidence si sj)
+  (idx-i3resize sorted-classes (idx-dim sorted-classes 0) si sj)
+  (idx-f3resize sorted-scores (idx-dim sorted-scores 0) si sj)
+)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(dhc-make ()
+	  (gb-state)
+	  (idx-state)
+
+	  (idx0-state idx0-state)
+	  (idx0-dstate idx0-dstate)
+	  (idx0-ddstate idx0-ddstate)
+	  
+	  (idx1-state idx1-state resize)
+	  (idx1-dstate idx1-dstate resize)
+	  (idx1-ddstate idx1-ddstate resize)
+	  
+	  (idx2-state idx2-state resize)
+	  (idx2-dstate idx2-dstate resize)
+	  (idx2-ddstate idx2-ddstate resize)
+	  
+	  (idx3-state idx3-state resize)
+	  (idx3-dstate idx3-dstate resize)
+	  (idx3-ddstate idx3-ddstate resize)
+
+	  (idx4-state idx4-state resize)
+	  (idx4-dstate idx4-dstate resize)
+	  (idx4-ddstate idx4-ddstate resize)
+	  
+	  (class-state class-state resize)
+	  (lclass-state lclass-state resize))
+
+

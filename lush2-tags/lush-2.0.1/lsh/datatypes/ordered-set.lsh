@@ -1,0 +1,481 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "datatypes/iterable-datatype")
+(libload "datatypes/tree-node")
+
+#? ** Sets
+;; The implementation of the set datatype is based on a
+;; self-adjusting binary search tree. 
+;; Set classes support the iterator protocol. Iteration
+;; over sets proceeds from smallest to largest item.
+
+(deftemplate OrderedSet IterableDatatype
+  ((-obj- (TreeNode)) root)     ; root node, only valid when n>0
+  ((-idx1- (-mptr-))  stack)    ; node stack (workspace for some methods)
+  ((-int-) n)                   ; number of items in tree
+  )
+
+(putmethod OrderedSet 'OrderedSet ()) ; remove default constructor
+
+(in-namespace (class OrderedSet)
+(import (nullp) from (class TreeNode))
+
+(defmacro to-node (p)
+  `(to-obj (classof root) ,p)
+  )
+
+(defmacro check-nonempty ()
+  `(when (= n 0)
+     (error "Set is empty") ))
+
+(libload "datatypes/ordered-set-utils" t)
+)
+
+(defmethod OrderedSet -emptyp ()
+  (= n 0) )
+
+#? (==> <OrderedSet> number-of-items)
+;; Number of items in set.
+(defmethod OrderedSet number-of-items ()
+  n)
+
+
+(defmethod OrderedSet -free-nodes ()
+  (when (> n 1)
+    (==> root clear-tree) )
+  ())
+
+#? (==> <OrderedSet> clear)
+;; Clear set and return self.
+;; After invoking this method the set is empty.
+(defmethod OrderedSet clear ()
+  (==> this -free-nodes)
+  (clear-stack* stack)
+  (setq n 0)
+  this)
+
+(defmethod OrderedSet -deepcopy (clone)
+  (declare (-obj- (OrderedSet)) clone)
+  ;; super-class slots
+  (setq :clone:refcount 0)
+  ;; this classes slots
+  (setq :clone:root (==> root copy-tree))
+  (when (not (emptyp stack))
+    (printf "*** Warning (deepcopy set): not copying current stack state\n"))
+  (setq :clone:stack (make-stack 32 mptr))
+  (setq :clone:n n)
+  ())
+
+;; remove node <m> with parent (pointed to by) <p> from tree,
+;; return node.
+(defmethod OrderedSet -remove (m p)
+  (declare (-obj- (TreeNode)) m)
+  (declare (-mptr-) p)
+  (let ((r m))
+    (if (nullp p)                           ; m has no parent
+        (progn
+          (assert (= m root))
+          (cond
+           ((nullp :m:left)
+            (when (not (nullp :m:right))
+              (setq root (to-node :m:right)) ))
+           ((nullp :m:right)
+            (when (not (nullp :m:left))
+              (setq root (to-node :m:left)) ))
+           (t
+            (setq r (to-node (==> m symmetric-order-predecessor t)))
+            (==> m swap-items r) )))
+      (let ((p (to-node p)))                ; m's parent
+        (cond
+         ((nullp :m:left)
+          (if (= :p:left (to-mptr m))
+              (setq :p:left :m:right)
+            (assert (= :p:right (to-mptr m)))
+            (setq :p:right :m:right) ))
+         ((nullp :m:right)
+          (if (= :p:left (to-mptr m))
+              (setq :p:left :m:left)
+            (assert (= :p:right (to-mptr m)))
+            (setq :p:right :m:left) ))
+         (t
+          (setq r (to-node (==> m symmetric-order-predecessor t)))
+          (==> m swap-items r) ))))
+    (decr n)
+    r))
+
+;; main workhorse for method remove-range: remove nodes while
+;; traversing the tree in symmetric order. more precisely,
+;; remove item on top of stack and update stack.
+;; <st> is a regular stack, <st2> is a SO traversal stack.
+;; return removed node.
+(defmethod OrderedSet -remove-next (st st2)
+  (declare (-idx1- (-mptr-)) st st2)
+  (let* ((m (to-node (pop st)))
+         (r m))
+    (assert (= (to-mptr m) (pop st2)))
+    (if (emptyp st)                       ; m has no parent
+        (progn
+          (assert (= m root))
+          (cond
+           ((nullp :m:left)
+            (when (not (nullp :m:right))
+              (setq root (to-node :m:right))
+              (push st :m:right)
+              (push st2 :m:right)
+              (setq m root)
+              (while (not (nullp :m:left))
+                (push st :m:left)
+                (push st2 :m:left)
+                (setq m (to-node :m:left)) )))
+           ((nullp :m:right)
+            (setq root (to-node :m:left)) )
+           (t
+            (setq r (to-node (==> m symmetric-order-successor t)))
+            (==> m swap-items r)
+            (push st (to-mptr m))
+            (push st2 (to-mptr m)) )))
+
+      (let ((p (to-node (peek-stack st))))    ; m's parent
+        (cond
+         ((nullp :m:left)
+          (if (= :p:left (to-mptr m))
+              (progn
+                (setq :p:left :m:right)
+                (while (not (nullp :p:left))
+                  (push st :p:left)
+                  (push st2 :p:left)
+                  (setq p (to-node :p:left)) ))
+            (assert (= :p:right (to-mptr m)))
+            (setq :p:right :m:right)
+            (if (nullp :p:right)
+                (if (emptyp st2)
+                    (clear-stack* st)
+                  (while (<> (peek-stack st) (peek-stack st2)) ; backtrack
+                    (pop st) ))
+              (push st :p:right)
+              (push st2 :p:right)
+              (setq p (to-node :p:right))
+              (while (not (nullp :p:left))
+                (push st :p:left)
+                (push st2 :p:left)
+                (setq p (to-node :p:left)) )))
+          (setq r m) )
+         ((nullp :m:right)
+          (if (= :p:left (to-mptr m))
+              (setq :p:left :m:left)
+            (assert (= :p:right (to-mptr m)))
+            (setq :p:right :m:left)
+            (if (emptyp st2)
+                (clear-stack* st)
+              (while (<> (peek-stack st) (peek-stack st2))     ; backtrack
+                (pop st) )))
+          (setq r m))
+         (t
+          (setq r (to-node (==> m symmetric-order-successor t)))
+          (==> m swap-items r)
+          (push st (to-mptr m))
+          (push st2 (to-mptr m)) ))))
+    (decr n)
+    r))
+
+;; do a self-check
+(defmethod OrderedSet check ()
+  (when (> n 0)
+    (let ((m (==> root count)))
+      (declare (-int-) m)
+      (when (<> m n)
+        (printf "node count insconsistent: %d (should be %d)\n" m n) )))
+  ())
+      
+;; optimize tree
+(defmethod OrderedSet rebalance ()
+  (when (> n 0)
+    (rebalance-tree! root)))
+
+(defmethod OrderedSet -destructor ()
+  (==> this -free-nodes)
+  () )
+
+(dhc-make-class () OrderedSet)
+
+;;
+;; methods below are template methods
+;;
+
+(defmethod OrderedSet OrderedSet ()
+  (==> this IterableDatatype)
+  (setq root (new (-classof- root)))  ; this node will never be used
+  (setq stack (make-stack 32 mptr))
+  (setq n 0)
+  ())
+
+(defmethod OrderedSet -iterate-with-stack (st)
+  (declare (-idx1- (-mptr-)) st)
+  (make-iterator st) )              ; destructor of iterator will clear stack
+  
+(defmethod OrderedSet -iterate ()
+  (let ((st (make-stack 32 mptr)))
+    (when (> n 0)
+      (==> root symmetric-order-first* st) )
+    (make-iterator st) ))           ; destructor of iterator will clear stack
+
+#? (==> <OrderedSet> insert <i>)
+;; Insert item <i> into set, return <t> on success and <()> when
+;; <i> was already in set.
+(defmethod OrderedSet insert (i)
+  (declare (-typeof- :root:item) i)
+  (check-mutability)
+  (if (= n 0)
+      (progn
+        (setq root (==> root clone))
+	(setq :root:item i)
+	(incr n)
+	t)
+    (if (eq :root:item i)
+        ()
+      (let ((l (==> root clone)))
+        (setq root (==> root find-and-splay i l t))
+        (when (== root l)
+          (incr n) )
+        (== root l)))))
+
+#? (==> <OrderedSet> insert-all <is>)
+;; Insert all items in vector <is> and return <()>.
+(defmethod OrderedSet insert-all (items)
+  (declare (-idx1- (-typeof- :root:item)) items)
+  ;; we insert items in shuffled order to avoid building up 
+  ;; a pathological tree
+  (when (not (emptyp items))
+    (check-mutability)
+    (let ((l (==> root clone))
+          (is (irange*/s (length items))) ) ; shuffled indices
+      (==> this insert (items (next is)))   ; in case n=0
+      (do ((i is))
+        (declare (-int-) i)
+        (setq root (==> root find-and-splay (items i) l t))
+        (when (== root l)
+          (incr n)
+          (setq l (==> root clone)) ))))
+  ())
+
+#? (==> <OrderedSet> remove <i>)
+;; Remove item <i> from set, return <t> on success and <()> when
+;; <i> was not in set.
+(defmethod OrderedSet remove (i)
+  (declare (-typeof- :root:item) i) 
+  (check-mutability)
+  (let ((success ()))
+    (declare (-bool-) success)
+    (cond
+     ((> n 1)
+      (assert (emptyp stack))
+      (when (==> root find i stack ())
+        (let* ((m (to-node (pop stack)))
+               (tn (if (emptyp stack)
+                       (==> this -remove m NULL)
+                     (==> this -remove m (peek-stack stack)) )))
+          (==> tn clear)
+          (setq success t) ))
+      (clear-stack* stack) )
+     ((= n 1)
+      (when (eq i :root:item)
+        (==> root clear)
+        (decr n)
+        (setq success t) ))
+     ((< n 0)
+      (error "internal error (invalid item count)") ))
+    success))
+
+#? (==> <OrderedSet> remove-range <from> <to>)
+;; Remove items in interval [<from>..<to>] from set, and return the
+;; number of items removed.
+(defmethod OrderedSet remove-range (from to)
+  (declare (-typeof- :root:item) from to)
+  (check-mutability)
+  (let ((nn n))
+    (declare (-int-) nn)
+    (cond
+     ((> n 1)
+      (assert (emptyp stack))
+      (let ((st2 (make-stack 16 mptr)))
+        (==> root find from stack ())
+        (==> root find from st2 t)
+        (when (not (emptyp st2))
+          (while (<> (peek-stack stack) (peek-stack st2))
+            (pop stack) ))
+        (while (not (emptyp st2))
+          (let ((m (to-node (peek-stack st2))))
+            (if (not (gt :m:item to))
+                (==> (==> this -remove-next stack st2) clear)
+              (clear-stack* st2) ))))
+      (clear-stack* stack) )
+     ((= n 1)
+      (when (and (not (lt :root:item from))
+                 (not (gt :root:item to)) )
+        (decr n) 
+        (==> root clear) ))
+     ((< n 0)
+      (error "internal error (invalid item count)") ))
+    (- nn n) ))
+
+#? (==> <OrderedSet> remove-range* <from> <to>)
+;; Remove items in interval [<from>..<to>] and return them in a new set.
+(defmethod OrderedSet remove-range* (from to)
+  (declare (-typeof- :root:item) from to)
+  (check-mutability)
+  (let* ((nn n) 
+         (rs (new (-classof- this)))
+         (vine (new TreeNode)) ; create a vine ...
+         (tail vine) )
+    (declare (-int-) nn)
+    (cond
+     ((> n 1)
+      (assert (emptyp stack))
+      (let ((st2 (make-stack 16 mptr)))
+        (==> root find from stack ())
+        (==> root find from st2 t)
+        (when (not (emptyp st2))
+          (while (<> (peek-stack stack) (peek-stack st2))
+            (pop stack) ))
+        (while (not (emptyp st2))
+          (let ((m (to-node (peek-stack st2))))
+            (if (gt :m:item to)
+                (clear-stack* st2)
+              (setq :tail:right (to-mptr (==> this -remove-next stack st2)))
+              (setq :tail:left NULL)
+              (setq tail (to-obj TreeNode :tail:right)) ))))
+      (clear-stack* stack)
+      (when (not (== tail vine))
+        (setq :tail:right NULL)
+        (setq :tail:left NULL)
+        (==> vine vine-to-tree (- nn n))   ; ... and turn it finally into tree
+        (setq :rs:root (to-node :vine:right))
+        (setq :rs:n (- nn n)) ))
+     ((= n 1)
+      (when (and (not (lt :root:item from))
+                 (not (gt :root:item to)))
+        (setq :rs:root root)
+        (incr :rs:n)
+        (decr n) ))
+     ((< n 0)
+      (error "internal error (invalid item count)") ))
+    rs))
+
+;; try to find tree node with item <i>
+(defmethod OrderedSet -find (i)
+  (declare (-typeof- :root:item) i)
+  (assert (> n 0))
+  (if (mutablep)
+      (let ((l (==> root clone)))
+        (setq root (to-node (==> root find-and-splay i l ()))) )
+    (let ((st (if (emptyp stack) stack (make-stack 16 mptr))))
+      (prog1 (if (==> root find i st ())
+                 (to-node (pop st))
+               root)
+        (clear-stack* st) ))))
+
+#? (==> <OrderedSet> member <i>)
+;; True if item <i> is in the set.
+(defmethod OrderedSet member (i)
+  (declare (-typeof- :root:item) i)
+  (cond 
+   ((= n 0)            ())
+   ((eq i :root:item)   t)
+   (t (let ((n (==> this -find i))) (eq :n:item i))) ))
+
+#? (==> <OrderedSet> mininum)
+;; Minimum item in set.
+(defmethod OrderedSet minimum ()
+  (check-nonempty)
+  :(to-node (==> root symmetric-order-first)):item)
+
+#? (==> <OrderedSet> maximum)
+;; Maximum item in set.
+(defmethod OrderedSet maximum ()
+  (check-nonempty)
+  :(to-node (==> root symmetric-order-last)):item)
+
+#? (==> <OrderedSet> random)
+;; Return a randomly chosen item from the set.
+(defmethod OrderedSet random ()
+  (check-nonempty)
+  ;; this algorithm is linear in n. Is there a smarter way?
+  (let ((i (floor (rand 0 n)))
+        (item :root:item) )
+    (declare (-int-) i)
+    (declare (-typeof- :root:item) item)
+    (do-items (v)
+      (when (= i 0)
+        (setq item v)
+        (setq continue ()) )
+      (decr i) )
+    item))
+
+(defmethod OrderedSet pretty ()
+  (let ((n 0))
+    (declare (-int-) n)
+    (do ((item this))
+      (declare (-typeof- :root:item) item)
+      (print-item)
+      (incr n)
+      (when (= (mod n 8) 0)
+        (printf "\n") ))
+    (printf "\n")
+    t))
+
+;; define everything need for an ordered set
+(df def-set (pfx pi)
+  (let ((sclsym (symbol-concat pfx 'Set))
+        (nclsym (symbol-concat pfx 'TreeNode))
+        (iclsym (symbol-concat pfx 'TreeNodeIterator)) )
+    (eval
+     `(progn
+        (defclass ,sclsym OrderedSet
+          (specialize (-obj- (,nclsym)) root) )
+        (in-namespace (class ,sclsym) 
+          (import (lt gt eq) from ,nclsym)            
+          (defmacro make-iterator (stack) (list 'new ',iclsym 'this stack))
+          (defparameter print-item ,pi) )
+        )
+     )
+    sclsym))
+
+#? (do-set (<i> <s> [<from>]) . <body>)
+;; Iterate in order over all items <i> in set <s>,
+;; optionally starting with item <from>.
+(defmacro do-set (args . body)
+  (selectq (length args)
+   (2
+    `(let ((this ,(cadr args)))
+       (OrderedSet.do-items (,(car args)) ,@body) )
+    )
+   (3
+    `(with-object ,(cadr args)
+       (OrderedSet.do-items (,(car args) ,@(cddr args)) ,@body) )
+    )
+   (t (error "syntax error (2 to 4 arguments expected)") )))

@@ -1,0 +1,188 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Miscellaneous Image Macros and Conversions
+;; basic macros and functions to manipulate
+;; dimensions and internal formats of images
+
+(dm FRED(f)  '0.299)
+(dm FGREEN(f) '0.587)
+(dm FBLUE(f) '0.114)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; conversion between various formats
+
+(de convert-yuv422-to-rgb (src dst)
+  ((-idx3- (-ubyte-)) src)
+  ((-idx3- (-ubyte-)) dst)
+  (when (or (<> (idx-dim src 0) (idx-dim dst 0))
+	    (<> (idx-dim src 1) (idx-dim dst 1))
+	    (< (idx-dim src 2) 2)
+	    (< (idx-dim dst 2) 3))
+    (error "invalid or incompatible dimensions for images"))
+  (cidx-bloop ("i" "j" ("src" src) ("dst" dst))
+    #{{float f, y, u, v;
+       y = src[0]; 
+       if (j & 1) {
+         u = src[-1]; v = src[1];
+       } else {
+         u = src[1]; v = src[3];
+       }
+       f = 1.164383*(y-16) + 1.596027*(v-128);
+       dst[0] = (f>=255)?0xff:((f<0)?0x00:(unsigned char)f);
+       f = 1.164383*(y-16) - 0.812968*(v-128) - 0.391726*(u-128);
+       dst[1] = (f>=255)?0xff:((f<0)?0x00:(unsigned char)f);
+       f = 1.164383*(y-16) + 2.017232*(u-128);
+       dst[2] = (f>=255)?0xff:((f<0)?0x00:(unsigned char)f);
+    }#} ) ())
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; internal format conversions
+
+#? (rgbaim2rgbafim <in>)
+;; convert RGBA image of ubytes into RGBA image of floats.
+(de rgbaim2rgbafim (in)
+    ((-idx3- (-ubyte-)) in)
+    (let ((rez (float-array (idx-dim in 0) (idx-dim in 1) (idx-dim in 2))))
+      (array-copy in rez)))
+
+#? (rgbafim2rgbaim <in>)
+;; convert RGBA image of floats into RGBA image of ubytes.
+(de rgbafim2rgbaim (in)
+    ((-idx3- (-flt-)) in)
+    (let ((rez (ubyte-array (idx-dim in 0) (idx-dim in 1) (idx-dim in 2))))
+      (array-copy in rez)))
+
+#? (pixel2rgbim <in>)
+;; converts an integer array of pixel values into a RGB image
+(de pixel2rgbim(image)
+  ((-idx2- (-int-)) image)
+  (let* ((w (idx-dim image 1))
+         (h (idx-dim image 0))
+         (ubim (ubyte-array h w 3)))
+    ((-int-) w h)
+    (idx-bloop ((ubrow ubim)(row image))
+      (idx-bloop ((ubpix ubrow)(pix row))
+        (let ((x (pix)))
+          ((-int-) x) ;; C inline?
+          (ubpix 0 (bitand 0xff (bitshr x 16)))
+          (ubpix 1 (bitand 0xff (bitshr x 8)))
+          (ubpix 2 (bitand 0xff (bitshr x 0))) ) ) )
+    ubim ) )
+  
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; dynamic resizing
+
+(dm anyim-resize(f out-im sz)
+    `(when (or
+           (< (idx-dim ,out-im 0) ncol)
+           (< (idx-dim ,out-im 1) nlin)
+           )
+      (idx-u3resize ,out-im nlin ncol ,sz)
+      ))
+
+(dm ubim-resize(f out-im)
+    `(when (or
+           (< (idx-dim ,out-im 0) ncol)
+           (< (idx-dim ,out-im 1) nlin)
+           )
+      (idx-u2resize ,out-im nlin ncol)
+      ))
+
+
+
+(dm rgba-resize(f out-im)
+    `(when (or
+           (< (idx-dim ,out-im 0) ncol)
+           (< (idx-dim ,out-im 1) nlin)
+           )
+      (idx-u3resize ,out-im nlin ncol 4)
+      ))
+
+(dm rgb-resize(f out-im)
+    `(when (or
+           (< (idx-dim ,out-im 0) ncol)
+           (< (idx-dim ,out-im 1) nlin)
+           )
+      (idx-u3resize ,out-im nlin ncol 3)
+      ))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? * img-dim-C
+;; class that holds the two dimensions of an image
+;; d0: height
+;; d1: width
+(defclass img-dim-C object
+  ((-int-) d0 d1))
+
+#? (new img-dim-C <d0> <d1>)
+(defmethod img-dim-C img-dim-C (ad0 ad1)
+  ((-int-) ad0 ad1)
+  (setq d0  ad0 )
+  (setq d1  ad1 ))
+
+#? (equal-dim <dimA> <dimB>)
+;;.VP
+;; ((-obj- (img-dim-C)) dimA dimB):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; t if dimA and dimB are equal
+(de equal-dim(dimA dimB)
+    ((-obj- (img-dim-C)) dimA dimB)
+    (and (= :dimA:d0 :dimB:d0)
+         (= :dimA:d1 :dimB:d1)))
+
+#? (align-dimensions <img-dim> <align-block>)
+;;.VP
+;; ((-obj- (img-dim-C)) img-dim):
+;; (-int- align-block):
+;;
+;; CREATED: Oct 97
+;; DESCRIPTION:
+;; return new dimension object
+;; - dimensions larger than img-dim
+;; - multiple of align-block
+(de align-dimensions (img-dim align-block)
+    ((-obj- (img-dim-C)) img-dim)
+    ((-int-) align-block)
+    (new img-dim-C
+         (* align-block (1+ (div (1- :img-dim:d0) align-block)))
+         (* align-block (1+ (div (1- :img-dim:d1) align-block)))))
+
+________________________________________________________________
+
+(dhc-make-sf () 
+          convert-yuv422-to-rgb
+          rgbaim2rgbafim rgbafim2rgbaim pixel2rgbim
+          (img-dim-C img-dim-C) 
+          equal-dim align-dimensions)

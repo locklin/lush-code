@@ -1,0 +1,1379 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: audiofile.lsh,v 1.3 2002/11/25 23:45:32 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** High-level audiofile function
+
+#? * (audiofile-read <f>)
+;; read a audio from file <f> and return
+;; the result in an IDX. The type of the idx
+;; (ubyte, short, int, float, double) depends 
+;; on the content of the audiofile.
+;; Reading a WAV file can also be done using SDL.
+
+#? *** Reading audio frames into IDXes.
+
+#? * (afreadframes_idx-short <s> <track> <mat> <framecount>)
+#? * (afreadframes_idx-int <s> <track> <mat> <framecount>)
+#? * (afreadframes_idx-float <s> <track> <mat> <framecount>)
+#? * (afreadframes_idx-double <s> <track> <mat> <framecount>)
+
+#? *** Individual Audiofile Function Prototypes
+
+#? * (afseterrorhandler <efunc>)
+#? * (afquery <querytype> <arg1> <arg2> <arg3> <arg4>)
+#? * (afquerylong <querytype> <arg1> <arg2> <arg3> <arg4>)
+#? * (afquerydouble <querytype> <arg1> <arg2> <arg3> <arg4>)
+#? * (afquerypointer <querytype> <arg1> <arg2> <arg3> <arg4>)
+#? * (afnewfilesetup)
+#? * (affreefilesetup <s>)
+#? * (afidentifyfd <s>)
+#? * (afidentifynamedfd <s> <filename> <implemented>)
+#? * (afopenfile <filename> <mode> <setup>)
+#? * (afopenfd <fd> <mode> <setup>)
+#? * (afopennamedfd <fd> <mode> <setup> <filename>)
+#? * (afsyncfile <file>)
+#? * (afclosefile <file>)
+#? * (afinitfileformat <s> <format>)
+#? * (afgetfileformat <s> <version>)
+#? * (afinittrackids <s> <trackids> <trackcount>)
+#? * (afgettrackids <s> <trackids>)
+#? * (afreadframes <s> <track> <buffer> <framecount>)
+#? * (afwriteframes <s> <track> <buffer> <framecount>)
+#? * (afseekframe <s> <track> <frameoffset>)
+#? * (aftellframe <s> <track>)
+#? * (afgettrackbytes <s> <track>)
+#? * (afgetframesize <s> <track> <expand3to4>)
+#? * (afgetvirtualframesize <s> <track> <expand3to4>)
+#? * (afinitaeschanneldatato <s> <track> <willbedata>)
+#? * (afgetaeschanneldata <s> <track> <buf>)
+#? * (afsetaeschanneldata <s> <track> <buf>)
+#? * (afinitbyteorder <s> <track> <byteorder>)
+#? * (afgetbyteorder <s> <track>)
+#? * (afsetvirtualbyteorder <s> <track> <byteorder>)
+#? * (afgetvirtualbyteorder <s> <track>)
+#? * (afinitchannels <s> <track> <nchannels>)
+#? * (afgetchannels <s> <track>)
+#? * (afsetvirtualchannels <s> <track> <channelcount>)
+#? * (afgetvirtualchannels <s> <track>)
+#? * (afsetchannelmatrix <s> <track> <matrix>)
+#? * (afinitsampleformat <s> <track> <sampleformat> <samplewidth>)
+#? * (afgetsampleformat <file> <track> <sampfmt> <sampwidth>)
+#? * (afgetvirtualsampleformat <file> <track> <sampfmt> <sampwidth>)
+#? * (afsetvirtualsampleformat <s> <track> <sampleformat> <samplewidth>)
+#? * (afinitrate <s> <track> <rate>)
+#? * (afgetrate <s> <track>)
+#? * (afinitcompression <s> <track> <compression>)
+#? * (afgetcompression <s> <track>)
+#? * (afinitpcmmapping <filesetup> <track> <slope> <intercept> <minclip> <maxclip>)
+#? * (afgetpcmmapping <file> <track> <slope> <intercept> <minclip> <maxclip>)
+#? * (afsettrackpcmmapping <file> <track> <slope> <intercept> <minclip> <maxclip>)
+#? * (afsetvirtualpcmmapping <file> <track> <slope> <intercept> <minclip> <maxclip>)
+#? * (afgetvirtualpcmmapping <file> <track> <slope> <intercept> <minclip> <maxclip>)
+#? * (afinitdataoffset <s> <track> <offset>)
+#? * (afgetdataoffset <s> <track>)
+#? * (afinitframecount <s> <track> <framecount>)
+#? * (afgetframecount <file> <track>)
+#? * (afinitloopids <s> <instid> <ids> <nids>)
+#? * (afgetloopids <s> <instid> <loopids>)
+#? * (afsetloopmode <s> <instid> <loop> <mode>)
+#? * (afgetloopmode <s> <instid> <loopid>)
+#? * (afsetloopcount <s> <instid> <loop> <count>)
+#? * (afgetloopcount <s> <instid> <loopid>)
+#? * (afsetloopstart <s> <instid> <loopid> <markerid>)
+#? * (afgetloopstart <s> <instid> <loopid>)
+#? * (afsetloopend <s> <instid> <loopid> <markerid>)
+#? * (afgetloopend <s> <instid> <loopid>)
+#? * (afsetloopstartframe <s> <instid> <loop> <startframe>)
+#? * (afgetloopstartframe <s> <instid> <loop>)
+#? * (afsetloopendframe <s> <instid> <loop> <startframe>)
+#? * (afgetloopendframe <s> <instid> <loop>)
+#? * (afsetlooptrack <s> <instid> <loopid> <trackid>)
+#? * (afgetlooptrack <s> <instid> <loopid>)
+#? * (afinitmarkids <s> <trackid> <ids> <nids>)
+#? * (afgetmarkids <file> <trackid> <markids>)
+#? * (afsetmarkposition <file> <trackid> <markid> <markpos>)
+#? * (afgetmarkposition <file> <trackid> <markid>)
+#? * (afinitmarkname <s> <trackid> <marker> <name>)
+#? * (afinitmarkcomment <s> <trackid> <marker> <comment>)
+#? * (afgetmarkname <file> <trackid> <markid>)
+#? * (afgetmarkcomment <file> <trackid> <markid>)
+#? * (afinitinstids <s> <ids> <nids>)
+#? * (afgetinstids <file> <instids>)
+#? * (afgetinstparams <file> <instid> <pvlist> <nparams>)
+#? * (afsetinstparams <file> <instid> <pvlist> <nparams>)
+#? * (afgetinstparamlong <file> <instid> <param>)
+#? * (afsetinstparamlong <file> <instid> <param> <value>)
+#? * (afinitmiscids <s> <ids> <nids>)
+#? * (afgetmiscids <s> <ids>)
+#? * (afinitmisctype <s> <miscellaneousid> <type>)
+#? * (afgetmisctype <s> <miscellaneousid>)
+#? * (afinitmiscsize <s> <miscellaneousid> <size>)
+#? * (afgetmiscsize <s> <miscellaneousid>)
+#? * (afwritemisc <s> <miscellaneousid> <buf> <bytes>)
+#? * (afreadmisc <s> <miscellaneousid> <buf> <bytes>)
+#? * (afseekmisc <s> <miscellaneousid> <offset>)
+
+;; ********************************************************
+
+(libload "audiofile-config")
+(libload "libc/constants")
+
+(eval `(de afdummy () ,audiofile-cpheader-cmd ()))
+
+(defcconst 	"AF_DEFAULT_TRACK"     1001)
+(defcconst 	"AF_DEFAULT_INST"      2001)
+(defcconst 	"AF_NUM_UNLIMITED"    99999)
+(defcconst 	"AF_BYTEORDER_BIGENDIAN"     501)
+(defcconst 	"AF_BYTEORDER_LITTLEENDIAN"  502)
+
+(defcconst 	"AF_FILE_UNKNOWN"           -1)
+(defcconst 	"AF_FILE_RAWDATA"            0)
+(defcconst 	"AF_FILE_AIFFC"              1)
+(defcconst 	"AF_FILE_AIFF"               2)
+(defcconst 	"AF_FILE_NEXTSND"            3)
+(defcconst 	"AF_FILE_WAVE"               4)
+(defcconst 	"AF_FILE_BICSF"              5)
+(defcconst 	"AF_FILE_IRCAM"              5)
+
+(defcconst 	"AF_LOOP_MODE_NOLOOP"    0)
+(defcconst 	"AF_LOOP_MODE_FORW"      1)
+(defcconst 	"AF_LOOP_MODE_FORWBAKW"  2)
+
+
+(defcconst 	"AF_SAMPFMT_TWOSCOMP"  401 )	;;/* linear two's complement */
+(defcconst 	"AF_SAMPFMT_UNSIGNED"  402 )	;;/* unsigned integer */
+(defcconst 	"AF_SAMPFMT_FLOAT"     403 )	;;/* 32-bit IEEE floating-point */
+(defcconst 	"AF_SAMPFMT_DOUBLE"    404 )	;;/* 64-bit IEEE double-precision floating-point */
+
+(defcconst 	"AF_INST_LOOP_OFF"          0) ;;/* no looping */
+(defcconst 	"AF_INST_LOOP_CONTINUOUS"   1) ;;/* loop continuously through decay */
+(defcconst 	"AF_INST_LOOP_SUSTAIN"      3) ;;/* loop during sustain then continue */
+
+(defcconst 	"AF_INST_MIDI_BASENOTE"       301)
+(defcconst 	"AF_INST_NUMCENTS_DETUNE"     302)
+(defcconst 	"AF_INST_MIDI_LONOTE"         303)
+(defcconst 	"AF_INST_MIDI_HINOTE"         304)
+(defcconst 	"AF_INST_MIDI_LOVELOCITY"     305)
+(defcconst 	"AF_INST_MIDI_HIVELOCITY"     306)
+(defcconst 	"AF_INST_NUMDBS_GAIN"         307)
+(defcconst 	"AF_INST_SUSLOOPID"           308) ;;/* loop id for AIFF sustain loop */
+(defcconst 	"AF_INST_RELLOOPID"           309) ;;/* loop id for AIFF release loop */
+(defcconst 	"AF_INST_SAMP_STARTFRAME"     310) ;;/* start sample for this inst */
+(defcconst 	"AF_INST_SAMP_ENDFRAME"       311) ;;/* end sample for this inst */
+(defcconst 	"AF_INST_SAMP_MODE"           312) ;;/* looping mode for this inst */
+(defcconst 	"AF_INST_TRACKID"             313)
+(defcconst 	"AF_INST_NAME"                314) ;;/* name of this inst */
+(defcconst 	"AF_INST_SAMP_RATE"           315) ;;/* sample rate of this inst's sample */
+(defcconst 	"AF_INST_PRESETID"            316) ;;/* ID of preset containing this inst */
+(defcconst 	"AF_INST_PRESET_NAME"         317) ;;/* name of preset containing this inst */
+
+(defcconst 	"AF_MISC_UNRECOGNIZED"     0)	;;/* unrecognized data chunk */
+(defcconst 	"AF_MISC_COPY"           201)	;;/* copyright string */
+(defcconst 	"AF_MISC_AUTH"           202)	;;/* author string */
+(defcconst 	"AF_MISC_NAME"           203)	;;/* name string */
+(defcconst 	"AF_MISC_ANNO"           204)	;;/* annotation string */
+(defcconst 	"AF_MISC_APPL"           205)	;;/* application-specific data */
+(defcconst 	"AF_MISC_MIDI"           206)	;;/* MIDI exclusive data */
+(defcconst 	"AF_MISC_PCMMAP"         207)	;;/* PCM mapping information (future use) */
+(defcconst 	"AF_MISC_NeXT"           208)	;;/* misc binary data appended to NeXT header */
+(defcconst 	"AF_MISC_IRCAM_PEAKAMP"  209)     ;;/* peak amplitude information */
+(defcconst 	"AF_MISC_IRCAM_COMMENT"  210)     ;;/* BICSF text comment */
+(defcconst 	"AF_MISC_COMMENT"        210)	;;/* general text comment */
+(defcconst 	"AF_MISC_ICMT"           210)  ;;/* comments chunk (WAVE format) */
+(defcconst 	"AF_MISC_ICRD"           211)	;;/* creation date (WAVE format) */
+(defcconst 	"AF_MISC_ISFT"           212)	;;/* software name (WAVE format) */
+
+
+(defcconst 	"AF_COMPRESSION_UNKNOWN"     -1)
+(defcconst 	"AF_COMPRESSION_NONE"         0)
+(defcconst 	"AF_COMPRESSION_G722"       501)
+(defcconst 	"AF_COMPRESSION_G711_ULAW"  502)
+(defcconst 	"AF_COMPRESSION_G711_ALAW"  503)
+
+
+(defcconst 	"AF_COMPRESSION_APPLE_ACE2"  504)
+(defcconst 	"AF_COMPRESSION_APPLE_ACE8"  505)
+(defcconst 	"AF_COMPRESSION_APPLE_MAC3"  506)
+(defcconst 	"AF_COMPRESSION_APPLE_MAC6"  507)
+
+(defcconst 	"AF_COMPRESSION_G726"        517)
+(defcconst 	"AF_COMPRESSION_G728"        518)
+(defcconst 	"AF_COMPRESSION_DVI_AUDIO"   519)
+(defcconst 	"AF_COMPRESSION_IMA"  519)
+(defcconst 	"AF_COMPRESSION_GSM"         520)
+(defcconst 	"AF_COMPRESSION_FS1016"      521)
+(defcconst 	"AF_COMPRESSION_DV"          522)
+(defcconst 	"AF_COMPRESSION_MS_ADPCM"    523)
+
+(defcconst 	"AF_QUERYTYPE_INSTPARAM"     500)
+(defcconst 	"AF_QUERYTYPE_FILEFMT"       501)
+(defcconst 	"AF_QUERYTYPE_COMPRESSION"   502)
+(defcconst 	"AF_QUERYTYPE_COMPRESSIONPARAM"  503)
+(defcconst 	"AF_QUERYTYPE_MISC"          504)
+(defcconst 	"AF_QUERYTYPE_INST"          505)
+(defcconst 	"AF_QUERYTYPE_MARK"          506)
+(defcconst 	"AF_QUERYTYPE_LOOP"          507)
+
+(defcconst 	"AF_QUERY_NAME"               600)	;;/* get name (1-3 words) */
+(defcconst 	"AF_QUERY_DESC"               601)	;;/* get description */
+(defcconst 	"AF_QUERY_LABEL"              602)	;;/* get 4- or 5-char label */
+(defcconst 	"AF_QUERY_TYPE"               603)	;;/* get type token */
+(defcconst 	"AF_QUERY_DEFAULT"            604)	;;/* dflt. value for param */
+(defcconst 	"AF_QUERY_ID_COUNT"           605)	;;/* get number of ids avail. */
+(defcconst 	"AF_QUERY_IDS"                606)	;;/* get array of id tokens */
+(defcconst 	"AF_QUERY_IMPLEMENTED"        613)        ;;/* boolean */
+(defcconst 	"AF_QUERY_TYPE_COUNT"         607)        ;;/* get number of types av. */
+(defcconst 	"AF_QUERY_TYPES"              608)	;;/* get array of types */
+(defcconst 	"AF_QUERY_NATIVE_SAMPFMT"     609)        ;;/* for compression */
+(defcconst 	"AF_QUERY_NATIVE_SAMPWIDTH"   610)
+(defcconst 	"AF_QUERY_SQUISHFAC"          611)	;;/* 1.0 means variable */
+(defcconst 	"AF_QUERY_MAX_NUMBER"         612)        ;;/* max allowed in file */
+(defcconst 	"AF_QUERY_SUPPORTED"          613)	;;/* insts loops etc. supported? */
+
+(defcconst 	"AF_QUERY_TRACKS"             620)
+(defcconst 	"AF_QUERY_CHANNELS"           621)
+(defcconst 	"AF_QUERY_SAMPLE_SIZES"       622)
+(defcconst 	"AF_QUERY_SAMPLE_FORMATS"     623)
+(defcconst 	"AF_QUERY_COMPRESSION_TYPES"  624)
+
+(defcconst 	"AF_QUERY_VALUE_COUNT"        650)        ;;/* number of values of the above */
+defcconst 	"AF_QUERY_VALUES"             651)	;;/* array of those values */
+
+
+(defcconst 	"AF_BAD_NOT_IMPLEMENTED"                0)        ;;/* not implemented yet */
+(defcconst 	"AF_BAD_FILEHANDLE"                     1)	;;/* tried to use invalid filehandle */
+(defcconst 	"AF_BAD_OPEN"                           3)	;;/* unix open failed */
+(defcconst 	"AF_BAD_CLOSE"                          4)	;;/* unix close failed */
+(defcconst 	"AF_BAD_READ"                           5)	;;/* unix read failed */
+(defcconst 	"AF_BAD_WRITE"                          6)	;;/* unix write failed */
+(defcconst 	"AF_BAD_LSEEK"                          7)	;;/* unix lseek failed */
+(defcconst 	"AF_BAD_NO_FILEHANDLE"                  8)	;;/* failed to allocate a filehandle struct */
+(defcconst 	"AF_BAD_ACCMODE"                       10)	;;/* unrecognized audio file access mode */
+(defcconst 	"AF_BAD_NOWRITEACC"                    11)	;;/* file not open for writing */
+(defcconst 	"AF_BAD_NOREADACC"                     12)	;;/* file not open for reading */
+(defcconst 	"AF_BAD_FILEFMT"                       13)	;;/* unrecognized audio file format */
+(defcconst 	"AF_BAD_RATE"                          14)		;;/* invalid sample rate */
+(defcconst 	"AF_BAD_CHANNELS"                      15)	;;/* invalid number of channels*/
+(defcconst 	"AF_BAD_SAMPCNT"                       16)	;;/* invalid sample count */
+(defcconst 	"AF_BAD_WIDTH"                         17)	;;/* invalid sample width */
+(defcconst 	"AF_BAD_SEEKMODE"                      18)	;;/* invalid seek mode */
+(defcconst 	"AF_BAD_NO_LOOPDATA"                   19)	;;/* failed to allocate loop struct */
+(defcconst 	"AF_BAD_MALLOC"                        20)	;;/* malloc failed somewhere */
+(defcconst 	"AF_BAD_LOOPID"                        21)
+(defcconst 	"AF_BAD_SAMPFMT"                       22)	;;/* bad sample format */
+(defcconst 	"AF_BAD_FILESETUP"                     23)	;;/* bad file setup structure*/
+(defcconst 	"AF_BAD_TRACKID"                       24)	;;/* no track corresponding to id */
+(defcconst 	"AF_BAD_NUMTRACKS"                     25)	;;/* wrong number of tracks for file format */
+(defcconst 	"AF_BAD_NO_FILESETUP"                  26)	;;/* failed to allocate a filesetup struct*/
+(defcconst 	"AF_BAD_LOOPMODE"                      27)	;;/* unrecognized loop mode value */
+(defcconst 	"AF_BAD_INSTID"                        28)	;;/* invalid instrument id */
+(defcconst 	"AF_BAD_NUMLOOPS"                      29)	;;/* bad number of loops */
+(defcconst 	"AF_BAD_NUMMARKS"                      30)	;;/* bad number of markers */
+(defcconst 	"AF_BAD_MARKID"                        31)	;;/* bad marker id */
+(defcconst 	"AF_BAD_MARKPOS"                       32)	;;/* invalid marker position value */
+(defcconst 	"AF_BAD_NUMINSTS"                      33)	;;/* invalid number of instruments */
+(defcconst 	"AF_BAD_NOAESDATA"                     34)
+(defcconst 	"AF_BAD_MISCID"                        35)
+(defcconst 	"AF_BAD_NUMMISC"                       36)
+(defcconst 	"AF_BAD_MISCSIZE"                      37)
+(defcconst 	"AF_BAD_MISCTYPE"                      38)
+(defcconst 	"AF_BAD_MISCSEEK"                      39)
+(defcconst 	"AF_BAD_STRLEN"                        40)	;;/* invalid string length */
+(defcconst 	"AF_BAD_RATECONV"                      45)
+(defcconst 	"AF_BAD_SYNCFILE"                      46)
+(defcconst 	"AF_BAD_CODEC_CONFIG"                  47)	;;/* improperly configured codec */
+(defcconst 	"AF_BAD_CODEC_STATE"                   48)	;;/* invalid codec state: can't recover */
+(defcconst 	"AF_BAD_CODEC_LICENSE"                 49)        ;;/* no license available for codec */
+(defcconst 	"AF_BAD_CODEC_TYPE"                    50)	;;/* unsupported codec type */
+(defcconst 	"AF_BAD_COMPRESSION"                   47)        ;;/* for back compat */
+(defcconst 	"AF_BAD_COMPTYPE"                      50)        ;;/* for back compat */
+
+(defcconst 	"AF_BAD_INSTPTYPE"                     51)	;;/* invalid instrument parameter type */
+(defcconst 	"AF_BAD_INSTPID"                       52)	;;/* invalid instrument parameter id */
+(defcconst 	"AF_BAD_BYTEORDER"                     53)
+(defcconst 	"AF_BAD_FILEFMT_PARAM"                 54)        ;;/* unrecognized file format parameter */
+(defcconst 	"AF_BAD_COMP_PARAM"                    55)	;;/* unrecognized compression parameter */
+(defcconst 	"AF_BAD_DATAOFFSET"                    56)	;;/* bad data offset */
+(defcconst 	"AF_BAD_FRAMECNT"                      57)	;;/* bad frame count */
+(defcconst 	"AF_BAD_QUERYTYPE"                     58)	;;/* bad query type */
+(defcconst 	"AF_BAD_QUERY"                         59)	;;/* bad argument to afQuery() */
+(defcconst 	"AF_WARNING_CODEC_RATE"                60)        ;;/* using 8k instead of codec rate 8012 */
+(defcconst 	"AF_WARNING_RATECVT"                   61)	;;/* warning about rate conversion used */
+
+(defcconst 	"AF_BAD_HEADER"                        62)	;;/* failed to parse header */
+(defcconst 	"AF_BAD_FRAME"                         63)	;;/* bad frame number */
+(defcconst 	"AF_BAD_LOOPCOUNT"                     64)	;;/* bad loop count */
+(defcconst 	"AF_BAD_DMEDIA_CALL"                   65)	;;/* error in dmedia subsystem call */
+
+(defcconst 	"AF_BAD_AIFF_HEADER"                  108)	;;/* failed to parse chunk header */
+(defcconst 	"AF_BAD_AIFF_FORM"                    109)	;;/* failed to parse FORM chunk */
+(defcconst 	"AF_BAD_AIFF_SSND"                    110)	;;/* failed to parse SSND chunk */
+(defcconst 	"AF_BAD_AIFF_CHUNKID"                 111)        ;;/* unrecognized AIFF/AIFF-C chunk id */
+(defcconst 	"AF_BAD_AIFF_COMM"                    112)	;;/* failed to parse COMM chunk */
+(defcconst 	"AF_BAD_AIFF_INST"                    113)	;;/* failed to parse INST chunk */
+(defcconst 	"AF_BAD_AIFF_MARK"                    114)	;;/* failed to parse MARK chunk */
+(defcconst 	"AF_BAD_AIFF_SKIP"                    115)	;;/* failed to skip unsupported chunk */
+(defcconst 	"AF_BAD_AIFF_LOOPMODE"                116)        ;;/* unrecognized loop mode (forw etc)*/
+
+;; (defcconst   "AF_ERR_BASE"                             3000)
+;; (defcconst 	"AF_ERR_NOT_IMPLEMENTED"     (+ 0 AF_ERR_BASE)) ;;/* not implemented yet */
+;; (defcconst 	"AF_ERR_BAD_FILEHANDLE"      (+ 1 AF_ERR_BASE)) ;;/* invalid filehandle */
+;; (defcconst 	"AF_ERR_BAD_READ"            (+ 5 AF_ERR_BASE)) ;;/* unix read failed */
+;; (defcconst 	"AF_ERR_BAD_WRITE"           (+ 6 AF_ERR_BASE)) ;;/* unix write failed */
+;; (defcconst 	"AF_ERR_BAD_LSEEK"           (+ 7 AF_ERR_BASE)) ;;/* unix lseek failed */
+;; (defcconst 	"AF_ERR_BAD_ACCMODE"        (+ 10 AF_ERR_BASE)) ;;/* unrecognized audio file access mode */
+;; (defcconst 	"AF_ERR_NO_WRITEACC"        (+ 11 AF_ERR_BASE)) ;;/* file not open for writing */
+;; (defcconst 	"AF_ERR_NO_READACC"         (+ 12 AF_ERR_BASE)) ;;/* file not open for reading */
+;; (defcconst 	"AF_ERR_BAD_FILEFMT"        (+ 13 AF_ERR_BASE)) ;;/* unrecognized audio file format */
+;; (defcconst 	"AF_ERR_BAD_RATE"           (+ 14 AF_ERR_BASE)) ;;/* invalid sample rate */
+;; (defcconst 	"AF_ERR_BAD_CHANNELS"       (+ 15 AF_ERR_BASE)) ;;/* invalid # channels*/
+;; (defcconst 	"AF_ERR_BAD_SAMPCNT"        (+ 16 AF_ERR_BASE)) ;;/* invalid sample count */
+;; (defcconst 	"AF_ERR_BAD_WIDTH"          (+ 17 AF_ERR_BASE)) ;;/* invalid sample width */
+;; (defcconst 	"AF_ERR_BAD_SEEKMODE"       (+ 18 AF_ERR_BASE)) ;;/* invalid seek mode */
+;; (defcconst 	"AF_ERR_BAD_LOOPID"         (+ 21 AF_ERR_BASE)) ;;/* invalid loop id */
+;; (defcconst 	"AF_ERR_BAD_SAMPFMT"        (+ 22 AF_ERR_BASE)) ;;/* bad sample format */
+;; (defcconst 	"AF_ERR_BAD_FILESETUP"      (+ 23 AF_ERR_BASE)) ;;/* bad file setup structure*/
+;; (defcconst 	"AF_ERR_BAD_TRACKID"        (+ 24 AF_ERR_BASE)) ;;/* no track corresponding to id */
+;; (defcconst 	"AF_ERR_BAD_NUMTRACKS"      (+ 25 AF_ERR_BASE)) ;;/* wrong number of tracks for file format */
+;; (defcconst 	"AF_ERR_BAD_LOOPMODE"       (+ 27 AF_ERR_BASE)) ;;/* unrecognized loop mode symbol */
+;; (defcconst 	"AF_ERR_BAD_INSTID"         (+ 28 AF_ERR_BASE)) ;;/* invalid instrument id */
+;; (defcconst 	"AF_ERR_BAD_NUMLOOPS"       (+ 29 AF_ERR_BASE)) ;;/* bad number of loops */
+;; (defcconst 	"AF_ERR_BAD_NUMMARKS"       (+ 30 AF_ERR_BASE)) ;;/* bad number of markers */
+;; (defcconst 	"AF_ERR_BAD_MARKID"         (+ 31 AF_ERR_BASE)) ;;/* bad marker id */
+;; (defcconst 	"AF_ERR_BAD_MARKPOS"        (+ 32 AF_ERR_BASE)) ;;/* invalid marker position value */
+;; (defcconst 	"AF_ERR_BAD_NUMINSTS"       (+ 33 AF_ERR_BASE)) ;;/* invalid number of instruments */
+;; (defcconst 	"AF_ERR_BAD_NOAESDATA"      (+ 34 AF_ERR_BASE))
+;; (defcconst 	"AF_ERR_BAD_MISCID"         (+ 35 AF_ERR_BASE))
+;; (defcconst 	"AF_ERR_BAD_NUMMISC"        (+ 36 AF_ERR_BASE))
+;; (defcconst 	"AF_ERR_BAD_MISCSIZE"       (+ 37 AF_ERR_BASE))
+;; (defcconst 	"AF_ERR_BAD_MISCTYPE"       (+ 38 AF_ERR_BASE))
+;; (defcconst 	"AF_ERR_BAD_MISCSEEK"       (+ 39 AF_ERR_BASE))
+;; (defcconst 	"AF_ERR_BAD_STRLEN"         (+ 40 AF_ERR_BASE)) ;;/* invalid string length */
+;; (defcconst 	"AF_ERR_BAD_RATECONV"       (+ 45 AF_ERR_BASE))
+;; (defcconst 	"AF_ERR_BAD_SYNCFILE"       (+ 46 AF_ERR_BASE))
+;; (defcconst 	"AF_ERR_BAD_CODEC_CONFIG"   (+ 47 AF_ERR_BASE)) ;;/* improperly configured codec */
+;; (defcconst 	"AF_ERR_BAD_CODEC_TYPE"     (+ 50 AF_ERR_BASE)) ;;/* unsupported codec type */
+;; (defcconst 	"AF_ERR_BAD_INSTPTYPE"      (+ 51 AF_ERR_BASE)) ;;/* invalid instrument parameter type */
+;; (defcconst 	"AF_ERR_BAD_INSTPID"        (+ 52 AF_ERR_BASE)) ;;/* invalid instrument parameter id */
+;; 
+;; (defcconst 	"AF_ERR_BAD_BYTEORDER"      (+ 53 AF_ERR_BASE))
+;; (defcconst 	"AF_ERR_BAD_FILEFMT_PARAM"  (+ 54 AF_ERR_BASE)) ;;/* unrecognized file format parameter */
+;; (defcconst 	"AF_ERR_BAD_COMP_PARAM"     (+ 55 AF_ERR_BASE)) ;;/* unrecognized compression parameter */
+;; (defcconst 	"AF_ERR_BAD_DATAOFFSET"     (+ 56 AF_ERR_BASE)) ;;/* bad data offset */
+;; (defcconst 	"AF_ERR_BAD_FRAMECNT"       (+ 57 AF_ERR_BASE)) ;;/* bad frame count */
+;; 
+;; (defcconst 	"AF_ERR_BAD_QUERYTYPE"      (+ 58 AF_ERR_BASE)) ;;/* bad query type */
+;; (defcconst 	"AF_ERR_BAD_QUERY"          (+ 59 AF_ERR_BASE)) ;;/* bad argument to afQuery() */
+;; (defcconst 	"AF_ERR_BAD_HEADER"         (+ 62 AF_ERR_BASE)) ;;/* failed to parse header */
+;; (defcconst 	"AF_ERR_BAD_FRAME"          (+ 63 AF_ERR_BASE)) ;;/* bad frame number */
+;; (defcconst 	"AF_ERR_BAD_LOOPCOUNT"      (+ 64 AF_ERR_BASE)) ;;/* bad loop count */
+;; 
+;; 
+;; (defcconst 	"AF_ERR_BAD_AIFF_HEADER"    (+ 66 AF_ERR_BASE)) ;;/* failed to parse chunk header */
+;; (defcconst 	"AF_ERR_BAD_AIFF_FORM"      (+ 67 AF_ERR_BASE)) ;;/* failed to parse FORM chunk */
+;; (defcconst 	"AF_ERR_BAD_AIFF_SSND"      (+ 68 AF_ERR_BASE)) ;;/* failed to parse SSND chunk */
+;; (defcconst 	"AF_ERR_BAD_AIFF_CHUNKID"   (+ 69 AF_ERR_BASE)) ;;/* unrecognized AIFF/AIFF-C chunk id */
+;; (defcconst 	"AF_ERR_BAD_AIFF_COMM"      (+ 70 AF_ERR_BASE)) ;;/* failed to parse COMM chunk */
+;; (defcconst 	"AF_ERR_BAD_AIFF_INST"      (+ 71 AF_ERR_BASE)) ;;/* failed to parse INST chunk */
+;; (defcconst 	"AF_ERR_BAD_AIFF_MARK"      (+ 72 AF_ERR_BASE)) ;;/* failed to parse MARK chunk */
+;; (defcconst 	"AF_ERR_BAD_AIFF_SKIP"      (+ 73 AF_ERR_BASE)) ;;/* failed to skip unsupported chunk */
+;; (defcconst 	"AF_ERR_BAD_AIFF_LOOPMODE"  (+ 74 AF_ERR_BASE)) ;;/* unrecognized loop mode (forw etc) */
+
+
+(de afSetErrorHandler (efunc)
+     ((-gptr-) efunc)
+     (gptr #{ afSetErrorHandler($efunc) #}))
+
+(de  afQuery ( querytype arg1 arg2 arg3 arg4)
+     ((-int-) querytype)
+     ((-int-) arg1)
+     ((-int-) arg2)
+     ((-int-) arg3)
+     ((-int-) arg4)
+     (gptr  #{ afQuery($querytype,$arg1, $arg2,$arg3,$arg4) #} )
+     )
+
+(de  afQueryLong ( querytype arg1 arg2 arg3 arg4)
+     ((-int-) querytype)
+     ((-int-) arg1)
+     ((-int-) arg2)
+     ((-int-) arg3)
+     ((-int-) arg4)
+     (int #{ afQueryLong( $querytype, $arg1, $arg2, $arg3, $arg4)  #} )   ;; long->int 
+     )
+
+(de  afQueryDouble (querytype  arg1  arg2  arg3  arg4)
+     ((-int-) querytype)
+     ((-int-) arg1)
+     ((-int-) arg2)
+     ((-int-) arg3)
+     ((-int-) arg4)
+     (double #{ afQueryDouble($querytype,$arg1,$arg2,$arg3,$arg4) #})
+     )
+
+(de  afQueryPointer ( querytype arg1 arg2 arg3 arg4)
+     ((-int-) querytype)
+     ((-int-) arg1)
+     ((-int-) arg2)
+     ((-int-) arg3)
+     ((-int-) arg4)
+     (gptr #{ afQueryPointer($querytype, $arg1,$arg2,$arg3,$arg4) #})
+     )
+
+
+(de  afNewFileSetup ()
+     (gptr  #{ afNewFileSetup() #})
+     )
+
+(de  afFreeFileSetup  (s)
+     ((-gptr- "struct _AFfilesetup *") s)
+     #{ afFreeFileSetup($s); #}
+     ()
+     )
+
+(de  afIdentifyFD (s)
+     ((-int-) s)
+     (int #{ afIdentifyFD($s) #})
+     )
+
+(de  afIdentifyNamedFD (s filename implemented)
+     ((-int-) s)
+     ((-str-) filename)
+     ((-gptr- "int *") implemented)
+     (int #{ afIdentifyNamedFD($s, $filename->data, $implemented) #})
+     )
+
+(de  afOpenFile (filename mode setup)
+     ((-str-) filename)
+     ((-str-) mode)
+     ((-gptr- "struct _AFfilesetup *") setup)
+     (gptr #{ afOpenFile($filename->data, $mode->data, $setup) #})
+     )
+
+;;(de  afOpenVirtualFile (vfile mode setup)
+;;     ((-gptr- "AFvirtualfile *") vfile)     ;; (AFvirtualfile *vfile)
+;;     ((-str-) mode)
+;;     ((-gptr- "struct _AFfilesetup *") setup)
+;;     (gptr #{ afOpenVirtualFile($vfile, $mode->data, $setup) #})
+;;     )
+
+(de  afOpenFD (fd mode setup)
+     ((-int-) fd)
+     ((-str-) mode)
+     ((-gptr- "struct _AFfilesetup *") setup)
+     (gptr #{ afOpenFD($fd, $mode->data, $setup) #})
+     )
+
+(de  afOpenNamedFD (fd mode setup filename)
+     ((-int-) fd)
+     ((-str-) mode)
+     ((-gptr- "struct _AFfilesetup *") setup)
+     ((-str-) filename)
+     (gptr #{ afOpenNamedFD($fd, $mode->data, $setup, $filename->data) #})
+     )
+
+
+;;(de  afSaveFilePosition ( file)
+;;     ((-gptr- "struct _AFfilehandle *") file)
+;;     #{ afSaveFilePosition($file); #}
+;;     ()
+;;     )
+
+;;(de  afRestoreFilePosition ( file)
+;;     ((-gptr- "struct _AFfilehandle *") file)
+;;     #{ afRestoreFilePosition($file); #}
+;;     ()
+;;     )
+
+(de  afSyncFile ( file)
+     ((-gptr- "struct _AFfilehandle *") file)
+     (int #{ afSyncFile($file) #})
+     )
+
+(de  afCloseFile ( file)
+     ((-gptr- "struct _AFfilehandle *") file)
+     (int #{ afCloseFile($file) #})
+     )
+
+
+(de  afInitFileFormat (s format)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) format)
+     #{ afInitFileFormat($s, $format) #}
+     ()
+     )
+
+(de  afGetFileFormat (s version)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-gptr- "int *") version)
+     (int #{ afGetFileFormat($s, $version) #})
+     )
+
+
+
+(de  afInitTrackIDs (s  trackids  trackcount)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-gptr- "int *")trackids)
+     ((-int-) trackcount)
+     #{ afInitTrackIDs($s, $trackids, $trackcount); #}
+     ()
+     )
+
+(de  afGetTrackIDs (s trackids)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-gptr- "int *") trackids)
+     (int #{ afGetTrackIDs($s,$trackids) #})
+     )
+
+
+
+(de  afReadFrames (s track buffer framecount)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-gptr-) buffer)
+     ((-int-) framecount)
+     (int #{ afReadFrames($s,$track,$buffer,$framecount) #})
+     )
+
+(de afReadFrames_idx-short (s track mat framecount)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-idx2- (-short-)) mat)
+     ((-int-) framecount)
+     #{ {
+     short * matptr;
+     int nchannels;
+
+     nchannels = afGetChannels($s,$track);
+     Midx_init_dim2($mat,$framecount,nchannels);
+
+     matptr = IDX_PTR( $mat, short);
+     afReadFrames($s,$track,matptr,$framecount);
+     } #}
+     ())
+
+
+(de afReadFrames_idx-int (s track mat framecount)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-idx2- (-int-)) mat)
+     ((-int-) framecount)
+     #{ {
+     int * matptr;
+     int nchannels;
+
+     nchannels = afGetChannels($s,$track);
+     Midx_init_dim2($mat,$framecount,nchannels);
+
+     matptr = IDX_PTR( $mat, int);
+     afReadFrames($s,$track,matptr,$framecount);
+     } #}
+     ())
+
+(de afReadFrames_idx-float (s track mat framecount)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-idx2- (-float-)) mat)
+     ((-int-) framecount)
+     #{ {
+     float * matptr;
+     int nchannels;
+
+     nchannels = afGetChannels($s,$track);
+     Midx_init_dim2($mat,$framecount,nchannels);
+
+     matptr = IDX_PTR( $mat, float);
+     afReadFrames($s,$track,matptr,$framecount);
+     } #}
+     ())
+
+(de afReadFrames_idx-double (s track mat framecount)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-idx2- (-double-)) mat)
+     ((-int-) framecount)
+     #{ {
+     double * matptr;
+     int nchannels;
+
+     nchannels = afGetChannels($s,$track);
+     Midx_init_dim2($mat,$framecount,nchannels);
+
+     matptr = IDX_PTR( $mat, double);
+     afReadFrames($s,$track,matptr,$framecount);
+     } #}
+     ())
+
+
+(de  afWriteFrames (s track buffer framecount)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-gptr- "const void *") buffer)
+     ((-int-) framecount)
+     (int #{ afWriteFrames($s,$track,$buffer,$framecount) #})
+     )
+
+(de  afSeekFrame (s track frameoffset)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-int-) frameoffset)		;; AFframecount(off_t)->int
+     (int #{ afSeekFrame($s,$track,$frameoffset) #} )
+     )
+
+(de  afTellFrame (s track)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     (int #{ afTellFrame($s,$track) #})	;; AFfileoffset(off_t)->int
+     )
+
+
+(de  afGetTrackBytes (s track)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     (int #{ afGetTrackBytes($s,$track) #}) ;; AFfileoffset(off_t)->int
+     )
+
+(de  afGetFrameSize (s track expand3to4)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-int-) expand3to4)
+     (double #{ afGetFrameSize($s,$track,$expand3to4) #})
+     )
+
+(de  afGetVirtualFrameSize (s track expand3to4)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-int-) expand3to4)
+     (double #{ afGetVirtualFrameSize($s,$track,$expand3to4) #})
+     )
+
+
+
+(de  afInitAESChannelDataTo (s track willbedata)
+     ((-gptr- "struct _AFfilesetup *") s )
+     ((-int-) track)
+     ((-int-) willbedata)
+     #{ afInitAESChannelDataTo($s,$track,$willbedata); #}
+     ()
+     )
+
+(de  afGetAESChannelData (s track buf)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-gptr- "unsigned char *") buf)	;;unsigned char buf[24]?
+     (int #{ afGetAESChannelData($s,$track,$buf) #})
+     )
+
+(de  afSetAESChannelData (s track buf)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-gptr- "unsigned char *") buf)	;; unsigned char buf[24]
+     #{ afSetAESChannelData($s,$track,$buf); #}
+     ()
+     )
+
+
+
+(de  afInitByteOrder (s track byteorder)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) track)
+     ((-int-) byteOrder)
+     #{ afInitByteOrder($s,$track,$byteorder); #}
+     ()
+     )
+
+(de  afGetByteOrder (s track)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     (int #{ afGetByteOrder($s,$track) #})
+     )
+
+(de  afSetVirtualByteOrder (s track byteorder)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-int-) byteorder)
+     (int #{ afSetVirtualByteOrder($s,$track,$byteorder) #})
+     )
+
+(de  afGetVirtualByteOrder (s track)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     (int #{ afGetVirtualByteOrder($s,$track) #})
+     )
+
+
+
+(de  afInitChannels (s track nchannels)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) track)
+     ((-int-) nchannels)
+     #{ afInitChannels($s,$track,$nchannels); #}
+     ()
+     )
+
+(de  afGetChannels (s track)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     (int #{ afGetChannels($s,$track) #})
+     )
+
+(de  afSetVirtualChannels (s track channelcount)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-int-) channelcount)
+     (int #{ afSetVirtualChannels($s,$track,$channelcount) #})
+     )
+
+(de  afGetVirtualChannels (s track)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     (int #{ afGetVirtualChannels($s, $track) #})
+     )
+
+(de  afSetChannelMatrix (s track matrix)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-gptr- "double *") matrix)
+     #{ afSetChannelMatrix($s,$track,$matrix); #}
+     ()
+     )
+
+
+
+(de  afInitSampleFormat (s track sampleformat samplewidth)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) track)
+     ((-int-) sampleformat)
+     ((-int-) samplewidth)
+     #{ afInitSampleFormat($s,$track,$sampleformat,$samplewidth); #}
+     ()
+     )
+
+(de  afGetSampleFormat ( file track sampfmt sampwidth)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) track)
+     ((-gptr- "int *") sampfmt)
+     ((-gptr- "int *") sampwidth)
+     #{ afGetSampleFormat($file,$track,$sampfmt,$sampwidth); #}
+     ()
+     )
+
+(de  afGetVirtualSampleFormat ( file track sampfmt sampwidth)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) track)
+     ((-gptr- "int *") sampfmt)
+     ((-gptr- "int *") sampwidth)
+     #{ afGetVirtualSampleFormat($file,$track,$sampfmt,$sampwidth); #}
+     ()
+     )
+
+(de  afSetVirtualSampleFormat (s track sampleformat samplewidth)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     ((-int-) sampleformat)
+     ((-int-) samplewidth)
+     (int #{ afSetVirtualSampleFormat($s,$track,$sampleformat,$samplewidth) #})
+     )
+
+;; what's wrong with the original header file? this function is prototyped twice
+
+;;(de  afGetVirtualSampleFormat (s track sampleformat samplewidth)
+;;     ((-gptr- "struct _AFfilehandle *") s)
+;;     ((-int-) track)
+;;     ((-gptr- "int *") sampleformat)
+;;     ((-gptr- "int *") samplewidth)
+;;     #{ afGetVirtualSampleFormat($s,$track,$sampleformat,$samplewidth); #}
+;;     ()
+;;     )
+
+
+(de  afInitRate (s track rate)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) track)
+     ((-double-) rate)
+     #{ afInitRate($s,$track,$rate); #}
+     ()
+     )
+
+(de  afGetRate (s track)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     (double #{ afGetRate($s,$track) #})
+     )
+
+
+(de  afInitCompression (s track compression)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) track)
+     ((-int-) compression)
+     #{ afInitCompression($s,$track,$compression); #}
+     ()
+     )
+
+(de  afGetCompression (s track)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     (int #{ afGetCompression($s,$track) #})
+     )
+
+
+(de  afInitPCMMapping ( filesetup track slope intercept minclip maxclip)
+     ((-gptr- "struct _AFfilesetup *") filesetup)
+     ((-int-) track)
+     ((-double-) slope)
+     ((-double-) intercept)
+     ((-double-) minclip)
+     ((-double-) maxclip)
+     #{ afInitPCMMapping($filesetup,$track,$slope,$intercept,$minclip,$maxclip); #}
+     ()
+     )
+
+(de  afGetPCMMapping ( file track slope intercept minclip maxclip)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) track)
+     ((-gptr- "double *") slope)
+     ((-gptr- "double *") intercept)
+     ((-gptr- "double *") minclip)
+     ((-gptr- "double *") maxclip)
+     #{ afGetPCMMapping($file,$track,$slope,$intercept,$minclip,$maxclip); #}
+     ()
+     )
+
+(de  afSetTrackPCMMapping ( file track slope intercept minclip maxclip)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) track)
+     ((-double-) slope)
+     ((-double-) intercept)
+     ((-double-) minclip)
+     ((-double-) maxclip)
+     (int #{ afSetTrackPCMMapping($file,$track,$slope,$intercept,$minclip,$maxclip) #})
+     )
+
+
+(de  afSetVirtualPCMMapping ( file track slope intercept minclip maxclip)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) track)
+     ((-double-) slope)
+     ((-double-) intercept)
+     ((-double-) minclip)
+     ((-double-) maxclip)
+     (int #{ afSetVirtualPCMMapping($file,$track,$slope,$intercept,$minclip,$maxclip) #})
+     )
+
+(de  afGetVirtualPCMMapping ( file track slope intercept minclip maxclip)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) track)
+     ((-gptr- "double *") slope)
+     ((-gptr- "double *") intercept)
+     ((-gptr- "double *") minclip)
+     ((-gptr- "double *") maxclip)
+     #{ afGetVirtualPCMMapping($file,$track,$slope,$intercept,$minclip,$maxclip); #}
+     ()
+     )
+
+
+(de  afInitDataOffset (s track offset)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) track)
+     ((-int-) offset)		;; AFfileoffset(off_t)->int
+     #{ afInitDataOffset($s,$track,$offset); #}
+     ()
+     )
+
+(de  afGetDataOffset (s  track)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) track)
+     (int #{ afGetDataOffset($s,$track) #})   ;; AFframecount(off_t)->int
+     )
+
+
+(de  afInitFrameCount (s track framecount)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) track)
+     ((-int-) framecount)		;; AFframecount(off_t)->int
+     #{ afInitFrameCount($s,$track,$framecount); #}
+     ()
+     )
+
+(de  afGetFrameCount ( file track)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) track)
+     (int #{ afGetFrameCount($file,$track) #})         ;; AFframecount(off_t)->int
+     )
+
+
+(de  afInitLoopIDs (s instid ids nids)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) instid)
+     ((-gptr- "int *") ids)
+     ((-int-) nids)
+     #{ afInitLoopIDs($s,$instid,$ids,$nids); #}
+     ()
+     )
+
+(de  afGetLoopIDs (s instid loopids)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-gptr- "int *") loopids)
+     (int #{ afGetLoopIDs($s,$instid,$loopids) #})
+     )
+
+(de  afSetLoopMode (s instid loop mode)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loop)
+     ((-int-) mode)
+     #{ afSetLoopMode($s,$instid,$loop,$mode); #}
+     ()
+     )
+
+(de  afGetLoopMode (s instid loopid)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loopid)
+     (int #{ afGetLoopMode($s,$instid,$loopid) #})
+     )
+
+(de  afSetLoopCount (s instid loop count)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loop)
+     ((-int-) count)
+     (int #{ afSetLoopCount($s,$instid,$loop,$count) #})
+     )
+
+(de  afGetLoopCount (s instid loopid)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loopid)
+     (int #{ afGetLoopCount($s,$instid,$loopid) #})
+     )
+
+(de  afSetLoopStart (s instid loopid markerid)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loopid)
+     ((-int-) markerid)
+     #{ afSetLoopStart($s,$instid,$loopid,$markerid); #}
+     ()
+     )
+
+(de  afGetLoopStart (s instid loopid)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loopid)
+     (int #{ afGetLoopStart($s,$instid,$loopid) #})
+     )
+
+(de  afSetLoopEnd (s instid loopid markerid)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loopid)
+     ((-int-) markerid)
+     #{ afSetLoopEnd($s,$instid,$loopid,$markerid); #}
+     ()
+     )
+
+(de  afGetLoopEnd (s instid loopid)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loopid)
+     (int #{ afGetLoopEnd($s,$instid,$loopid) #})
+     )
+
+
+(de  afSetLoopStartFrame (s instid loop startframe)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loop)
+     ((-int-) startframe)		;; AFframecount(off_t)->int
+     (int #{ afSetLoopStartFrame($s,$instid,$loop,$startframe) #})
+     )
+
+(de  afGetLoopStartFrame (s instid loop)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loop)
+     (int #{ afGetLoopStartFrame($s,$instid,$loop) #})
+     )
+
+(de  afSetLoopEndFrame (s instid loop startframe)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loop)
+     ((-int-) startframe)		;; AFframecount(off_t)->int
+     (int #{ afSetLoopEndFrame($s,$instid,$loop,$startframe) #})
+     )
+
+(de  afGetLoopEndFrame (s instid loop)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loop)
+     (int #{ afGetLoopEndFrame($s,$instid,$loop) #})
+     )
+
+
+(de  afSetLoopTrack (s instid loopid trackid)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loopid)
+     ((-int-) trackid)
+     #{ afSetLoopTrack($s,$instid,$loopid,$trackid); #}
+     ()
+     )
+
+(de  afGetLoopTrack (s instid loopid)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) instid)
+     ((-int-) loopid)
+     (int #{ afGetLoopTrack($s,$instid,$loopid) #})
+     )
+
+
+
+(de  afInitMarkIDs (s trackid ids nids)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) trackid)
+     ((-gptr- "int *") ids)
+     ((-int-) nids)
+     #{ afInitMarkIDs($s,$trackid,$ids,$nids); #}
+     ()
+     )
+
+(de  afGetMarkIDs ( file trackid markids)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) trackid)
+     ((-gptr- "int *") markids)
+     (int #{ afGetMarkIDs($file,$trackid,$markids) #})
+     )
+
+(de  afSetMarkPosition ( file trackid markid markpos)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) trackid)
+     ((-int-) markid)
+     ((-int-) markpos)			;; AFframecount(off_t)->int
+     #{ afSetMarkPosition($file,$trackid,$markid,$markpos); #}
+     ()
+     )
+
+(de  afGetMarkPosition ( file trackid markid)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) trackid)
+     ((-int-) markid)
+     (int #{ afGetMarkPosition($file,$trackid,$markid) #})
+     )
+
+(de  afInitMarkName (s   trackid marker name)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) trackid)
+     ((-int-) marker)
+     ((-str-) name)
+     #{ afInitMarkName($s,$trackid,$marker, $name->data); #}
+     ()
+     )
+
+(de  afInitMarkComment (s trackid marker comment)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) trackid)
+     ((-int-) marker)
+     ((-str-) comment)
+     #{ afInitMarkComment($s,$trackid,$marker, $comment->data); #}
+     ()
+     )
+
+(de  afGetMarkName ( file trackid markid)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) trackid)
+     ((-int-) markid)
+     (gptr #{ afGetMarkName($file,$trackid,$markid) #})
+     )
+
+(de  afGetMarkComment ( file trackid markid)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) trackid)
+     ((-int-) markid)
+     (gptr  #{ afGetMarkComment($file,$trackid,$markid) #})
+     )
+
+
+
+(de  afInitInstIDs (s ids nids)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-gptr- "int *") ids)
+     ((-int-) nids)
+     #{ afInitInstIDs($s,$ids,$nids); #}
+     ()
+     )
+
+(de  afGetInstIDs ( file instids)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-gptr- "int *") instids)
+     (int #{ afGetInstIDs($file,$instids) #})
+     )
+
+(de  afGetInstParams ( file instid pvlist nparams)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) instid)
+     ((-gptr- "struct _AUpvlist *") pvlist)
+     ((-int-) nparams)
+     #{ afGetInstParams($file,$instid,$pvlist,$nparams); #}
+     ()
+     )
+
+(de  afSetInstParams ( file instid pvlist nparams)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) instid)
+     ((-gptr- "struct _AUpvlist *") pvlist)
+     ((-int-) nparams)
+     #{ afSetInstParams($file,$instid,$pvlist,$nparams); #}
+     ()
+     )
+
+(de  afGetInstParamLong ( file instid param)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) instid)
+     ((-int-) param)
+     (int #{ afGetInstParamLong($file,$instid,$param) #})       ;; long->int
+     )
+
+(de  afSetInstParamLong ( file instid param value)
+     ((-gptr- "struct _AFfilehandle *") file)
+     ((-int-) instid)
+     ((-int-) param)
+     ((-int-) value)			;; long->int
+     #{ afSetInstParamLong($file,$instid,$param,$value); #}  
+     ()
+     )
+
+
+
+(de  afInitMiscIDs (s ids nids)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-gptr- "int *") ids)
+     ((-int-) nids)
+     #{ afInitMiscIDs($s,$ids,$nids); #}
+     ()
+     )
+
+(de  afGetMiscIDs (s ids)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-gptr- "int *") ids)
+     (int #{ afGetMiscIDs($s,$ids) #})
+     )
+
+(de  afInitMiscType (s miscellaneousid type)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) miscellaneousid)
+     ((-int-) type)
+     #{ afInitMiscType($s,$miscellaneousid,$type); #}
+     ()
+     )
+
+(de  afGetMiscType (s miscellaneousid)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) miscellaneousid)
+     (int #{ afGetMiscType($s,$miscellaneousid) #})
+     )
+
+(de  afInitMiscSize (s miscellaneousid size)
+     ((-gptr- "struct _AFfilesetup *") s)
+     ((-int-) miscellaneousid)
+     ((-int-) size)
+     #{ afInitMiscSize($s,$miscellaneousid,$size); #}
+     ()
+     )
+
+(de  afGetMiscSize (s miscellaneousid)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) miscellaneousid)
+     (int #{ afGetMiscSize($s,$miscellaneousid) #})
+     )
+
+(de  afWriteMisc (s miscellaneousid buf bytes)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) miscellaneousid)
+     ((-gptr-) buf)
+     ((-int-) bytes)
+     (int #{ afWriteMisc($s,$miscellaneousid,$buf,$bytes) #})
+     )
+
+(de  afReadMisc (s miscellaneousid buf bytes)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) miscellaneousid)
+     ((-gptr-) buf)
+     ((-int-) bytes)
+     (int #{ afReadMisc($s,$miscellaneousid,$buf,$bytes) #})
+     )
+
+(de  afSeekMisc (s miscellaneousid offset)
+     ((-gptr- "struct _AFfilehandle *") s)
+     ((-int-) miscellaneousid)
+     ((-int-) offset)
+     (int #{ afSeekMisc($s,$miscellaneousid,$offset) #})
+     )
+
+
+;; ********************************************************
+
+(de audiofile-read (f)
+  (let ((fhandle (afOpenFile f "r" (gptr ()) ))
+	(sampfmt (int-matrix))
+	(sampwidth (int-matrix)))
+    (when (not fhandle)
+      (error "Cannot open file") )
+    (afGetRate fhandle @@AF_DEFAULT_TRACK)
+    (afGetTrackBytes fhandle @@AF_DEFAULT_TRACK)
+    (afGetByteOrder fhandle @@AF_DEFAULT_TRACK)
+    (afGetChannels fhandle @@AF_DEFAULT_TRACK)
+    (afGetSampleFormat  
+     fhandle @@AF_DEFAULT_TRACK (idx-ptr sampfmt) (idx-ptr sampwidth))
+    (afGetCompression fhandle  @@AF_DEFAULT_TRACK)
+    (afGetDataOffset  fhandle  @@AF_DEFAULT_TRACK)
+    (afGetFrameCount  fhandle  @@AF_DEFAULT_TRACK)
+    (let* ((count (afGetFrameCount fhandle @@AF_DEFAULT_TRACK))
+	   (data 
+	    (if (or (= (sampfmt) 402) (= (sampfmt) 401))
+		(cond
+		 ((= 8 (sampwidth)) (ubyte-matrix count))
+		 ((= 16 (sampwidth)) (short-matrix count))
+		 ((= 32 (sampwidth)) (int-matrix count))
+		 (t (error "can't deal with this audio sample format")))
+	      ;; float
+	      (cond
+	       ((= 32 (sampwidth)) (float-matrix count))
+	       ((= 64 (sampwidth)) (double-matrix count))
+	       (t (error "can't deal with this audio sample format"))))))
+      ;; read frame
+      (afReadFrames fhandle @@AF_DEFAULT_TRACK (idx-ptr data) count)
+      data)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(dhc-make ()
+  afdummy
+  afseterrorhandler
+  afquery
+  afquerylong
+  afquerydouble
+  afquerypointer
+  afnewfilesetup
+  affreefilesetup
+  afidentifyfd
+  afidentifynamedfd
+  afopenfile
+  afopenfd
+  afopennamedfd
+  afsyncfile
+  afclosefile
+  afinitfileformat
+  afgetfileformat
+  afinittrackids
+  afgettrackids
+  afreadframes
+  afreadframes_idx-short
+  afreadframes_idx-int
+  afreadframes_idx-float
+  afreadframes_idx-double
+  afwriteframes
+  afseekframe
+  aftellframe
+  afgettrackbytes
+  afgetframesize
+  afgetvirtualframesize
+  afinitaeschanneldatato
+  afgetaeschanneldata
+  afsetaeschanneldata
+  afinitbyteorder
+  afgetbyteorder
+  afsetvirtualbyteorder
+  afgetvirtualbyteorder
+  afinitchannels
+  afgetchannels
+  afsetvirtualchannels
+  afgetvirtualchannels
+  afsetchannelmatrix
+  afinitsampleformat
+  afgetsampleformat
+  afgetvirtualsampleformat
+  afsetvirtualsampleformat
+  afinitrate
+  afgetrate
+  afinitcompression
+  afgetcompression
+  afinitpcmmapping
+  afgetpcmmapping
+  afsettrackpcmmapping
+  afsetvirtualpcmmapping
+  afgetvirtualpcmmapping
+  afinitdataoffset
+  afgetdataoffset
+  afinitframecount
+  afgetframecount
+  afinitloopids
+  afgetloopids
+  afsetloopmode
+  afgetloopmode
+  afsetloopcount
+  afgetloopcount
+  afsetloopstart
+  afgetloopstart
+  afsetloopend
+  afgetloopend
+  afsetloopstartframe
+  afgetloopstartframe
+  afsetloopendframe
+  afgetloopendframe
+  afsetlooptrack
+  afgetlooptrack
+  afinitmarkids
+  afgetmarkids
+  afsetmarkposition
+  afgetmarkposition
+  afinitmarkname
+  afinitmarkcomment
+  afgetmarkname
+  afgetmarkcomment
+  afinitinstids
+  afgetinstids
+  afgetinstparams
+  afsetinstparams
+  afgetinstparamlong
+  afsetinstparamlong
+  afinitmiscids
+  afgetmiscids
+  afinitmisctype
+  afgetmisctype
+  afinitmiscsize
+  afgetmiscsize
+  afwritemisc
+  afreadmisc
+  afseekmisc
+)

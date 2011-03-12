@@ -1,0 +1,479 @@
+
+#? *** Control Structures
+
+Control structure are lisp functions specially designed for
+controlling how a program is executed. There are control structures
+for starting the execution (e.g. <eval>) and control structures for
+programming loops (e.g. <while>).
+
+#? (eval <l1>...<ln>)
+.SEE The Tlisp Evaluator.
+The function <eval> calls the evaluator on objects <l1> to <ln>, and
+returns the result of the last evaluation, i.e. <(eval ln)>.
+
+Example:
+.EX (eval (cons '+ '(3 4)))
+
+
+#? (apply  <f> . <args>)
+
+Function <apply> applies function <f> to all following arguments <args>.
+Evaluating <(apply f l)> is quite similar to <(eval (cons f l))>. It
+blocks however the evaluation of the arguments stored in list l.
+Example:
+.EX (apply + 1 2 '(3 4 5))
+.EX (apply append '((list 2 3) (list 4 (+ 1 2))) )
+.EX (eval (cons append '((list 2 3) (list 4 (+ 1 2))) ))
+
+
+#? (quote <a>)
+.SEE '<a>
+.SEE `<expr> ,<a> ,@<a>
+
+Return <a> unevaluated.
+
+Functions evaluate their arguments and operate on the results of
+these evaluations. In <(car (range 2 5))> for instance, function
+<car> evaluates the arguments <(range 2 5)> giving <(2 3 4 5)>
+and returns the first element of this list.
+
+.EX (car (range 2 5))
+
+The purpose of the special form <quote> is to easily pass
+S-expressions to a function. For instance, to pass to <car> the
+list consisting of the symbol <range>, the number <2> and the 
+number <5>, you could write
+
+.EX (car (list (make-symbol "range") 2 5))
+
+Here is how you would do it using <quote>:
+
+.EX (car (quote (range 2 5)))
+
+
+#? (dquote <a>)
+.SEE <quote>
+
+Return <a> quoted.
+
+In some situations you need a "double quote".
+
+.EX (mapcar dquote (list 'abc 123 "hi"))
+
+
+#? '<a>
+.TYPE DMC
+.FILE sysenv.lsh
+.SEE (quote <a>)
+.SEE `<expr> ,<a> ,@<a>
+
+The function <quote> usually is called by using the quote <'>
+macro-character. Writing <'a> is a shorthand for <(quote a)>.
+
+Example:
+.EX (car '(range 2 5))
+.CODE
+? '(range 2 5)
+= (quote (range 2 5))
+.PP
+
+
+#? `<expr> ,<a> ,@<a>
+
+The backquote <`> macro provides a handy syntax for producing complex
+lists depending of external conditions. The backquote macro works like
+the quote macro with the following additions:
+.IP
+Within a backquoted expression, a comma <,> indicates that the next
+Lush object must be evaluated.
+.IP
+If the comma is followed by an AT sign (<,@>), the list returned by the
+evaluation of the next Lush object will be merged within the current list.
+.PP
+
+Example:
+.CODE
+? `(1 2 ,(+ 4 5) (+ 4 5 ,(range 1 4))))
+= (1 2 9 (+ 4 5 (1 2 3 4)))
+
+? `(1 2 ,(+ 4 5) (+ 4 5 ,@(range 1 4))))
+= (1 2 9 (+ 4 5 1 2 3 4))
+.P
+	 
+Implementation: Combinations of backquote and comma macros are expanded
+into lisp expressions composed of calls to functions <list>, <append> 
+and <cons>, which builds the result.
+
+Example:
+.CODE
+;; note the quote <'> followed by a backquote <`>
+? ' `(1 2 ,(+ 4 5) (+ 4 5 ,@(range 1 4)))
+= (list '1 '2 (+ 4 5) (append '(+ 4 5) (range 1 4)))
+
+
+#? (progn  <l1>...<ln>)
+Evaluates <l1> to <ln> and returns the result of the evaluation of <ln>.
+
+Example:
+.EX (progn (print (+ 2 3)) (* 2 3))
+
+#? (prog1  <l1>...<ln>)
+Evaluates <l1> to <ln> and returns the result of the evaluation of <l1>.
+
+Example:
+.EX (prog1 (print (+ 2 3)) (* 2 3))
+
+
+#? (let  ((<s1> <v1>) ... (<sn> <vn>)) <l1> ... <ln>)
+The function <let> is used to define local variables.
+
+Function <let> performs the following operations:
+.IP
+Expressions <v1>...<vn> are evaluated.
+.IP
+The values of symbols <s1>...<sn> are saved.
+.IP
+The results of the evaluations of <v1>...<vn> are 
+stored into symbols <s1>...<sn>.
+.IP
+Expressions <l1>...<ln> are evaluated.
+If these expressions refer to symbols <s1>...<sn>, they
+will see the values returned by expressions <v1>...<vn>
+(unless you change these values using <setq>!)
+.IP
+The saved values of <s1>...<sn> are restored.
+.IP
+The result of the evaluation of <ln> is returned.
+.PP
+Example:
+.EX (let ((s 0)) (for (i 1 10) (setq s (+ s i)) ))
+
+
+#? (lete ((<s1> <v1>) ... (<sn> <vn>)) <l1> ... <ln>)
+.SEE <let>, <delete>
+Same as <let> but explicitly <delete> all local variables
+after evaluating <ln>.
+
+
+#? (let*  ((<s1> <v1>) ... (<sn> <vn>)) <l1> ... <ln>)
+
+Function <let*> is also used for defining local variables.
+Unlike function <let> however, the evaluation of the
+variable initial values are performed after setting
+the previous variables. You can therefore refer to the
+previously defined variabled.
+
+Function <let*> performs the following operations:
+.IP
+For each pair <(si vi)>, the value of symbol <si> is saved, 
+the expression <vi> is evaluated and the result  is stored
+into symbol <si>.
+.IP
+Expressions <l1>...<ln> are evaluated.
+If these expressions refer to symbols <s1>...<sn>, they
+will see the values returned by expressions <v1>...<vn>
+(unless you change these values using <setq>!)
+.IP
+The saved values of <s1>...<sn> are restored.
+.IP
+The result of the evaluation of <ln> is returned.
+.PP
+Example:
+.EX (let* ((i 1)(j (1+ i)) ) (print i j) (* 2 j))
+
+
+#? (let-filter ((<filter> <data>)) <l1>...<ln>)
+.TYPE DM
+.FILE sysenv.lsh
+The function <let-filter> attempts to match the data 
+expression <data> with the filter expression <filter>.
+A filter expression is a lisp expression composed uniquely with lists and
+symbols.  For instance, argument <filter> can be a single symbol, a list of
+symbols, or something more complex such as <(a ((b c)) d . e)>.
+.IP
+A symbol in the filter expresssion matches anything in the data expression.
+When such a match occurs, the previous value of the symbol is saved
+and the symbol is assigned the matching part of the data expression.
+.IP
+A list in the filter expression matches a list in the data expression 
+if all its elements match the correspondong elements in the data expression.
+.PP
+If there is a match, function <let-filter> evaluates the lists <l1>...<ln>
+with the new values of the symbols listed in the match expression, restores
+the initial value of the symbols, and return the result of the last
+evaluation.  Otherwise, function <let-filter> simply restores the initial
+values of the symbol and returns the empty list.
+
+#? (if  <cond> <yes> [<no1>...<non>])
+
+First, expression <cond> is evaluated. If the result is not the empty
+list, expression <yes> is evaluated, otherwise the remaining
+expressions <no1>...<non> are evaluated. Function <if> returns the
+result of the last evaluation.
+
+Example:
+.EX (if (> 3 4) 3 4)
+
+
+#? (when <cond> <yes1>...<yesn>)
+
+First, expression <cond> is evaluated. If the result is not the empty
+list, expressions <yes1> to <yesn> are evaluated and the result of
+<yesn> is returned.
+
+Example:
+.EX (when (> 3 4) (print "error"))
+
+
+#? (while <cond> <l1>...<ln>)
+
+While the evaluation of <cond> gives a result different from the empty
+list, expressions <l1> to <ln> are evaluated in a loop.
+
+If the result of the first evaluation of <cond> is the empty list,
+expressions <l1> to <ln> are never evaluated and function <while>
+returns the empty list. Otherwise function <while> returns the result
+of the last evaluation of <ln>.
+
+Example:
+.EX (let ((l (range 2 5))) (while l (print (car l) (sqrt (car l))) (setq l (cdr l)) ))
+
+#? (do-while <cond> <l1>...<ln>)
+
+Function <do-while> evaluates lists <l1> to <ln> and loops until the
+evaluation of condition <cond> returns the empty list. The result of
+the last evaluation of <ln> is then returned.
+
+Expressions <l1> to <ln> are evaluated before testing for the loop
+condition.  If the result of the first evaluation of <cond> is the
+empty list, expression <l1>...<ln> are evaluated exactly once.
+
+Example:
+.CODE
+ (de input(prompt regex)
+    (let ((answer ()))
+       (do-while (not (regex-match regex answer))
+          (printf "%s" prompt)
+          (flush)
+          (setq answer (read-string)) )
+       answer) )
+
+
+
+#? (repeat  <n> <l1>...<ln>)
+
+Repeats <n> times the evaluation of <l1> to <ln>. Function <repeat> returns the
+result of the last evaluation of <ln>.
+
+Example:
+.EX (repeat 4 (prin 1))
+
+
+#? (mapwhile <cond> <l1>...<ln>)
+.TYPE DM
+.FILE sysenv.lsh
+.SEE (while <cond> <l1>...<ln>)
+
+Function <mapwhile> first evaluates expression <expr>. 
+If this evaluation returns a non nil result, 
+it evaluates lists <l1> to <ln>. 
+This process is repeated until the evaluation 
+of <cond> returns the empty list.
+
+Unlike function <while> however, function <mapwhile> 
+returns a list containing all the results of the successive
+evaluation of <ln>. 
+
+.EX (let ((i 0)) (mapwhile (< i 5) (incr i) (* i i)))))))
+
+
+#? (for (<symb> <start> <end> [<step>]) <l1>...<ln>)
+.SEE for*
+Function <for> implements a classical ``for'' loop.
+ 
+The value of symbol <symb> is first saved. Then <symb> takes numeric
+values from <start> to <end> stepping by <step> (default 1). For each
+value, expression <l1> to <ln> are evaluated. The value of <symb> is
+then restored.
+
+Function <for> returns the result of last evaluation of <ln>.
+
+Example:
+.EX (for (i 2 5) (print i (sqrt i)))
+
+
+#? (for* (<symb> <start> <end> [<step>]) <l1>...<ln>)
+.SEE for
+Function <for*> implements a classical ``for'' loop.
+ 
+The value of symbol <symb> is first saved. Then <symb> takes numeric
+values from <start> to <end>, not including <end>, stepping by <step>
+(default 1). For each value, expression <l1> to <ln> are evaluated. 
+The value of <symb> is then restored.
+
+Function <for*> returns the result of last evaluation of <ln>.
+
+Example:
+.EX (for* (i 2 5) (print i (sqrt i)))
+
+
+#? (mapfor (<symb> <start> <end> [<step>]) <l1>...<ln>)
+.TYPE DMD
+.FILE sysenv.lsh
+.SEE (for (<symb> <start> <end> [<step>]) <l1>...<ln>)
+
+Function <mapfor> implements a loop like function <for>.  It returns
+however a list containing the results of the evaluation of <ln> for
+all values of the loop index.
+
+Example:
+.EX (mapfor (i 2 5) (sqrt i))
+
+
+#? (cond <l1>...<ln>)
+
+Function <cond> implements the standard lisp ``cond'' form.
+
+Arguments <l1>...<ln> are lists of the form <(cond . body)>. The
+conditions <cond> are evaluated sequentially until one returns a
+result different from the empty list. The function <progn> is applied
+to the corresponding <body> and the result is returned.
+
+Example:
+.CODE
+ ;; a function for returning the sign of a number
+ (de sign(x)
+   (cond
+      ((< x 0) -1)
+      ((> x 0) +1)
+      (t        0) ) )
+.PP
+
+
+#? (selectq <s> <l1>...<ln>)
+
+The arguments <l1> to <ln> are lists of the form <(case . body)>. 
+
+The argument <s> is first evaluated. The lists <l1> to <ln> are then
+checked until <s> is equal to <case>, or <s> is a member of the list
+<case>, or <case> is equal to <t>. The function <progn> is applied to
+the corresponding <body> and the result is returned.
+
+Example:
+.CODE
+ (selectq x
+    (0             (print "zero"))
+    ((2 4 6 8)     (print "even"))
+    ((1 2 3 5 7)   (print "prime"))
+    (t             (print "nothing interesting")) )
+.PP
+
+
+#? (mapc <f>  <l1>...<ln>)
+Apply <f> to successive tuples of arguments, where one argument is taken 
+from each list <l1>...<ln>. Return the first list <l1>. The iteration 
+terminates with the last atom in the shortest list, excess elements in 
+other lists are ignored.
+.PP
+Any argument <l1>...<ln> that is not a list will automagically be turned
+into an infinite list.
+
+Example:
+.EX (mapc print '(1 2 3)) 
+.EX (mapc (lambda (x y) (print (+ x y))) '(1 2 3) (range 10))
+
+
+#? (mapcar <f>  <l1>...<ln>)
+Apply <f> to successive tuples of arguments, where one argument is taken 
+from each list <l1>...<ln>. Accumulate the results of the successive 
+function applications in a list and return it. The iteration terminates
+with the last atom in the shortest argument list, excess elements in other
+lists are ignored.
+.PP
+Any argument <l1>...<ln> that is not a list will automagically be turned
+into an infinite list.
+
+Example:
+.EX (mapcar + '(1 2 3) '(4 5 6 7 8 9))
+.EX (mapcar + '(1 2 3) 5)
+
+#? (mapcan <f>  <l1>...<ln>)
+Apply <f> to successive tuples of arguments, where one argument is taken 
+from each list <l1>...<ln>. Concatenate the results of the successive 
+function applications in a list and return it. The iteration terminates
+with the last atom in the shortest argument list, excess elements in other
+lists are ignored.
+.PP
+Any argument <l1>...<ln> that is not a list will automagically be turned
+into an infinite list.
+
+Example:
+.EX (mapcan (lambda (n e) (make-list n e)) '(1 2 3) '(a b c d e))
+
+
+#? (tree-mapcar <f>  <l1>...<ln>)
+.SEE (mapcar <f>  <l1>...<ln>)
+<mapcar> for trees.
+
+Example:
+.EX (tree-mapcar + '(1 2 (3 (4)) 5) '(1 2 (3 (4)) 5))
+
+
+#? (reduce> <f> <carry> <s1>...<sn>)
+Apply a function of n+1 arguments recursively to <carry> and all
+<car>s of <s1>...<sn>, from first to last. Return the final carry.
+The lists <s1>...<sn> must have the same length. Examples:
+.PP
+.EX (reduce> cons 'S '(1 2 3 4))
+.EX (reduce> + 0.0 '(1 2 3 4))
+.EX (reduce> idx-trim (double-array 5 5) '(0 1) '(1 3))
+
+
+#? (reduce< <f> <carry> <s1>...<sn>)
+Apply a function of n+1 arguments recursively to <carry> and all
+<car>s of <s1>...<sn>, from last to first. Return the final carry.
+The lists <s1>...<sn> must have the same length. Example:
+.SEE reduce>
+.PP
+.EX (reduce< cons 'S '(1 2 3 4))
+
+
+#? (dolist (<s> <l>) . <body>)
+.SEE domapc domapcar
+For each element <e> in list <l>, evaluate <body> with <s> set
+to <e>. Return <nil>. Example:
+.PP
+.EX (dolist (i '(1 2 3 5 7)) (print i (sqrt i)) )
+
+
+#? (domapc ((<s1> <l1>) ... (<sn> <ln>)) . <body>)
+.SEE dolist
+Iteratively evaluate <body> with variables <s1>...<sn> set to the
+element of <l1>...<ln> with index i, respectively, with i=0, 1, ... 
+The iteration terminates when the shortes list in <l1>...<ln> is
+exhausted. Return the first list <l1>. Example:
+.PP
+.EX (domapc ((i '(1 2 3 )) (j '(3 2 1))) (print (+ i j)))
+
+
+#? (domapcar ((<s1> <l1>) ... (<sn> <ln>)) . <body>)
+.SEE domapc
+Evaluate <body> like <domapc> but return all evaluation results in
+a list. Example:
+.PP
+.EX (domapcar ((i '(1 2 3 5 7))) (sqrt i) )
+
+
+#? (domapcan ((<s1> <l1>) ... (<sn> <ln>)) . <body>)
+.SEE domapcar
+Evaluate <body> like <domapcar> but the result of each evaluation
+must be a list, and combine all result lists into one list. Example:
+.PP
+.EX (domapcan ((i '(1 2 3 5 7))) (list i (sqrt i)) )
+
+#? (each ((<s1> <v1>) ... (<sn> <vn>)) <l1> ... <ln>)
+Alias for <domapc>.
+
+#? (all ((<s1> <v1>) ... (<sn> <vn>)) <l1> ... <ln>)
+Alias for <domapcar>.
+

@@ -1,0 +1,95 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Pseudo Threads
+;; The pseudo threads facility makes implementing and
+;; executing timer-triggered code easy. Since no
+;; preemption is happening, pseudo threads are not 
+;; really threads.
+;;
+;; The pattern is as a follows: 1. Implement the code
+;; that is to be executed repeatedly as a method 
+;; of some class. 2. Call <new-thread> with an instance
+;; of that class and the name of the method.
+;;
+;; The timer-invoked method takes no arguments and 
+;; returns true or false. A timer will keep invoking the
+;; object's method until it returns <()> or until 
+;; <kill-thread> is called. Example:
+;;
+;; {<code>
+;; (defclass Countdown object
+;;   count)
+;;
+;; (defmethod Countdown Countdown (n)
+;;   (setq count n) )
+;; 
+;; (defmethod Countdown count-down ()
+;;   (printf "%d\n" count)
+;;   (decr count)
+;;   (> count 0) )
+;;
+;; ? (setq thr (new-thread (new Countdown 7) 'count-down 1))
+;; = ::timer:8c3a5a0
+;; ? 7
+;; 6
+;; 5
+;; 4
+;; (kill-thread thr)
+;; = ()
+;; ?
+;; </code>}
+
+(defvar *threads* (htable 100 t))
+
+#? (new-thread <o> <m> [<r>])
+;; Create a new pseudo thread with object <o> and message <m>
+;; and target call rate <r> (calls per second, default is 50),
+;; and return thread id.
+(defun new-thread (o m &optional (r 50))
+  (when (not (member m (allmethods (classof o))))
+    (errorf "method '%l not defined for object" m) )
+  (let ((iv (/ 1000 r))
+        (cb (eval
+             `(lambda (ti)
+                (let ((continue (and ,o (send ,o (quote ,m)))))
+                  (when (not continue)
+                    (==> ti set ())
+                    (:*threads* ti ()))))
+             )))
+    (let ((ti (new Timer iv iv cb)))
+      (:*threads* ti (cons o ti))
+      ti)))
+
+#? (kill-thread <id>)
+;; Kill thread <id>, return <()>.
+(defun kill-thread (ti)
+  (if (null (:*threads* ti))
+      (printf "*** Warning (kill-thread):\007 No such thread.\n")
+    (==> ti set ())
+    (:*threads* ti ()) )
+  ())

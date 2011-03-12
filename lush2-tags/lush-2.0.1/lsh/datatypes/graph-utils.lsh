@@ -1,0 +1,324 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmacro number-of-edges () `(length edges))
+(defalias nth-edge identity)
+
+#? (other-vertex <e> <v>)
+;; Vertex opposite of vertex <v> in edge <e>.
+(defmacro other-vertex (e v)
+  (let (((v0 v1 ee vv) (gensyms 4)))
+    `(to-int 
+      (let ((,ee ,e) (,vv ,v))
+        (declare (-int-) ,ee ,vv)
+        (let ((,v0 (edges ,ee 0)) (,v1 (edges ,ee 1)))
+          (declare (-int-) ,v0 ,v1)
+          (if (<> ,v0 ,vv) (progn (assert (= ,v1 ,vv)) ,v0) ,v1) )))
+    ))
+
+
+#? (do-edges <e> . <body>)
+;; Loop over all edges.
+;; The loop may be broken by setting <continue> to false.
+(defmacro do-edges (e . body)
+  (when (not (symbolp e)) (error "do-edges: syntax error"))
+  (let ((i (gensym)) (ne (gensym)))
+    `(let ((,i 0) (,ne (number-of-edges)) (continue t))
+       (declare (-int-) ,i ,ne)
+       (declare (-bool-) continue)
+       (while (and continue (< ,i ,ne))
+	 (let ((,e (nth-edge ,i)))
+	   (declare (-int-) ,e)
+	   ,@body)
+	 (incr ,i)))
+    ))
+
+
+#? (with-edges (<e0> <e1> .. <ei> ..) . <body>)
+;; Establish an environment with the following bindings for each edge <ei>:
+;; edge-<ei> - edge <ei> (a two element vector)
+;; <ei>.v0   - point 0 of edge <ei>
+;; <ei>.v1   - point 1 of edge <ei>
+;;
+;; This macro refers to variable 'edges'.
+(defmacro with-edges (es . body)
+  (when (not (consp es)) (error "with-edges: syntax error"))
+  (let ((decls ()) (tdecls ()))
+    (dolist (e (reverse es))
+      (when (not (symbolp e))
+	(error "edge arguments must be variables (symbols)"))
+      (setq decls (cons (list (symbol-concat e '.v1)
+			      (list (symbol-concat 'edge- e) 1) )
+			decls))
+      (setq decls (cons (list (symbol-concat e '.v0)
+			      (list (symbol-concat 'edge- e) 0) )
+			decls))
+      (setq decls (cons (list (symbol-concat 'edge- e)
+			      `(idx-select edges 0 ,e) )
+			decls))
+      (setq tdecls (cons (symbol-concat e '.v0) (cons (symbol-concat e '.v1) tdecls))) )
+    `(let* (,@decls)
+       (declare (-int-) ,@tdecls)
+       ,@body)
+    ))
+
+
+#? (do-edges* <e> . <body>)
+;; Expands to {<code> (do-edges <e> (with-edges (<e>) . <body>))}
+(defmacro do-edges* (e . body)
+  `(do-edges ,e (with-edges (,e) ,@body))
+  )
+
+
+#? (do-edges-around <e> (vertex <v>) . body)
+;; Loop over all edges incident on vertex <v> (as listed in <v-es>).
+(defmacro do-edges-around (e (what i) . body)
+  (when (not (symbolp e)) 
+    (error "do-edges-around: syntax error"))
+  (when (not (member what '(vertex point node)))
+    (error "do-edges-around: syntax error"))
+  (let (((v k) (gensyms 2)))
+    `(let ((,e -1) (,v ,i) (,k -1) (continue t))
+       (declare (-int-) ,e ,v ,k)
+       (declare (-bool-) continue)
+       (while (and continue (< (incr ,k) (+ max-degree 2)))
+         (when (> (setq ,e (v-es ,v ,k)) -1)
+           ,@body)))
+    ))
+
+
+#? (vertex-degree v)
+;; Return degree of vertex <v>.
+(defmacro vertex-degree (v)
+  `(let ((d 0) (i 0) (v ,v))
+     (declare (-int-) d i v)
+     (while (> (v-es v i) -1)
+       (incr d)
+       (incr i) )
+     (incr i)
+     (while (> (v-es v i) -1)
+       (incr d)
+       (incr i) )
+     d)
+  )
+
+
+#? (do-bfs (<v> <e> from <v-start>) . <body>)
+;; Do a breadth first search traversal of the graph, starting from 
+;; vertex <v-start>.
+;;
+;; On every traversal step, <v> is a vertex, and <e> is the edge through
+;; which <v> was reached. Furthemore, <v>-from is the other vertex <e> is
+;; incident to, and <v>-last is the vertex visited in the previous step.
+;; Variables <e> and <v>-from are -1 at the beginning of the traversal of
+;; each connected component.
+(defmacro do-bfs ((v e from v-start) . body)
+  (when (not (symbolp v)) (error "do-bfs: not a symbol" v))
+  (when (not (symbolp e)) (error "do-bfs: not a symbol" e))
+  (when (<> from 'from) (error "do-bfs: syntax error"))
+  (let (((i s vi ei vmap vst vq) (gensyms 7))
+        (v-from (symbol-concat v '-from))
+        (v-last (symbol-concat v '-last)) )
+    `(let* ((continue t)
+            (,vmap (ubyte-array nv))
+            (,vst (make-stack (+ nv 10) int))
+            (,vq (new IDeque (* 20 max-degree)))
+            (,s ,v-start)
+            (,v-from -1)
+            (,v-last -1)
+            (,e -1)
+            (,v -1) )
+       (declare (-bool-) continue)
+       (declare (-int-) ,s ,v ,e ,v-from ,v-last)
+       (when (or (< ,s 0) (> ,s nv))
+         (error "do-bfs: invalid start vertex") )
+       ;; push all vertices onto vertex stack
+       (for* (,i 0 nv)
+         (declare (-int-) ,i)
+         (push ,vst, i) )
+       ;; push start vertex into queue
+       (push ,vst ,s)
+
+       (while (and continue (not (emptyp ,vst)))
+         (setq ,v-last ,v  ,v -1  ,e -1  ,v-from -1)
+
+         (while (and (= ,e -1) (not (emptyp ,vq)))
+           (let* ((,ei (==> ,vq pop)) (,s (==> ,vq pop))
+                  (,vi (other-vertex ,ei ,s)) )
+             (declare (-int-) ,ei ,s ,vi)
+             (when (= (,vmap ,vi) 0)
+               (setq ,e ,ei  ,v-from ,s)
+               (push ,vst ,vi) )))
+         
+         (while (and (= ,v -1) (not (emptyp ,vst)))
+           (setq ,s (pop ,vst))
+           (when (= (,vmap ,s) 0)
+             (,vmap ,s 1)
+             (for (,i 0 max-degree)
+               (declare (-int-) ,i)
+               (let ((,ei (v-es ,s ,i)))
+                 (declare (-int-) ,ei)
+                 (when (<> ,ei -1)
+                   (when (= (,vmap (other-vertex ,ei ,s)) 0)
+                     (==> ,vq pushlast ,ei)
+                     (==> ,vq pushlast ,s) ))))
+             (setq ,v ,s) ))
+         
+         (when (<> ,v -1)
+           ,@body)))
+    ))
+
+
+#? (do-dfs (<v> <e> from <v-start>) . <body>)
+;; Do a depth first search traversal of the graph, starting from 
+;; vertex <v-start>, and return <()>.
+;;
+;; On every traversal step, <v> is a vertex, and <e> is the edge through
+;; which <v> was reached. Furthemore, <v>-from is the other vertex <e> is
+;; incident to, and <v>-last is the vertex visited in the previous step.
+;; Variables <e> and <v>-from are -1 at the beginning of the traversal of
+;; each connected component.
+(defmacro do-dfs ((v e from v-start) . body)
+  (when (not (symbolp v)) (error "do-dfs: not a symbol" v))
+  (when (not (symbolp e)) (error "do-dfs: not a symbol" e))
+  (when (<> from 'from) (error "do-dfs: syntax error"))
+  (let (((i s vi ei vmap vst vest) (gensyms 7))
+        (v-from (symbol-concat v '-from))
+        (v-last (symbol-concat v '-last)) )
+    `(let* ((continue t)
+            (,vmap (ubyte-array nv))
+            (,vst (make-stack (+ nv 10) int))
+            (,vest (make-stack (* 20 max-degree) int))
+            (,s ,v-start)
+            (,v-from -1)
+            (,v-last -1)
+            (,e -1)
+            (,v -1) )
+       (declare (-bool-) continue)
+       (declare (-int-) ,s ,v ,e ,v-from ,v-last)
+       (when (or (< ,s 0) (> ,s nv))
+         (error "do-dfs: invalid start vertex") )
+       ;; push all vertices onto vertex stack
+       (for* (,i 0 nv)
+         (declare (-int-) ,i)
+         (push ,vst ,i) )
+       (push ,vst ,s) ; push start onto vertex stack
+         
+       (while (and continue (not (emptyp ,vst)))
+         (setq ,v-last ,v  ,v -1  ,e -1  ,v-from -1)
+         (while (and (= ,e -1) (not (emptyp ,vest)))
+           (let* ((,ei (pop ,vest)) (,s (pop ,vest)) (,vi (other-vertex ,ei ,s)))
+             (declare (-int-) ,ei ,s ,vi)
+             (when (= (,vmap ,vi) 0)
+               (setq ,e ,ei  ,v-from ,s)
+               (push ,vst ,vi) )))
+         
+         (while (and (= ,v -1) (not (emptyp ,vst)))
+           (setq ,s (pop ,vst))
+           (when (= (,vmap ,s) 0)
+             (,vmap ,s 1)
+             (for (,i 0 max-degree)
+               (declare (-int-) ,i)
+               (let ((,ei (v-es ,s ,i)))
+                 (declare (-int-) ,ei)
+                 (when (<> ,ei -1)
+                   (push ,vest ,s)
+                   (push ,vest ,ei) )))
+             (setq ,v ,s) ))
+         
+         (when (<> ,v -1)
+           ,@body)))
+    ))
+
+
+#? (do-pes (<v> <e>) . <body>)
+;; Traverse all non-isolated vertices and all edges in order of some
+;; perfect elimination scheme.
+;;
+;; On every traversal step, <v> is a vertex, and <e> is the edge through
+;; which <v> was reached. Furthemore, <v>-from is the other vertex <e> is
+;; incident to, and <v>-last is the vertex visited in the previous step.
+;; Variables <e> and <v>-from are -1 at the beginning of the traversal of
+;; each connected component.
+(defmacro do-pes ((v e) . body)
+  (when (not (symbolp v)) (error "do-pes: not a symbol" v))
+  (when (not (symbolp e)) (error "do-pes: not a symbol" e))
+  (let (((i vi ei v-degree vq emap) (gensyms 6))
+        (v-from (symbol-concat v '-from))
+        (v-last (symbol-concat v '-last)) )
+    `(let* ((continue t)
+            (,emap (ubyte-array (length edges)))
+            (,v-degree (==> this vertices-degree))
+            (,vq (new IDeque (* 20 max-degree)))
+            (,v-last -1) )
+       (declare (-bool-) continue)
+       (declare (-int-) ,v-last)
+
+       ;; put end vertices into queue
+       (for* (v 0 nv)
+         (declare (-int-) v) 
+         (when (= (,v-degree v) 1)
+           (==> ,vq pushlast -1)
+           (==> ,vq pushlast -1)
+           (==> ,vq pushlast v) ))
+
+       (while (not (emptyp ,vq))
+         (let ((,v-from (==> ,vq pop)) (,e (==> ,vq pop)) (,v (==> ,vq pop)))
+           (declare (-int-) ,v-from ,v ,e)
+
+           (prog1 (let ((,v ,v)) 
+                    (declare (-int-) ,v)
+                    (progn ,@body) )
+             (setq ,v-last ,v)
+             (when (<> ,v -1)
+               (for (,i 0 max-degree)
+                 (declare (-int-) ,i)
+                 (let ((,ei (v-es ,v ,i)))
+                   (declare (-int-) ,ei)
+                   (when (<> ,ei -1)
+                     (let ((,vi (other-vertex ,ei ,v)))
+                       (decr (,v-degree ,vi))
+                       (cond ((= (,v-degree ,vi) 1)
+                              (==> ,vq pushlast ,v)
+                              (==> ,vq pushlast ,ei)
+                              (,emap ,ei 1)
+                              (==> ,vq pushlast ,vi) )
+                             ((> (,v-degree ,vi) 1)
+                              (==> ,vq pushlast ,v)
+                              (==> ,vq pushlast ,ei)
+                              (,emap ,ei 1)
+                              (==> ,vq pushlast -1) )
+                             (t
+                              (when (= (,emap ,ei) 0)
+                                (==> ,vq pushlast ,v)
+                                (==> ,vq pushlast ,ei)
+                                (,emap ,ei 1)
+                                (==> ,vq pushlast -1) ))
+                             ))))))))))
+
+    ))
+

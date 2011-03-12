@@ -1,0 +1,429 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Line simplification
+;; Function <simplify> takes a <Mesh> or a <Polygon> and yields an 
+;; object of the same kind approximating the input object with a
+;; subset of the original points. This operation is also known as 
+;; "line generalization" in cartography.
+;;
+;; <Simplify> offers different approximation methods, and the meaning
+;; of the numerical parameter depends on the method. By default Lowe's
+;; method [2] is used.
+;;.VP
+;; -----------------------------------------------------------------
+;; Key          | Method
+;; -----------------------------------------------------------------
+;; dp           | Douglas-Peucker algorithm [1]. The parameter is an
+;;              | upper bound on the one-sided Hausdorff distance
+;;              | between the approximation and the original object.
+;;              |
+;; lowe         | Lowe's scale-invariant algorithm [2]. The parameter
+;;              | is the minimum distance between two distinguishable
+;;              | points.
+;;
+;;.P
+;; References:
+;;
+;; [1] D.H. Douglas, T.K. Peucker: "Algorithms for the Reduction of the
+;;     Number of Points Required to Represent a Digitized Line or its 
+;;     Caricature," The Canadian Cartographer, 10, pp. 111-122, 1973.
+;;
+;; [2] D.G. Lowe: "Three-dimensional object recognition from single 
+;;     two-dimensional images,"  Artificial Intelligence, 31(3), 
+;;     pp. 355-395, 1987.
+
+(libload "geometry/polygon")
+
+(defclass PolylineSimplifier object
+  ((-idx2- (-double-)) points)
+  ((-idx1- (-double-)) x)
+  ((-idx1- (-double-)) y)
+  ((-idx1- (-int-)) p-map)
+  ((-int-) l)
+  ((-double-) dx)
+  ((-double-) maxdsq)
+  ((-double-) epssq) )
+
+
+(in-namespace (class PolylineSimplifier)
+
+(defmacro distance-squared (a b)
+  (assert (symbolp a))
+  (assert (symbolp b))
+  `(let* ((ax (x ,a)) (ay (y ,a))
+          (bx (x ,b)) (by (y ,b))
+          (abx (- bx ax)) (aby (- by ay)) )
+     (+ (* abx abx) (* aby aby)) )
+  )
+)
+
+#? (new PolylineSimplifier <points>)
+(defmethod PolylineSimplifier PolylineSimplifier (-points)
+  (declare (-idx2- (-double-)) -points)
+  (setq points -points)
+  (setq x (idx-select points 1 0))
+  (setq y (idx-select points 1 1))
+  (setq p-map (int-array (length points)))
+  (setq l 0)      ; used by -lowe
+  (setq dx 0)     ; used by -lowe
+  (setq epssq 0)  ; used by -dp
+  (setq maxdsq 0) ; used by find-furthest-point
+  ())
+
+;; find point between a and b furthest from segment ab.
+(defmethod PolylineSimplifier find-furthest-point (a b)
+  (declare (-int-) a b)
+
+  (when (not (< a b))
+    (error "not a valid point interval") )
+
+  (setq maxdsq 0)
+  
+  (let ((maxc -1) (c (+ a 1)))
+    (declare (-int-) maxc c)
+    (when (<> b c)
+      (let* ((ax (x a)) (ay (y a))
+             (bx (x b)) (by (y b))
+             (abx (- bx ax)) (aby (- by ay))
+             (absq (+ (* abx abx) (* aby aby))) 
+             (dsq -1) )
+
+        (while (<> b c)
+          (let* ((cx (x c)) (cy (y c))
+                 (acx (- cx ax)) (acy (- cy ay))
+                 (ab.ac (+ (* abx acx) (* aby acy))) )
+            (if (<= ab.ac 0.0)
+                (setq dsq (+ (* acx acx) (* acy acy)))      ; C is closest to A
+              (let* ((bcx (- cx bx)) (bcy (- cy by))
+                     (ab.bc (+ (* acx bcx) (* acy bcy))) )
+                (if (>= ab.bc 0.0)
+                    (setq dsq (+ (* bcx bcx) (* bcy bcy)))  ; C is closest to B
+                  (setq dsq (- (* bcx acy) (* bcy acx)))    ; C is closest to an interior point
+                  (setq dsq (/ (* dsq dsq) absq)) )))       ;
+            
+            (when (> dsq maxdsq)
+              (setq maxdsq dsq  maxc c) ))
+          (incr c) )))
+    maxc))
+
+;; helper for simplify/dp
+(defmethod PolylineSimplifier -dp (a b)
+  (declare (-int-) a b)
+  (declare (-method- (PolylineSimplifier) ((-int-) (-int-)) (-bool-)) -dp)
+
+  (let ((c (==> this find-furthest-point a b)))
+    (declare (-int-) c)
+    (if (or (= c -1) (< maxdsq epssq))
+        ()
+      (==> this -dp a c) 
+      (p-map c 1)
+      (==> this -dp c b) ))
+  ())
+
+;; build tree for segment (a,b)
+(defmethod PolylineSimplifier -lowe (a b)
+  (declare (-int-) a b)
+  (declare (-method- (PolylineSimplifier) ((-int-) (-int-)) (-double-)) -lowe)
+  
+  (let ((ab (sqrt (distance-squared a b)))
+        (c (==> this find-furthest-point a b)) )
+    (declare (-int-) c)
+    (if (= c -1)
+        (progn
+          (p-map a l)
+          (/ ab dx) )
+      (let ((s (/ ab (max dx (sqrt maxdsq))))
+            (sl (==> this -lowe a c))
+            (sr (==> this -lowe c b)) )
+        (if (> s (max sl sr))
+            (progn
+              (incr l)
+              (p-map a l)
+              (p-map b l)
+              s)
+          (p-map b (p-map c))
+          (max sr sl) )))))
+
+;; calculate maximum-deviation from true polygon
+(defmethod PolylineSimplifier error ()
+  (let ((esq 0) (a 0) (b 1) (l (p-map 0)))
+    (declare (-int-) a b l)
+    (while (and (< b (length points)) (< (p-map b) l))
+      (incr b) )
+    (while (< b (length points))
+      (setq l (p-map b))
+      (==> this find-furthest-point a b)
+      (when (> maxdsq esq)
+        (setq esq maxdsq) )
+      (setq a b)
+      (incr b)
+      (while (and (< b (length points)) (< (p-map b) l))
+        (incr b) ))
+    (sqrt esq) ))
+
+;; if points are too close, remove
+(defmethod PolylineSimplifier remove-close-points (dx)
+  (declare (-double-) dx)
+  (let ((a 0) (b 1) (bb -1) (c -1) (dxsq (* dx dx)))
+    (declare (-int-) a b bb c)
+    (while (and (< b (length points)) (= (p-map b) 0))
+      (incr b) )
+    (setq bb (+ b 1))
+    (while (and (< bb (length points)) (= (p-map bb) 0))
+      (incr bb) )
+    (setq c (+ bb 1))
+    (while (and (< c (length points)) (= (p-map c) 0))
+      (incr c) )
+    (while (< c (length points))
+      (when (< (distance-squared b bb) dxsq)
+        (let ((bbb (==> this find-furthest-point a c)))
+          (declare (-int-) bbb)
+          (p-map b 0)
+          (p-map bb 0)
+          (p-map bbb 1)
+          (setq b a  bb bbb) ))
+      (setq a b  b bb  bb c)
+      (incr c)
+      (while (and (< c (length points)) (= (p-map c) 0))
+        (incr c) )))
+  ())
+
+;; #? (==> <PolylineSimplifier> simplify-lowe <dx>)
+;; Simplify lines with Lowe's method and return the selected points.
+;; Argument <dx> is the smallest scale.
+;;
+;; Reference:
+;; 
+(defmethod PolylineSimplifier simplify-lowe (dx)
+  (declare (-double-) dx)
+  (when (not (> dx 0))
+    (error "smallest scale must be greater zero") )
+  
+  (array-clear p-map 0)
+  (setq :this:dx dx  l 1)
+  (==> this -lowe 0 (- (length points) 1))
+  (p-map (- (length points) 1) l)
+
+  ;(printf "error (lowe method): %f\n" (==> this error))
+  (let ((n 0) (l 0))
+    (for* (i 0 (length points))
+      (declare (-int-) i n l)
+      (when (>= (p-map i) l)
+        (points n 0 (points i 0))
+        (points n 1 (points i 1))
+        (setq l (p-map i))
+        (incr n) ))
+    (idx-trim points 0 0 n) ))
+
+
+;; modified lowe method
+(defmethod PolylineSimplifier simplify-lowe* (dx)
+  (declare (-double-) dx)
+  (when (not (> dx 0))
+    (error "smallest scale must be greater zero") )
+  
+  (array-clear p-map 0)
+  (setq :this:dx dx  epssq (* dx dx)  l 1)
+  (==> this -lowe 0 (- (length points) 1))
+  (p-map (- (length points) 1) l)
+  
+  (let ((l 0))
+    (for* (i 0 (length points))
+      (declare (-int-) i l)
+      (if (< (p-map i) l)
+          (p-map i 0)
+        (setq l (p-map i))
+        (p-map i 1))))
+
+  (assert (= (p-map 0) 1))
+  ;; some post-processing: add some points
+  (let ((a 0) (b 1) (c -1))
+    (declare (-int-) a b c)
+    (while (and (< b (length points)) (= (p-map b) 0))
+      (incr b) )
+    (setq c (+ b 1))
+    (while (and (< c (length points)) (= (p-map c) 0))
+      (incr c) )
+    (while (< c (length points))
+      (let ((bb (==> this find-furthest-point a c)))
+        (declare (-int-) bb)
+        (when (<> b bb)
+          (p-map bb 1) ))
+      (setq a b  b c)
+      (incr c)
+      (while (and (< c (length points)) (= (p-map c) 0))
+        (incr c) )))
+
+  ;; .. remove some points
+  ;(==> this remove-close-points dx)
+
+  (printf "error (lowe* method): %f\n" (==> this error))
+  (let ((n 0))
+    (for* (i 0 (length points))
+      (declare (-int-) i n)
+      (when (= (p-map i) 1)
+        (points n 0 (points i 0))
+        (points n 1 (points i 1))
+        (incr n) ))
+    (idx-trim points 0 0 n) ))
+
+;; #? (==> <PolylineSimplifier> simplify-dp <eps>)
+;; Simplify lines with Douglas-Peucker method and return the selected points.
+;; Argument <eps> is the epsilon value.
+;;
+;; Reference:
+;; 
+(defmethod PolylineSimplifier simplify-dp (eps)
+  (declare (-double-) eps)
+  (when (not (>= eps 0))
+    (error "smallest scale must be non-negative") )
+  
+  (if (= eps 0)
+      points
+    (array-clear p-map 0)
+    (setq epssq (* eps eps))
+    (==> this -dp 0 (- (length points) 1))
+    (p-map 0 1)
+    (p-map (- (length points) 1) 1)
+    
+    ;(printf "error (dp method): %f\n" (==> this error))
+    (let ((n 0))
+      (for* (i 0 (length points))
+        (declare (-int-) i n)
+        (when (= (p-map i) 1)
+          (points n 0 (points i 0))
+          (points n 1 (points i 1))
+          (incr n) ))
+      (idx-trim points 0 0 n) )))
+
+;;
+;; functional interfaces
+;;
+
+(defparameter simplify-methods ((htable) 
+                                'dp     0
+                                'lowe   1
+                                'lowe*  2
+                                ))
+
+(defmacro simplify (obj &optional (dx 1) (method 'lowe))
+  `(-simplify ,obj ,dx ,(simplify-methods (cadr method)))
+  )
+
+;; helper: find a dominant point in polygon boundary
+(defun find-dominant-point (obj)
+  (declare (-obj- (SimplePolygon)) obj)
+  (let* ((n (length :obj:points))
+         (point-0 (idx-select :obj:points 0 0))
+         (a -1) (i 0) (maxd 0) (d 0) )
+    (declare (-int-) n a i)
+    
+    (idx-bloop ((point :obj:points))
+      (when (> (setq d (euclidean-distance-squared point-0 point)) maxd)
+        (setq a i  maxd d) )
+      (incr i) )
+    a))
+
+(defun simplify-mesh (m eps method)
+  (declare (-obj- (Mesh)) m)
+  (declare (-double-) eps)
+  (declare (-int-) method)
+  (error "simplify: not implemented for Mesh objects")
+  m)
+
+(defun simplify-simple-polygon (obj dx method)
+  (declare (-obj- (SimplePolygon)) obj)
+  (declare (-double-) dx)
+  (declare (-int-) method)
+  
+  (let* ((a (find-dominant-point obj))
+         (n (length :obj:points))
+         (dn (- (:obj:edges 0 1) (:obj:edges 0 0)))
+         (points (double-array (+ n 1) 2)) )
+    (declare (-int-) a n dn)
+    
+    ;; copy points over
+    (cond
+     ((= dn 1)
+      (for* (i 0 n)
+        (let ((ii (mod (+ a i) n)))
+          (declare (-int-) i ii)
+          (points i 0 (:obj:points ii 0))
+          (points i 1 (:obj:points ii 1)) )))
+     ((= dn -1)
+      (for (i (- n 1) 0 -1)
+        (let ((ii (mod (- a i) n)))
+          (declare (-int-) i ii)
+        (points i 0 (:obj:points ii 0))
+        (points i 1 (:obj:points ii 1)) )))
+     (t
+      (error "internal error: polygon edges bogus") ))
+    (points n 0 (points 0 0)) ; make last point equal first point
+    (points n 1 (points 1 1))
+
+    (lete ((pls (new PolylineSimplifier points))) ; hack (because points allocated on the stack)
+      (let ((spoints (selectq method
+                       (0 
+                        (==> pls simplify-dp dx) )
+                       (1 
+                        (==> pls simplify-lowe dx) )
+                       (2 
+                        (==> pls simplify-lowe* dx) )
+                       (t 
+                        (error "unknown method") [[]]) )))
+      (new SimplePolygon (idx-trim spoints 0 0 (- (length spoints) 1))) ))))
+
+
+(defun simplify-polygon (obj eps method)
+  (declare (-obj- (Polygon)) obj)
+  (declare (-double-) eps)
+  (declare (-int-) method)
+  (let* ((poly (polygon-without-holes obj))
+         (poly (simplify-simple-polygon poly eps method))
+         (points :poly:points)
+         (ihs (clone-array :obj:i-holes))
+         (np (length points)) )
+    (declare (-int-) np)
+    (do ((hole (==> obj holes)) (i (ints)))
+      (declare (-int-) i)
+      (let ((h (simplify-simple-polygon hole eps method)))
+        (array-extend! points 0 :h:nv)
+        (array-copy :h:points (idx-trim points 0 np))
+        (ihs i np)
+        (incr np :h:nv) ))
+    (new Polygon points ihs) ))
+
+
+(dhc-make-class "plsimplifier" PolylineSimplifier)
+(dhc-make ()
+          find-dominant-point
+          simplify-mesh
+          simplify-simple-polygon 
+          simplify-polygon)
+
+(defoverload -simplify simplify-polygon simplify-simple-polygon simplify-mesh)

@@ -1,0 +1,415 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "lapack-config")
+
+(in-namespace lapack-
+
+#? (lapack-getrf <A> <p>)
+;; {<see> mat-lu}
+;; Compute LU factorization of matrix <A> and return compactly
+;; in a single matrix (the unit diagonal of L is understood).
+;; Row permutations are written to integer vector <p>.
+(defun getrf (A p)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-int-)) p)
+  (cheader "extern void dgetrf_();")
+  (let ((lp (min (shape A 0) (shape A 1))))
+    (declare (-int-) lp)
+    (when (< (length p) lp)
+      (error "vector <p> too short") )
+    (when (not (contiguousp p))
+      (error "<p> not contiguous") )
+    (let ((info 0)
+          (A ##(mat-transpose A)) )
+      (declare (-int-) info)
+      #{ dgetrf_($A->dim+1,$A->dim,$(idx-base A),$A->mod,$(idx-base p), &$info); #}
+      (for* (i 0 lp)
+        (declare (-int-) i)
+        (decr (p i)) )
+      (idx-trim! p 0 0 lp)
+      (mat-transpose A) )))
+
+
+#? (lapack-potrf! <A>)
+;; {<see> mat-cholesky}
+;; Update <A> with the Cholesky factorization of <A> and return
+;; <t> when successful.
+;;
+;; <A> is assumed to be symmetric and only the diagonal and upper
+;; triangle entries of <A> are referenced. A symmetric matrix has a
+;; Cholesky factorization if and only if it is positive definite. Hence,
+;; <potrf!> returns <()> (false) when <A> is not positive definite.
+(defun potrf! (A)
+  (declare (-idx2- (-double-)) A)
+  (cheader "extern void dpotrf_();")
+  (let ((info 0))
+    (declare (-int-) info)
+    (when (not (mat-squarep A))
+      (error "matrix not square") )
+    #{ dpotrf_("L",$A->dim,$(idx-base A),$A->mod,&$info); #}
+    (= info 0) ))
+
+
+#? (lapack-gesdd/a! <A> <U> <Vt>)
+;; Do full, destructive SVD (<A> will be destroyed). Update matrices <U> 
+;; and <Vt> with the left and right singular vectors (Vt = transpose of V)
+;; and return singular values of <A>.
+(defun gesdd/a! (A U Vt)
+  (declare (-idx2- (-double-)) A U Vt)
+  (cheader "extern void dgesdd_();")
+  (let* ((info 0)
+         (m ($ A 0))
+         (n ($ A 1))
+         (S (double-array (min m n)))
+         (work [-1 0 0])
+         (lwork -1)
+         (iwork (int-array (* 8 (min m n)))) )
+    (declare (-int-) info m n lwork)
+    ;; argument checking
+    (when (not (contiguousp A))
+      (error "A not contiguous") )
+    (when (not (contiguousp U))
+      (error "U not contiguous") )
+    (when (not (mat-squarep U))
+      (error "U not square") )
+    (if (< ($ U 0) m)
+        (error "U too small")
+      (idx-trim! U 0 0 m)
+      (idx-trim! U 1 0 m) )
+    (when (not (contiguousp Vt))
+      (error "Vt not contiguous") )
+    (when (not (mat-squarep Vt))
+      (error "Vt not square") )
+    (if (< ($ Vt 0) n)
+        (error "Vt too small")
+      (idx-trim! Vt 0 0 n)
+      (idx-trim! Vt 1 0 n) )
+    
+    ;; see http://netlib.org/lapack/explore-html/dgesdd.f.html
+
+    ;; since lapack uses column major order, we actually compute A^T = V.S.U^T
+    ;; first call: determine optimal workspace size
+    #{ dgesdd_("A", &$n, &$m, $(idx-base A), $A->mod, $(idx-base S), $(idx-base Vt), $Vt->mod, $(idx-base U), $U->mod, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
+
+    (if (= info 0)
+        (setq lwork (work 0))
+      (errorf "something went wrong, info = %d" info) )
+    (assert (> lwork 0))
+
+    ;; second call: do the svd
+    (let ((work (double-array lwork)))
+      #{ dgesdd_("A", &$n, &$m, $(idx-base A), $A->mod, $(idx-base S), $(idx-base Vt), $Vt->mod, $(idx-base U), $U->mod, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+    S))
+
+
+#? (lapack-gesdd/n! <A>)
+;; Return vector of singular values of <A>.
+;;
+;; Note: <A> will be destroyed.
+(defun gesdd/n! (A)
+  (declare (-idx2- (-double-)) A)
+  (cheader "extern void dgesdd_();")
+  (let* ((info 0)
+         (m ($ A 0))
+         (n ($ A 1))
+         (S (double-array (min m n)))
+         (work [-1 0 0])
+         (lwork -1)
+         (iwork (int-array (* 8 (min m n))))
+         (dummy 1) )
+    (declare (-int-) info m n lwork dummy)
+    ;; argument checking
+    (when (not (contiguousp A))
+      (error "A not contiguous") )
+
+    ;; first call: determine optimal workspace size
+    #{ dgesdd_("N", &$n, &$m, $(idx-base A), $A->mod, $(idx-base S), NULL, &$dummy, NULL, &$dummy, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
+
+    (if (= info 0)
+        (setq lwork (work 0))
+      (errorf "something went wrong, info = %d" info) )
+    (assert (> lwork 0))
+
+    ;; second call: compute singular values
+    (let ((work (double-array lwork)))
+      #{ dgesdd_("N", &$n, &$m, $(idx-base A), $A->mod, $(idx-base S), NULL, &$dummy, NULL, &$dummy, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+    S))
+
+#? (lapack-gsyevd/v! <A>)
+;; Compute all eigenvalues and eigenvectors of symmetric matrix <A>.
+;; Update <A> with the eigenvectors and return a vector of eigenvalues.
+;;
+;; Note: <gsyevd/v!> does not check that <A> is symmetric and reads the
+;; upper triangular part only.
+(defun gsyevd/v! (A)
+  (declare (-idx2- (-double-)) A)
+  (cheader "extern void dsyevd_();")
+  (let* ((info 0)
+         (m ($ A 0))
+         (w (double-array m))
+         (work [-1 0 0])
+         (lwork -1)
+         (iwork [i -1 0 0])
+         (liwork -1) )
+    (declare (-int-) info m lwork liwork)
+    ;; argument checking
+    (when (not (contiguousp A))
+      (error "matrix not contiguous") )
+    (when (not (mat-squarep A))
+      (error "matrix not square") )
+
+    ;; see http://netlib.org/lapack/explore-html/dsyevd.f.html
+
+    ;; first call: determine optimal workspace sizes
+    #{ dsyevd_("V", "L", &$m, $(idx-base A), $A->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #}
+
+    (if (= info 0)
+        (setq lwork (work 0)  liwork (iwork 0))
+      (errorf "something went wrong, info = %d" info) )
+    (assert (> lwork 0))
+    (assert (> liwork 0))
+
+    ;; second call: compute eigenvalues and eigenvectors
+    (let ((work (double-array lwork)) (iwork (int-array liwork)))
+      #{ dsyevd_("V", "L", &$m, $(idx-base A), $A->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #} )
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+
+    ;; transpose <A> in-place
+    (let ((s0 (idx-mod A 0)) (s1 (idx-mod A 1)))
+      (idx-set-mod A 0 s1)
+      (idx-set-mod A 1 s0) )
+    w))
+
+#? (lapack-gsyevd/n! <A>)
+;; Compute all eigenvalues of symmetric matrix <A> and return as vector.
+;;
+;; Note: <gsyevd/n!> does not check that <A> is symmetric and reads the
+;; upper triangular part only. <A> will be destroyed.
+(defun gsyevd/n! (A)
+  (declare (-idx2- (-double-)) A)
+  (cheader "extern void dsyevd_();")
+  (let* ((info 0)
+         (m ($ A 0))
+         (w (double-array m))
+         (work [-1 0 0])
+         (lwork -1)
+         (iwork [i -1 0 0])
+         (liwork -1) )
+    (declare (-int-) info m lwork liwork)
+    ;; argument checking
+    (when (not (contiguousp A))
+      (error "matrix not contiguous") )
+    (when (not (mat-squarep A))
+      (error "matrix not square") )
+
+    ;; first call: determine optimal workspace sizes
+    #{ dsyevd_("N", "L", &$m, $(idx-base A), $A->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #}
+
+    (if (= info 0)
+        (setq lwork (work 0)  liwork (iwork 0))
+      (errorf "something went wrong, info = %d" info) )
+    (assert (> lwork 0))
+    (assert (> liwork 0))
+
+    ;; second call: compute eigenvalues
+    (let ((work (double-array lwork)) (iwork (int-array liwork)))
+      #{ dsyevd_("N", "L", &$m, $(idx-base A), $A->mod, $(idx-base w), $(idx-base work), &$lwork, $(idx-base iwork), &$liwork, &$info); #} )
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+    w))
+
+#? (lapack-geev/n! <A> <evi>)
+;; Compute all eigenvalues of nonsymmetric matrix <A>, return real parts
+;; as vector, and write imaginary parts to <evi>.
+(defun geev/n! (A wi)
+  (declare (-idx2- (-double-)) A)
+  (declare (-idx1- (-double-)) wi)
+  (cheader "extern void dgeev_();")
+  (let* ((info 0)
+         (m ($ A 0))
+         (wr  (double-array m))
+         (work [-1 0 0])
+         (lwork -1)
+         (dummy 1) )
+    (declare (-int-) info m lwork dummy)
+    ;; argument checking
+    (when (not (contiguousp A))
+      (error "matrix not contiguous") )
+    (when (not (mat-squarep A))
+      (error "matrix not square") )
+    (when (<> (length wi) m)
+      (error "arguments not compatible (lengths must match)") )
+    
+    ;; first call: determine optimal workspace size
+    #{ dgeev_("N", "N", &$m, $(idx-base A), $A->mod, $(idx-base wr), $(idx-base wi), &$dummy, &$dummy, &$dummy, &$dummy, $(idx-base work), &$lwork, &$info); #}
+    
+    (if (= info 0)
+        (setq lwork (work 0))
+      (errorf "something went wrong, info = %d" info) )
+    (assert (> lwork 0))
+    ;; second call: compute eigenvalues
+    (let ((work (double-array lwork)))
+      #{ dgeev_("N", "N", &$m, $(idx-base A), $A->mod, $(idx-base wr), $(idx-base wi), &$dummy, &$dummy, &$dummy, &$dummy, $(idx-base work), &$lwork, &$info); #} )
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+    wr))
+
+#? (lapack-gesv <A> <B>)
+;; Solve linear system <A><X>=<B> and return <X>.
+;;
+;; <A> is a square <m>x<m> matrix, <B> is <m>x<n>.
+(defun gesv (A B)
+  (declare (-idx2- (-double-)) A B)
+  (cheader "extern void dgesv_();")
+  (when (not (contiguousp A))
+    (error "matrix not contiguous") )
+  (when (not (mat-squarep A))
+    (error "matrix not square") )
+  (chk-mm-compatible A B)
+  (let* ((A ##($t A))
+         (X ##($t B))
+         (m (shape A 0))
+         (n (shape B 1))
+         (info 0)
+         (ipiv (int-array m)) )
+    (declare (-int-) info m n)
+    #{ dgesv_(&$m, &$n, $(idx-base A), $A->mod, $(idx-base ipiv), $(idx-base X), $X->mod, &$info); #}
+    (when (<> info 0)
+      (error "matrix is singular") )
+    ;; transpose X in-place
+    (let ((s0 (idx-mod X 0)) (s1 (idx-mod X 1)))
+      (unprotect
+       (idx-set-dim X 0 m)
+       (idx-set-dim X 1 n)
+       (idx-set-mod X 0 s1)
+       (idx-set-mod X 1 s0) ))
+    X))
+
+#? (lapack-gelsd <A> <B>)
+;; Return solution of linear least-squares problem <A><X>=<B>.
+;;
+;; The system may be over- or under-determined. (When under-determined,
+;; or <A> is rank-deficient, the "minimum norm least-squares" solution
+;; is sought.)
+(defun gelsd (A B)
+  (declare (-idx2- (-double-)) A B)
+  (cheader "extern void dgelsd_();")
+  (when (not (contiguousp A))
+    (error "matrix not contiguous") )
+  (when (<> (length A) (length B))
+    (error "arguments not compatible (lengths must match)") )
+
+  (let* ((info 0)
+         (m ($ A 0)) (n ($ A 1)) 
+         (nrhs ($ B 1)) (rank 0)
+         (A ##($t A))
+         (minmn (min m n))
+         (nlvl (ceil (+ (log2 minmn) 1)))
+         (X (double-array (max m n) nrhs))
+         (s (double-array minmn)) 
+         (work [-1 0 0])
+         (lwork -1)
+         (iwork (int-array (* minmn (+ (* 3 nlvl) 11))))
+         (rcond -1) )
+    (declare (-int-) info m n nrhs rank lwork)
+    
+    ;; first call: determine optimal workspace size
+    #{ dgelsd_(&$m, &$n, &$nrhs, $(idx-base A), $A->mod, $(idx-base X), $X->dim, $(idx-base s), &$rcond, &$rank, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #}
+
+    (if (= info 0)
+        (setq lwork (work 0))
+      (errorf "something went wrong, info = %d" info) )
+    (assert (> lwork 0))
+
+    ;; second call: compute solution
+    (array-copy B (idx-trim X 0 0 m))
+    (let ((work (double-array lwork)))
+      #{ dgelsd_(&$m, &$n, &$nrhs, $(idx-base A), $A->mod, $(idx-base X), $X->dim, $(idx-base s), &$rcond, &$rank, $(idx-base work), &$lwork, $(idx-base iwork), &$info); #} )
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+    (idx-trim! X 0 0 n)
+    X))
+
+(defun trtrs (A B upper)
+  (declare (-idx2- (-double-)) A B)
+  (declare (-bool-) upper)
+  (cheader "extern void dtrtrs_();")
+  (when (not (mat-squarep A))
+    (error "matrix not square") )
+  (when (not (contiguousp A))
+    (error "matrix not contiguous") )
+  (when (<> (length A) (length B))
+    (error "arguments not compatible (lengths must match)") )
+  
+  (let* ((info 0)
+         (m ($ A 0))
+         (nrhs ($ B 1))
+         (X (copy-array B)) )
+    (declare (-int-) info m nrhs)
+    
+    ;; first call: determine optimal workspace size
+    (if upper
+        #{ dtrtrs_("L", "T", "N", &$m, &$nrhs, $(idx-base A), $A->mod, $(idx-base X), $X->dim, &$info); #}
+        #{ dtrtrs_("U", "T", "N", &$m, &$nrhs, $(idx-base A), $A->mod, $(idx-base X), $X->dim, &$info); #} )
+
+    (when (<> info 0)
+      (errorf "something went wrong, info = %d" info) )
+    X))
+
+#? (lapack-utrtrs <A> <B>)
+;; Return solution of upper tridiagonal system <A><X>=<B>.
+(defmacro utrtrs (A B)
+  `(trtrs ,A ,B t) 
+  )
+
+#? (lapack-ltrtrs <A> <B>)
+;; Return solution of lower tridiagonal system <A><X>=<B>.
+(defmacro ltrtrs (A B)
+  `(trtrs ,A ,B ()) 
+  )
+  
+) ; in-namespace lapack-
+
+(dhc-make-with-libs "lapack_double"
+                    (list *liblapack*)
+                    lapack-getrf
+                    lapack-potrf!
+                    lapack-gesdd/a!
+                    lapack-gesdd/n!
+                    lapack-gsyevd/v!
+                    lapack-gsyevd/n!
+                    lapack-geev/n!
+                    lapack-gesv
+                    lapack-gelsd
+                    lapack-trtrs
+                    )

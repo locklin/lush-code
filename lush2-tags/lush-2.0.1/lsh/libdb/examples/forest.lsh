@@ -1,0 +1,215 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "libdb/db")
+
+
+#? * Dataset example: UCI Forest database.
+;; This example illustrates how to use <"db.lsh"> to access the 
+;; UCI Forest Cover Type database:
+;; <http://kdd.ics.uci.edu/databases/covertype/covertype.html>
+
+
+#? db-forest-dir
+;;.TYPE VAR
+;; This variable must be initialized with the directory
+;; name containing the UCI Forest files.
+
+(defvar db-forest-dir 
+  (concat-fname (getenv "HOME") "DATASETS/uci/forest") )
+
+
+;; ----------------------------------------
+;; PREPARATION
+
+#? (db-forest-convert-distributed-data)
+;; This function must be called ahead of time in order
+;; to convert the distributed text file into a more
+;; convenient Lush matrix files.
+
+(de db-forest-convert-distributed-data()
+  (let ((odir (chdir)))
+    (chdir db-forest-dir)
+    (sys "echo .MAT 2 581012 55 > temp.mat")
+    (sys "gzip -dc covtype.data.gz | sed -e 's/,/ /g' >> temp.mat")
+    (save-matrix (load-matrix "temp.mat") "covtype.mat")
+    (sys "gzip -9 covtype.mat")
+    (sys "rm temp.mat") 
+    (chdir odir) ) )
+
+
+;; ----------------------------------------
+;; RAW DATA
+
+#? (db-forest-create-raw)
+;; Creates and returns dataset <db-forest-raw> containing
+;; all the examples in the UCI forest database.
+
+(de db-forest-create-raw()
+  ;; -- load data
+  (when (not :db-forest-data)
+    (let ((fname (concat-fname db-forest-dir "covtype.mat.gz")))
+      (setq :db-forest-data (load-matrix (concat "| zcat " fname))) ) )
+  ;; -- create database
+  (setq db-forest-raw
+	(new db-ffmatrix 
+	     (narrow :db-forest-data 1 54 0)
+	     (narrow :db-forest-data 1 1 54) ) )
+  ;; -- accessor for x
+  (==> db-forest-raw set-key 'x
+       (lambda(this n)
+	 (let ((f (float-array 1)))
+	   (==> this getx n f) f ) ) )
+  ;; -- accessor for numeric data
+  (let ((f (lambda(this n i)
+	     (let ((f (float-array 1)))
+	       (==> this getx n f)
+	       (f i) ) )))
+    (==> db-forest-raw set-key 'elevation f 0)
+    (==> db-forest-raw set-key 'aspect f 1)
+    (==> db-forest-raw set-key 'slope f 2)
+    (==> db-forest-raw set-key 'horiz-distance-hydro f 3)
+    (==> db-forest-raw set-key 'vert-distance-hydro f 4)
+    (==> db-forest-raw set-key 'horiz-distance-road f 5)
+    (==> db-forest-raw set-key 'hillshade-9am f 6)
+    (==> db-forest-raw set-key 'hillshade-noon f 7)
+    (==> db-forest-raw set-key 'hillshade-3pm f 8)
+    (==> db-forest-raw set-key 'horiz-distance-fire f 9) )
+  ;; -- accessor for wilderness area
+  (==> db-forest-raw set-key 'wilderness-area
+       (lambda(this n)
+	 (let ((f (float-array 1)))
+	   (==> this getx n f)
+	   (car (find-interval (f '(10 13)) 1)) ) ) )
+  (==> db-forest-raw set-key 'wilderness-area-name
+       (lambda(this n)
+	 (let ((f (float-array 1)))
+	   (==> this getx n f)
+	   (nth (car (find-interval (f '(10 13)) 1))
+		'("Rawah" "Neota" "Comanche Peak" "Cache la Poudre") ) ) ) )
+  ;; -- accessor for soil type
+  (==> db-forest-raw set-key 'soil-type
+       (lambda(this n)
+	 (let ((f (float-array 1)))
+	   (==> this getx n f)
+	   (car (find-interval (f '(14 53)) 1)) ) ) )
+  ;; -- accessor for cover type (class)
+  (==> db-forest-raw set-key 'cover-type
+       (lambda(this n)
+	 (==> this get-label n) ) )
+  (==> db-forest-raw set-key 'cover-type-name
+       (lambda(this n)
+	 (nth (==> this get-label n)
+	      '("Spruce/Fir" "Lodgepole Pine" "Ponderosa Pine" 
+		"Cottonwood/Willow" "Aspen") ) ) )
+  (==> db-forest-raw set-key-alias 'class 'cover-type) 
+  ;; -- finished
+  db-forest-raw )
+
+
+;; ----------------------------------------
+;; NORMALIZED DATA
+
+#? (db-forest-create-norm <normquant> <normsymb>)
+;; Creates and returns dataset <db-forest-norm> containing
+;; all the examples in the UCI forest database
+;; after applying the normalization specified
+;; by arguments <normquant> (for quantitative data)
+;; and <normsymb> for qualitative data.
+;; Each of these arguments can take the following
+;; values:
+;;.IP
+;;  Nil <()> for no normalization
+;;.IP
+;;  Symbol <mean-sdev> for normalization to mean 0 and sdev 1,
+;;.IP
+;;  Symbol <min-max> for normalization in range -1 to +1.
+
+(de db-forest-create-norm(normquant normsymb)
+  (db-forest-create-raw)
+  (setq db-forest-norm (new db-normx db-forest-raw))
+  ;; perform normalizations
+  (let ((stat (db-get-x-statistics db-forest-raw)))
+    (selectq normquant
+      (min-max
+       (for (i 0 9) 
+	    (db-norm-min-max db-forest-norm stat i -1 +1) ) )
+      (mean-sdev
+       (for (i 0 9) 
+	    (db-norm-mean-sdev db-forest-norm stat i 0 1) ) )
+      (t
+       (when normquant 
+	 (error 'db-forest-create-norm
+		"Normalization mode should be min-max, mean-sdev, or ()"
+		normquant) ) ) )
+    (selectq normsymb
+      (min-max
+       (for (i 10 53) 
+	    (db-norm-min-max db-forest-norm stat i -1 +1) ) )
+      (mean-sdev
+       (for (i 10 53) 
+	    (db-norm-mean-sdev db-forest-norm stat i 0 1) ) )
+      (t
+       (when normsymb 
+	 (error 'db-forest-create-norm
+		"Normalization mode should be min-max, mean-sdev, or ()"
+		normsymb) ) ) )
+    db-forest-norm ) )
+
+
+
+;; ----------------------------------------
+;; TRAIN/VALIDATION/TEST PARTITION
+
+#? (db-forest-standard-partition <d>)
+;; Prepare datasets <db-forest-train>, <db-forest-validation>
+;; and <db-forest-test> from the full database <d> according
+;; to the partition information suggested by the information
+;; file.
+
+(de db-forest-standard-partition(d)
+  (list
+   (setq db-forest-train (db-narrow d 11340 0))
+   (setq db-forest-validation (db-narrow d 3780 11340))
+   (setq db-forest-test (db-narrow d 565892 (+ 3780 11340))) ) )
+
+
+#? (db-forest-collobert-partition <d>)
+;; Prepare datasets <db-forest-train>, <db-forest-validation> and
+;; <db-forest-test> from the full database <d> according to our understanding
+;; of "A Parallel Mixture of SVMs for Very Large Scale Problems", by
+;; Collobert, Bengio and Bengio, NIPS 2001.
+
+(de db-forest-collobert-partition(d)
+  (seed 2.718) ;; we do not know collobert's shuffle...
+  (setq d (setq db-forest-shuffled (db-shuffle d)))
+  (list
+   (setq db-forest-test (db-narrow d 50000 0))
+   (setq db-forest-validation (db-narrow d 10000 50000))
+   (setq db-forest-train (db-narrow d 400000 60000)) ) )
+
+

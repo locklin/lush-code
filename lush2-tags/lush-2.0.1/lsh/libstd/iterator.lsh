@@ -1,0 +1,422 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "iterator-classes")
+
+#? *** Iterables and Iterators
+;; Iterators are an abstraction for sequential data access
+;; and deferred computation (akin to "lazy evaluation"). A stock
+;; of generic iterator functions brings the convenience of 
+;; generic list processing functions to a wider class of objects,
+;; that is, objects that are "iterable".
+;;
+;; An object <obj> is "iterable" if the expression <(iterate obj)>
+;; evaluates to an iterator.
+;;
+;; An iterator <it> is an object that supports the "iterator
+;; protocol", which means that the four expressions <(emptyp it)>,
+;; <(iterate it)>, <(next it)>, and <(peeknext it)> are legal and
+;; adhere to the following semantics:
+;; {<ul>
+;;   {<li> <(iterate it)> evaluates to <it>}
+;;   {<li> <(emptyp it)> evaluates to true (<t>) or false (<()>).
+;;   When <(emptyp it)> evaluates to false then a subsequent 
+;;   evaluation of <(next it)> or <(peeknext it)> is guaranteed
+;;   to succeed.}
+;;   {<li> <(next it)> evaluates to an item or causes a runtime error.}
+;;   {<li> <(peeknext it)> evaluates to an item or causes a runtime error.
+;;   When <(peeknext it)> evaluates to an item, then <(next it)>
+;;   will evaluate to the same item.}
+;; }
+;; 
+;; In a typical use case, an iterator object gives access to
+;; "items" of some iterable object and yields these items in a
+;; particular order. Function <next>
+;; prompts the iterator to yield the next item and "crosses it
+;; off", so that in general, subsequent calls to <next> return 
+;; different items. Function <peeknext> returns the next item
+;; without "crossing it off", so subsequent calls to <peeknext>
+;; always return the same item. Function <emptyp> finally tests
+;; whether there are any more items.
+
+#? ** Writing Generic Iterator Functions
+;; A function that uses only the four functions <iterate>,
+;; <emptyp>, <next>, and <peeknext> to access items of an
+;; iterable object is "generic" in that it works with all
+;; iterable objects. Code that uses only generic functions
+;; is also generic.
+
+#? (iterate <obj> [<arg>])
+;; Return an iterator for object <obj> or raise an error when <obj>
+;; cannot be iterated.
+;;
+;; There are two behaviors for iteration of functions: First, when
+;; no argument <arg> is provided, the iterator calls <obj> without
+;; arguments in each iteration step. Second, if an argument <arg>
+;; is provided, the iterator calls <obj> with argument <arg> in the
+;; first step and with the last result in every subsequent step. 
+;; Examples:
+;; {<code>
+;;
+;; ? (take 8 (iterate rand))
+;; = (0.4579 0.2628 0.1898 0.3359 0.6329 0.0636 0.5097 0.4751)
+;; 
+;; ? (take 10 (iterate (lambda (x) (+ x x)) 1))
+;; = (2 4 8 16 32 64 128 256 512 1024)
+;; </code>}
+(defmacro iterate (obj . args)
+  `(==> ,obj -iterate ,@args)
+  )
+
+(dhm-t iterate (source)
+  (when (<> 2 (length source))
+    (dhc-error "one argument expected") )
+  (let* ((tn (dhc-parse-expr-t/nb (cadr source)))
+	 (src (cond ((==> :tn:type is-an-idxptr)
+		     `(copy-index ,(cadr source)))
+		    ((==> :tn:type is-an-objptr)
+                     (let ((cl (eval (dhu-name (dhu-type (dhu-type :tn:type))))))
+                       (while (and cl (<> cl iterator))
+                         (setq cl (super cl)) )
+                       (if cl
+                           `(progn ,(cadr source))
+                         `(==> ,(cadr source) -iterate) )))
+		    (t
+		     (dhc-error "can't compile form" source) ))))
+    (dhc-parse-replacement-source-t source src) ))
+
+
+#? (next <it>)
+;; Extract next item from iterator <it> and return it.
+(defmacro next (obj)
+  `(==> ,obj next)
+  )
+
+(dhm-t next (source)
+  (when (<> 2 (length source))
+    (dhc-error "one argument expected") )
+  (let* ((it (cadr source))
+	 (tn (dhc-parse-expr-t/nb it))
+	 (src (cond ((==> :tn:type is-an-idxptr)
+		     `(if (idx-emptyp ,it)
+			  (error "No more items")
+			(prog1 (idx-select ,it 0 0)
+			  (idx-trim! ,it 0 1))) )
+		    ((==> :tn:type is-an-objptr)
+		     `(==> ,it next))
+		    (t
+		     (dhc-error "can't compile form" source) ))))
+    (dhc-parse-replacement-source-t source src) ))
+
+
+#? (peeknext <it>)
+;; Return next item in iterator <it> without removing it.
+(defmacro peeknext (obj)
+  `(==> ,obj peeknext)
+  )
+
+(dhm-t peeknext (source)
+  (when (<> 2 (length source))
+    (dhc-error "one argument expected") )
+  (let* ((it (cadr source))
+	 (tn (dhc-parse-expr-t/nb it))
+	 (src (cond ((==> :tn:type is-an-idxptr)
+		     `(if (idx-emptyp ,it)
+			  (error "No more items")
+			(idx-select ,it 0 0)) )
+		    ((==> :tn:type is-an-objptr)
+		     `(==> ,it peeknext)) 
+		    (t
+		     (dhc-error "can't compile form" source) ))))
+    (dhc-parse-replacement-source-t source src) ))
+
+#? ** Generic Iterator Functions
+
+#? (do ((<i1> <obj1>) ... (<in> <objn>)) [while <cond>] . <body>)
+;; Iterate objects <obj1> to <objn> in parallel until any object
+;; is empty. If an optional condition <cond> is given, then also 
+;; terminate when <cond> is not true.
+;;
+;; Iteration terminates prematurely when <continue> is set to
+;; false in <body>.
+;; Examples:
+;; {<code>
+;; (do ((ln (range 1 1000)) (line (lines "readme.txt")))
+;;   (printf "%3d :  %s\n" ln line) )
+;; 
+;; (do ((i hp)) while (<> i -1)
+;;   (print i))
+;; </code>}
+(defmacro do (args . body)
+  (let ((its (gensyms (length args))))
+    (if (and body (= (car body) 'while))
+        (let (((_ cond . body) body))
+          `(lete ((continue t) ,@(domapcar ((arg args) (it its)) `(,it (iterate ,(cadr arg)))))
+             (while (and continue (not (or ,@(domapcar ((it its)) `(emptyp ,it)))))
+               (let (,@(domapcar ((arg args) (it its)) `(,(car arg) (peeknext ,it))))
+                 (setq continue ,cond)
+                 (when continue
+                   (prog1 (progn ,@body)
+                     ,@(domapcar ((arg args) (it its)) `(next ,it)) )))))
+          )
+      `(lete ((continue t) ,@(domapcar ((arg args) (it its)) `(,it (iterate ,(cadr arg)))))
+         (while (and continue (not (or ,@(domapcar ((it its)) `(emptyp ,it)))))
+           (let (,@(domapcar ((arg args) (it its)) `(,(car arg) (next ,it))))
+             ,@body)))
+      )))
+
+#? (take <n> <obj>)
+;; Take up to <n> items from <obj> and return in a list.
+(defun take (n obj)
+  (let ((obj (iterate obj)) (l ()) (tail ()))
+    (when (and (> n 0) (not (==> obj -emptyp)))
+      (setq l (cons (==> obj next) ()))
+      (decr n) )
+    (setq tail l)
+    (while (and (> n 0) (not (==> obj -emptyp)))
+      (setq tail (cdr (rplacd tail (cons (==> obj next) ()))))
+      (decr n) )
+    l))
+
+
+#? (atake <n> <obj> [<element-type>])
+;; Take up to <n> items from <obj> and return in a vector. Example:
+;; {<code>
+;; ? (atake 10 1s)
+;; = [a 1 1 1 1 1 1 1 1 1 1]
+;; ? (atake 10 1s 'double)
+;; = [d  1.00  1.00  1.00  1.00  1.00  1.00  1.00  1.00  1.00  1.00]
+;; </code>}
+(defmacro atake (-n obj &optional (sc 'atom))
+  (let ((sc (eval sc)))
+    (when (null (storage-class sc))
+      (error "not an element type" sc) )
+    (let ((ac (symbol-concat sc '-array))
+          ((n i a it) (gensyms 4)) )
+      `(let* ((,n ,-n) (,i 0)
+              (,a (,ac ,n))
+              (,it (iterate ,obj)) )
+         (declare (-int-) ,n ,i)
+         (while (and (not (emptyp ,it)) (< ,i ,n))
+           (,a ,i (next ,it))
+           (incr ,i) )
+         (idx-trim ,a 0 0 ,i) )
+      )))
+
+#? (drop <n> <obj>)
+;; Drop up to <n> items and return the iterator.
+(defun drop (n obj)
+  (let ((obj (iterate obj)))
+    (while (and (> n 0) (not (==> obj -emptyp)))
+      (==> obj next)
+      (decr n) )
+    obj))
+
+(dhm-t drop (source)
+  (when (<> 3 (length source))
+    (dhc-error "two arguments expected") )
+  (let (((n it) (cdr source)))
+    (let* ((tn (dhc-parse-expr-t/nb it))
+	   (n2 (gensym))
+	   (src (cond ((==> :tn:type is-an-idxptr)
+		       `(let ((,n2 (length ,it)))
+			  (declare (-int-) ,n2)
+			  (idx-trim! ,it (min ,n ,n2))) )
+		      ((==> :tn:type is-an-objptr)
+		       (let* ((cltype (dhu-type (dhu-type :tn:type)))
+			      (mtype (dhc-getmethod cltype '-drop)) )
+			 (if mtype
+			     `(==> ,it -drop ,n)
+			   `(let ((,n2 ,n))
+			      (declare (-int-) ,n2)
+			      (while (and (not (emptyp ,it)) (> ,n2 0))
+				(==> ,it next)
+				(decr ,n2) )
+			      ,it) )))
+		      (t
+		       (dhc-error "can't compile form" source) ))))
+      (dhc-parse-replacement-source-t source src) )))
+
+
+#? (take-while <p> <obj>)
+;; Take items from <obj> as long as (<p> <item>) is true;
+;; return the items in a list.
+(defun take-while (p obj)
+  (let ((l ()) (tail ()) (it (iterate obj)))
+    (when (and (not (emptyp it)) (p (peeknext it)))
+      (setq l (cons (==> it next) nil)) )
+    (setq tail l)
+    (while (and (not (==> it -emptyp)) (p (==> it peeknext)))
+      (setq tail (cdr (rplacd tail (cons (==> p next) nil)))) )
+    l))
+
+#? (drop-while <p> <obj>)
+;; Drop items from <obj> as long as (<p> <item>) is true;
+;; return the iterator.
+(defmacro drop-while (p obj)
+  (let ((it (gensym)))
+    `(let ((,it (iterate ,obj)))
+       (while (and (not (emptyp ,it)) (,p (peeknext ,it)))
+         (==> ,it next) )
+       ,it)
+    ))
+
+#? (take-until <x> <obj>)
+;; Take items from <obj> until item <x>; return the items
+;; in a list (including <x>).
+(defun take-until (x obj)
+  (let ((l ()) (tail ()) (it (==> obj -iterate)))
+    (when (not (==> it -emptyp))
+      (setq l (cons (==> it next) nil)) )
+    (setq tail l)
+    (while (and (not (==> it -emptyp)) (<> x (car tail)))
+      (setq tail (cdr (rplacd tail (cons (==> it next) nil)))) )
+    l))
+
+#? (take-until* <x> <obj>)
+;; Take items from <obj> until item <x>; return the items
+;; in a list (not including <x>).
+(defun take-until* (x obj)
+  (let ((l ()) (tail ()) (it (==> obj -iterate)))
+    (when (not (==> it -emptyp))
+      (setq l (cons (==> it next) nil)) )
+    (setq tail l)
+    (while (and (not (==> it -emptyp)) (<> x (==> it peeknext)))
+      (setq tail (cdr (rplacd tail (cons (==> it next) nil)))) )
+    l))
+
+#? (drop-until <x> <obj>)
+;; Drop items from <obj> until item <x>; return the iterator.
+;; The last item returned by the iterator was <x>.
+(defmacro drop-until (x obj)
+  (let ((it (gensym)) (xx (gensym)))
+    (if (symbolp x)
+        `(let ((,it (iterate ,obj)))
+           (while (and (not (emptyp ,it)) (<> ,x (next ,it)))
+             ())
+           ,it)
+      `(let ((,it (iterate ,obj)) (,xx ,x))
+         (while (and (not (emptyp ,it)) (<> ,xx (next ,it)))
+           ())
+         ,it)
+      )))
+
+#? (drop-until* <x> <obj>)
+;; Drop items from <obj> until item <x>; return the iterator.
+;; The next item delivered by the iterator will be <x>.
+(defmacro drop-until* (x obj)
+  (let ((it (gensym)) (xx (gensym)))
+    (if (symbolp x)
+        `(let ((,it (iterate ,obj)))
+           (while (and (not (emptyp ,it)) (<> ,x (peeknext ,it)))
+             (next ,it))
+           ,it)
+      `(let ((,it (iterate ,obj)) (,xx ,x))
+         (while (and (not (emptyp ,it)) (<> ,xx (peeknext ,it)))
+           (next ,it))
+         ,it)
+      )))
+
+#? * Builtin Iterables and Iterators
+
+#? 0s
+;; Iterable generating <0>.
+
+#? 1s
+;; Iterable generating <1>.
+
+#? nils
+;; Iterable generating <()>.
+
+#? ts
+;; Iterable generating <t>.
+
+#? (ints)
+;; Iterator generating the numbers 0, 1, 2, ...
+(defmacro ints ()
+  `(irange 0 ,:+int-max+)
+  )
+
+#? (irange [<from>] <to> [<step>])
+;; Like <range> but returns an iterator, not a list.
+(defmacro irange args
+  (selectq (length args)
+    (1 (let (((to) args)) 
+	 `(new RangeIterator 0 ,to 1)) )
+    (2 (let (((from to) args))
+	 `(new RangeIterator ,from ,to (if (< ,from ,to) 1 -1)) ))
+    (3 (let (((from to step) args)) 
+	 `(new RangeIterator ,from ,to ,step) ))
+    (t (error "wrong number of arguments") )))
+
+#? (irange* [<from>] <to> [<step>])
+;; Like <range*> but returns an iterator, not a list.
+(defmacro irange* args
+  (selectq (length args)
+    (1 (let (((to) args)) 
+	 `(new Range*Iterator 0 ,to 1) ))
+    (2 (let (((from to) args)) 
+	 `(new Range*Iterator ,from ,to (if (< ,from ,to) 1 -1)) ))
+    (3 (let (((from to step) args)) 
+	 `(new Range*Iterator ,from ,to ,step) ))
+    (t (error "wrong number of arguments") )))
+
+#? (irange*/s [<from>] <to>)
+;; Generate integers from <from> to <to> but shuffled.
+;; Example:
+;;
+;; {<code>
+;; (take 10 (irange*/s 10)))
+;; = (8 3 6 1 9 4 7 2 5 0)
+;; </code>}
+(defmacro irange*/s args
+  (selectq (length args)
+    (1 (let (((to) args))
+         `(iterate (new RangeShuffledIterator 0 ,to))
+         ))
+    (2 (let (((from to) args))
+         `(iterate (new RangeShuffledIterator ,from ,to))
+         ))
+    (t
+     (error "wrong number of arguments") )))
+
+
+#? (lines <filename>)
+;; Iterator generating the lines of file <filename>.
+(defun lines (filename)
+  (new LinesIterator filename))
+
+(defmacro lines* (filename)
+  `(new Lines*Iterator ,filename) 
+  )
+
+(lock-symbol iterate next peeknext do take atake drop
+             take-while drop-while take-until drop-until
+             take-until* drop-until*
+             irange irange* irange*/s
+             lines)
+             

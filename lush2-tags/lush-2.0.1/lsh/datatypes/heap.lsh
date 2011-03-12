@@ -1,0 +1,130 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "datatypes/int-heap")
+(libload "datatypes/int-set")
+
+#? ** Heap / Priority Queue
+;; A heap can hold arbitrary many items. Each item has an associated
+;; key (a double number). Inserting new items and finding the item
+;; with smallest key are fast operations.
+
+(defclass Heap iterator
+  ((-obj- (IntHeap))  ih)   ; index heap
+  ((-obj- (IntSet)) fs)   ; free indices
+  ((-idx1- (-any-)) objs) )
+
+#? (new Heap <n>)
+;; Create a new min-heap with initial capacity for <n> objects.
+;;
+;; Class <Heap> supports the iterator protocol.
+(defmethod Heap Heap (size)
+  (declare (-int-) size)
+  (setq ih (new IntHeap size))
+  (setq fh (new IntSet))
+  (setq objs (atom-array size))
+  (==> fh insert-all (as-int-array (arange* size)))
+  ())
+
+#? (==> <Heap> insert <k> <i>)
+;; Insert new item <i> with key/priority <k> into the heap.
+(defmethod Heap insert (key i)
+  (declare (-double-) key)
+  (declare (-any-) i)
+  (when (emptyp fh)
+      ;; need to extend objs
+    (let ((n (length objs)))
+      (setq objs (array-extend objs 0 n ()))
+      (==> fh insert-all (as-int-array (arange* n (* 2 n))))
+      (setq n (* 2 n)) ))
+  
+  (let ((oi (==> fh minimum)))
+    (assert (null (objs oi)))
+    (==> ih insert key oi)
+    (==> fh remove oi)
+    (objs oi i) )
+  ())
+
+#? (==> <Heap> insert-all <ks> <is>)
+;; Insert all items in <is> with corresponding key in <ks>.
+(defmethod Heap insert-all (ks is)
+  (declare (-idx1- (-double-)) ks)
+  (let ((n (length keys))
+        (m (length ks)))
+    (declare (-int-) n m)
+    (do ((k ks) (i is))
+      (==> this insert k i) )
+    ()))
+
+#? (==> <Heap> number-of-items)
+;; Number of items in the heap.
+(defmethod Heap number-of-items ()
+  (==> ih number-of-items) )
+
+#? (==> <Heap> key)
+;; Return current minimum key.
+(defmethod Heap key ()
+  (==> ih key) )
+
+#? (==> <Heap> peeknext)
+;; Return the minimum-key item without removing it from the heap.
+(defmethod Heap peeknext ()
+  (objs (==> ih peeknext)) )
+
+#? (==> <Heap> next)
+;; Remove the minimum-key item from the heap and return it.
+(defmethod Heap next ()
+  (let ((oi (==> ih next)))
+    (prog1 (objs oi)
+      (==> fh insert oi)
+      (objs oi ())) ))
+
+#? (==> <Heap> drop-lt <min-key>)
+;; Remove all items with key strictly less than <min-key> and
+;; return key of new minimum item in heap or <NaN> when heap is
+;; empty.
+(defmethod Heap drop-lt (mk)
+  (declare (-double-) mk)
+  (while (and (not (emptyp ih)) (< (:ih:hp-keys 0) mk))
+    (==> this next) )
+  (if (emptyp ih)
+      NAN
+    (==> this peeknext) ))
+
+#? (==> <Heap> clear)
+;; Clear heap. After calling this method the heap object is empty.
+(defmethod Heap clear ()
+  (==> ih clear)
+  (==> fh insert-all (as-int-array (arange* (length objs))))
+  (setq objs (atom-array (length objs)))
+  ())
+
+(defmethod Heap -emptyp ()
+  (==> ih -emptyp) )
+
+(defmethod Heap -iterate ()
+  this)

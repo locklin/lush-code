@@ -1,0 +1,245 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Contours in binary images
+
+(libload "opencv/cv-config")
+(libload "opencv/cv-arrays")
+(libload "datatypes/iterable-datatype")
+(libload "geometry/polygon")
+
+(in-namespace cv-
+
+(defclass ImageContoursIterator DatatypeIterator
+  ((-gptr- "CvSeq *") cvcontour)          ; the last contour we looked at
+  ((-idx1- (-int-)) i-holes)              ; keep track where holes start
+  ((-idx2- (-double-)) points)            ;
+  ((-double-) s)                          ; coordinate scale factor
+  ((-obj- (Polygon)) next-item) )         ; yield contours as array of 2d point coordinates
+
+(defmethod ImageContoursIterator ImageContoursIterator (obj fc -s)
+  (declare (-obj- (IterableDatatype)) obj)
+  (declare (-gptr- "CvSeq *") fc) ; pointer to first contour
+  (declare (-double-) -s)
+  (cv-cpheader)
+  (unprotect)
+  (==> this DatatypeIterator obj)
+  (setq s -s)
+  (setq cvcontour fc)
+  (setq i-holes (int-array 20))
+  (setq points (double-array 4096 2))
+  (setq next-item (new Polygon (double-array 0 2) (int-array 0))) )
+
+(defmethod ImageContoursIterator -make-next ()
+  (when (<> cvcontour NULL)
+    ;; determine number of holes, total number of points and
+    ;; allocate the required amount of memory if necessary
+    (let ((np (to-int #{ $cvcontour->total #}))
+          (cvc #{ $cvcontour->v_next #})
+          (nholes 0) )
+      (declare (-int-) np nholes)
+      (declare (-gptr- "CvSeq *") cvc)
+      (while (to-bool #{ (($cvc!=NULL) && CV_IS_SEQ_HOLE($cvc)) #})
+        (incr nholes)
+        (incr np (to-int #{ $cvc->total #}))
+        (setq cvc #{ $cvc->h_next #}) )
+	(when (> np (length points))
+	  (array-extend! points 0 (- np (length points))) )
+	(when (> nholes (length i-holes))
+	  (array-extend! i-holes 0 (- nholes (length i-holes))) )
+
+	;; copy the point data over and create Polygon object
+        #{
+	double *ps = $(idx-base points);
+	int nc = 0;
+	CvSeqReader reader;
+	assert(CV_IS_SEQ_CONTOUR($cvcontour));
+	assert(!CV_IS_SEQ_HOLE($cvcontour));
+	cvStartReadSeq($cvcontour, &reader, 0);
+	for(int i=0; i<$cvcontour->total; i++) {
+	  ps[nc++] = 0.5+$s*(double)(CV_CURRENT_POINT(reader)).x;
+	  ps[nc++] = 0.5+$s*(double)(CV_CURRENT_POINT(reader)).y;
+	  CV_NEXT_SEQ_ELEM(sizeof(CvPoint), reader);
+	}
+	
+	CvSeq *cvhole = $cvcontour->v_next;
+	int *ih = $(idx-base i-holes);
+	while (cvhole) {
+	  assert(CV_IS_SEQ_CONTOUR(cvhole));
+	  assert(CV_IS_SEQ_HOLE(cvhole));
+	  *(ih++) = nc/2;
+	  cvStartReadSeq(cvhole, &reader, 0);
+          for(int i=0; i<cvhole->total; i++) {
+   	    ps[nc++] = 0.5+$s*(double)(CV_CURRENT_POINT(reader)).x;
+	    ps[nc++] = 0.5+$s*(double)(CV_CURRENT_POINT(reader)).y;
+	    CV_NEXT_SEQ_ELEM(sizeof(CvPoint), reader);
+	  }
+	  cvhole = cvhole->h_next;
+	}
+	#}
+	(setq cvcontour (to-gptr #{ $cvcontour->h_next #} ))
+        (setq next-item (new Polygon (copy-array (idx-trim points 0 0 np))
+                             (copy-array (idx-trim i-holes 0 0 nholes)) ))
+	(setq next-item-valid t) ))
+  ())
+
+(defclass ImageContours IterableDatatype
+  ((-idx2- (-ubyte-)) image)              ; the image
+  ((-obj- (CvMat)) cvimage)               ;
+  ((-gptr- "CvMemStorage *") cvstorage)   ; storage used by cvFindCountours
+  ((-gptr- "CvSeq *") cvfirst)            ; pointer to first contour
+  ((-double-) s) )
+
+(defmethod ImageContours ImageContours (img nd)
+  (declare (-idx2- (-ubyte-)) img)
+  (declare (-bool-) nd)
+  (unprotect)
+  (==> this IterableDatatype)
+
+  ;; we have to copy the image since cvFindContours sets
+  ;; a one pixel wide margin to zero
+  (let ((m (idx-shape img 0))
+        (n (idx-shape img 1)) )
+    (declare (-int-) m n)
+    (setq image (ubyte-array (+ m 2) (+ n 2)))
+    (array-copy img (idx-trim (idx-trim image 0 1 m) 1 1 n))
+    (setq s 1)
+    (when nd
+      (setq image (mat-magnify image 2 2))
+      (setq s 0.5) ))
+  
+  (setq cvimage (new CvMat (idx-shape image 0) (idx-shape image 1)
+                     (to-int #{ CV_MAKE_TYPE(CV_8U, 1) #} ) (idx-base image)))
+  (let ((p :cvimage:p))
+    (when nd
+      #{
+      IplConvKernel *m = cvCreateStructuringElementEx(2,2,0,0,CV_SHAPE_RECT,0);
+      cvDilate($p,$p,m,1);
+      cvReleaseStructuringElement(&m);
+      #})
+    (setq cvstorage #{ cvCreateMemStorage(0); #})
+    (with-check-error
+     #{ cvFindContours($p, $cvstorage, &$cvfirst, sizeof(CvContour), CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE, cvPoint(-1/($s),-1/($s))) #} ))
+  () )
+
+(defmethod ImageContours -iterate ()
+  (new ImageContoursIterator this cvfirst s) )
+
+(defmethod ImageContours -destructor ()
+  #{ cvReleaseMemStorage(&$cvstorage); #}
+  ())
+
+#? (cv-image-contours <ubimg> [<non-degenerate>])
+;; Find contours of all connected components in the binary image <ubimg>
+;; (zero vs non-zero pixels) and return as <ImageContours> object. The
+;; <ImageContours> object can be <iterated>, the items are <Polygon>
+;; objects. Example:
+;; {<code>
+;; (let ((window (new-window (shape img 1) (shape img 0))))
+;;   (rgb-draw-matrix 0 0 img)
+;;   (do ((c (cv-image-contours img)))
+;;      (==> c display 'margin 0  'origin 'NW  'window window) ))
+;; </code>}
+;;
+;; Note: The polygon encloses the foreground (nonzero) pixels; the 
+;; convention adopted here is that the coordinates of pixel corners are
+;; integral whereas the coordinates of pixel centers have a fractional 
+;; part of 0.5. (E.g., the coordinates of the lower left pixel's center 
+;; are x=0.5, y=0.5).
+;; 
+;; For one pixel wide foreground lines OpenCV function <cvFindContours>
+;; yields degenerated contour polygons (zero area). If flag <non-degenerate>
+;; is true (the default), <cv-image-contours> pre-processes the input to
+;; ensure non-degenerate contour polygons.
+(defmacro image-contours (img &optional (nd t))
+  `(new ImageContours ,img ,nd) 
+  )
+
+;; do probabilistic Hough transform, return array of coordinates
+(de -hough-line-segments (img rho theta thresh minlen maxgap)
+  (declare (-obj- (CvMat)) img)
+  (declare (-double-) rho theta minlen maxgap)
+  (declare (-int-) thresh)
+  (cv-cpheader)
+  (with-check-error
+   (let ((ip :img:p) (storage #{ NULL #}) (lines #{ NULL #}))
+     (declare (-gptr- "CvMemStorage *") storage)
+     (declare (-gptr- "CvSeq *") lines)
+     #{ 
+     $storage = cvCreateMemStorage(0);
+     $lines = cvHoughLines2($ip, $storage, CV_HOUGH_PROBABILISTIC, $rho, $theta, $thresh, $minlen, $maxgap);
+     #}
+     (let ((points (double-array (* 2 (to-int #{$lines->total#})) 2)))
+       #{
+       double *ps = $(idx-base points);
+       int nc = 0;
+       //CvSeqReader reader;
+       //cvStartReadSeq($lines, &reader, 0);
+       for(int i=0; i<$lines->total; i++) {
+         CvPoint* line = (CvPoint*)cvGetSeqElem($lines,i);                             
+         ps[nc++] = (double)line[0].x;
+         ps[nc++] = (double)line[0].y;
+         ps[nc++] = (double)line[1].x;
+         ps[nc++] = (double)line[1].y;
+         /*
+         ps[nc++] = (double)*((float *)reader.ptr);
+         ps[nc++] = (double)*((float *)reader.ptr+1);
+         ps[nc++] = (double)*((float *)reader.ptr+2);
+         ps[nc++] = (double)*((float *)reader.ptr+3);
+         CV_NEXT_SEQ_ELEM(sizeof(CV_32SC4), reader);
+         */
+       }
+       cvReleaseMemStorage(&$storage);
+       #}
+       points))))
+
+#? (cv-line-segments <ubimg> <minlen> <maxgap> [<thresh>])
+;; Find line segments in binary image <ubimg> and return as a
+;; <Mesh> object. No line segment will be shorter than <minlen>
+;; and two co-linear segments with a distance of up to <maxgap>
+;; between closest end points are considered one line segment.
+;; <thresh> is the accumulator value threshold.
+(defmacro line-segments (in minlen maxgap &optional (thresh 80) (rho 1) (theta (/ +pi+ 180)))
+  (let (((img i points edges) (gensyms 4)))
+    `(let* ((,img ,in)
+            (,points (-hough-line-segments (make-cvmat ,img) ,rho ,theta ,thresh ,minlen ,maxgap))
+            (,edges (int-array (/ (length ,points) 2) 2)) )
+       (for* (,i 0 (length ,edges))
+         (,edges ,i 0 (+ ,i ,i))
+         (,edges ,i 1 (+ ,i ,i 1)) )
+       (new Mesh ,points ,edges) )
+    ))
+
+) ; in-namespace
+
+(let ((dhc-make-lushflags (concat dhc-make-lushflags cv-flags)))
+  (dhc-make-class "opencv_contours"
+                  cv-ImageContoursIterator 
+                  cv-ImageContours
+                  cv--hough-line-segments)
+  )
+

@@ -1,0 +1,502 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Namespaces
+;; Forms like <defvar>, <defun>, and <defclass> create a new object
+;; and bind a symbol in the global namespace to it.
+;; Technically, Lush has only this one global namespace (exceptions
+;; are slot names and method names). The namespace facility helps with
+;; avoiding name clashes. It offers a mechanisms to systematically
+;; modify the names (symbols) new objects are bound to and to
+;; manage sets of names.
+;;
+;; The first mechanism, the <in-namespace> form, is to give a number
+;; of names a common prefix. All names occurring in definitions 
+;; enclosed by <in-namespace> are prefixed by the namespace name.
+;; For example, evaluating the form
+;; {<code>
+;; (in-namespace aaa- 
+;;
+;; (defun f (i) 
+;;   (+ i 1) )
+;;
+;; (defun g (i) 
+;;   (- i 1) )
+;;
+;; (print (f (g 5)))
+;; )
+;; </code>}
+;; results in the symbols <aaa-f> and <aaa-g> being bound to 
+;; functions <(lambda (i) (+ i 1))>, and <(lambda (i) (- i 1))>,
+;; respectively.
+;;
+;; The above example defines a new namespace <aaa-> including the
+;; names <f> and <g>. Expressions may be evaluated in namespace <aaa->
+;; by use of the <with-namespace> form. Example:
+;; {<code>
+;; ? (with-namespace aaa-
+;;     (f (f (f 3)))
+;;   )
+;; = 6
+;; </code>}
+;;
+;; An alternative to enclosing code in <with-namespace> is to use
+;; <import> to globally bind selected unqualified names (a good 
+;; place is at the beginning of a source file, just after a <libload>
+;; statement). Examples:
+;; {<code>
+;; ? (import (f) from aaa-)
+;; = (f)
+;; ? (f (f (f 3)))
+;; = 6
+;; </code>}
+;; {<code>
+;; ? (import (col row) from mat-)
+;; = (row col)
+;; ? (row 1 2 3)
+;; = [d[d  1.00  2.00  3.00]]
+;; </code>}
+;;
+;; You may also "load definitions into a namespace" by placing 
+;; <libload> statemens in a <in-namespace> form:
+;; {<code>
+;; (in-namespace tools-
+;; (libload "project/a-tools.lsh" t)
+;; (libload "project/b-tools.lsh" t)
+;; )
+;; </code>}
+;;
+;; It is easy to create new namespaces from existing ones. This may be
+;; useful for creating a customized namespace that contains everything
+;; for a particular application. Examples:
+;; {<code>
+;; (in-namespace my-custom-ns
+;; (import all from mat-)
+;; (import (x y z) from the-other-ns-)
+;; )
+;; </code>}
+;; {<code>
+;; (defnamespace my-custom-ns (join-namespaces mat- mut- meat-))
+;; </code>}
+;;
+;; You may also use <defnamespace> to declare any mapping from
+;; symbols to symbols a namespace. Example:
+;; {<code>
+;; (defnamespace abc- '((a apples) (b beets) (c chicory)))
+;; </code>}
+;;
+;; Finally, <delete-namespace> deletes all objects bound to the
+;; qualified names of a namespace, then undefines the namespace.
+;; One use case is to put in a namespace all auxiliary 
+;; definitions that are required for compilation of some code,
+;; then delete the namespace after compilation is completed.
+
+
+#? Class namespaces
+;; Every class defined with <defclass> has an associated
+;; namespace. All definitions placed in this namespace are
+;; only visible to method definitions for this class and
+;; derived classes. Class namespaces are referred to by
+;; namespace names of the form <(class X)>, where <X> is
+;; a class. Example:
+;; {<code>
+;;
+;; (defclass AClass object
+;;   pos)
+;;
+;; (in-namespace (class AClass)
+;;              
+;; (defun -> (x y)
+;;   ;; vector from x to y
+;;   (- y x) )
+;;
+;; (defun nrm2 (v)
+;;   ;; euclidean length of vector v
+;;   (sqrt (+ (* (v 0) (v 0)) (* (v 1) (v 1)))) )
+;;
+;; ) ; in-namespace
+;;
+;; (defmethod AClass AClass (-pos)
+;;   (declare (-idx1- (-double-)) -pos)
+;;   (assert (= 2 (length -pos)))
+;;   (setq pos -pos))
+;;
+;; (defmethod AClass distance-to (other)
+;;   (declare (-obj- (AClass)) other)
+;;   (nrm2 (-> :this:pos :other:pos)) )
+;; </code>}
+;;
+;; Definitions may be imported from a class namespace,
+;; just like from a regular namespace.
+;; {<code>
+;;
+;; ? ->
+;; = ()
+;; ? (import (->) from (class AClass))
+;; = (->)
+;; ? (-> [1 1] [2 2])
+;; = [d  1.00  1.00]
+;; </code>}
+
+;; enclose all non-defining forms in <with-namespace> form
+(defun namespace.process-body (ns body)
+  ;; don't enclose defs and some other special forms
+  (let ((defs '(de df dm defun defmacro defcmacro defcconst
+                defconstant defvar defparameter defalias defnamespace
+		defclass deftemplate defmethod demethod dfmethod dmmethod
+                dhm-p dhm-c dhm-t
+                ))
+	(other '(import in-namespace with-namespace))
+	(enclose (lambda (f)
+		   (cond ((and (consp f) (member (car f) defs)) f)
+			 ((and (consp f) (member (car f) other)) f)
+			 (t `(with-namespace ,ns ,f)) ))) )
+    (mapcar enclose body) ))
+
+(defun namespace.process-class-syntax (ns caller)
+  (when (<> (car ns) 'class) (error "syntax error" `(,caller ,ns ...)))
+  (when (not (symbolp (cadr ns))) (error "not a symbol" (cadr ns)))
+  (when (not (classp (eval (cadr ns))))
+    (printf "*** Warning: not a class: %s" (pname (cadr ns))) )
+  (symbol-concat (cadr ns) (make-symbol ".")) )
+
+#? (in-namespace <ns> <l1> <l2> ...)
+;; For every definition found in the forms <l1> <l2> ... map the name
+;; <obj-name> the object is being bound to to the qualified name. The
+;; qualified name is the result of <(symbol-concat 'ns obj-name)>.
+;; Return the names of all newly defined objects.
+;; 
+;; When an object being defined references any name in the namespace, 
+;; this name will be mapped to the corresponding qualified name, too. In
+;; other words, the code of the object being defined is modifed at read
+;; time. To protect a symbol <name> from being mapped to its qualified
+;; name write <#:name> instead of <name>.
+(dm in-namespace (_ ns-name . body)
+  (let (((nsdict nspref hook rename newsyms) (gensyms 5))
+        (class-ns (consp ns-name))
+	(ns (if (consp ns-name)
+		(namespace.process-class-syntax ns-name 'in-namespace)
+	      ns-name)) )
+    (when (not (symbolp ns))
+      (error "not a symbol" ns) )
+    (setq body (namespace.process-body nsdict body))
+    `(let ((,nsdict (or (namespace ',ns-name) (htable 117)))
+           (,newsyms ()) )
+       (let ((,nspref ',ns)
+             (,rename
+              (lambda (expr &optional ret)
+                (while (consp expr)
+                  (if (== (car expr) 'namespace-opaque)
+                      (setq ret (nconc ret (cadr expr))
+                            expr () )
+                    (setq ret  (nconc1 ret (,rename (car expr)))
+                          expr (cdr expr) )))
+                (when expr
+                  (setq expr (or (,nsdict expr) expr)
+                        ret  (nconc ret expr) ))
+                ret) )
+             (,hook (or define-hook list))
+             (define-hook
+               (flambda (dx sym . rest)
+                 (selectq dx
+                   ((defmethod demethod dfmethod dmmethod)
+                    (let* ((newsym (or (,nsdict sym) sym))
+                           (method (if (= (car rest) sym) newsym (car rest))) )
+                      (apply ,hook (cons dx (cons newsym (cons method (,rename (cdr rest)))))) ))
+                   (t
+                    (let ((newsym (symbol-concat ,nspref sym)))
+                      (setq ,newsyms (nconc1 ,newsyms newsym))
+                      (,nsdict sym newsym)
+                      (apply ,hook (cons dx (cons newsym (,rename rest)))))))) ))
+         ,@body)
+       ,(if class-ns
+	    `(prog1 ,newsyms
+	       (unlock-symbol *class-namespaces*)
+	       (setq :*class-namespaces* (alist-update *class-namespaces* (alist ',ns ,nsdict)))
+	       (lock-symbol *class-namespaces*) )
+	  `(prog1 ,newsyms
+             (defparameter ,ns ,nsdict)
+	     (unlock-symbol *namespaces*)
+	     (setq :*namespaces* (alist-update *namespaces* (alist ',ns ,nsdict)))
+	     (lock-symbol *namespaces*) )))
+    ))
+
+#? (in-namespace* <ns> <l1> <l2> ...)
+;; Map references to names in namespace <ns> and return the names of
+;; all newly defined objects.
+;;
+;; This is similar to <in-namespace> in that unqualified names of 
+;; objects in namespace <ns> are mapped to qualified names. Unlike
+;; <in-namespace>, no new names are added to namespace <ns>.
+(dm in-namespace* (_ ns-name . body)
+  (let (((nsdict nspref hook rename syms) (gensyms 5))
+        (class-ns (consp ns-name))
+	(ns (if (consp ns-name)
+		(namespace.process-class-syntax ns-name 'in-namespace*)
+	      ns-name)) )
+    (when (not (symbolp ns))
+      (error "not a symbol" ns) )
+    (setq body (namespace.process-body nsdict body))
+    `(let ((,nsdict (or (namespace ',ns-name) (htable 117)))
+           (,syms ()) )
+       (let ((,nspref ',ns)
+             (,rename
+              (lambda (expr &optional ret)
+                (while (consp expr)
+                  (if (== (car expr) 'namespace-opaque)
+                      (setq ret (nconc ret (cadr expr))
+                            expr () )
+                    (setq ret  (nconc1 ret (,rename (car expr)))
+                          expr (cdr expr) )))
+                (when expr
+                  (setq expr (or (,nsdict expr) expr)
+                        ret  (nconc ret expr) ))
+                ret) )
+             (,hook (or define-hook list))
+             (define-hook
+               (flambda (dx sym . rest)
+                 (setq ,syms (nconc1 ,syms sym))
+                 (selectq dx
+                   ((defmethod demethod dfmethod dmmethod)
+                    (let* ((newsym (or (,nsdict sym) sym))
+                           (method (if (= (car rest) sym) newsym (car rest))) )
+                      (apply ,hook (cons dx (cons sym (cons method (,rename (cdr rest)))))) ))
+                   (t
+                    (apply ,hook (cons dx (cons sym (,rename rest)))) )))))
+         ,@body)
+       ,(if class-ns
+	    `(prog1 ,syms
+	       (unlock-symbol *class-namespaces*)
+	       (setq :*class-namespaces* (alist-update *class-namespaces* (alist ',ns ,nsdict)))
+	       (lock-symbol *class-namespaces*) )
+	  `(prog1 ,syms
+             (defparameter ,ns ,nsdict)
+	     (unlock-symbol *namespaces*)
+	     (setq :*namespaces* (alist-update *namespaces* (alist ',ns ,nsdict)))
+	     (lock-symbol *namespaces*) )))
+    ))
+
+;; In a <in-namespace> form protect <name> from being mapped to a qualified name.
+(dmc |#:| (list (list 'namespace-opaque (read))))
+
+
+#? (namespace <ns-name>)
+;; Yield namespace named <ns-name> or <()> when there is no namespace
+;; called <ns-name>. Example:
+;;
+;; {<ex> (pretty (namespace 'tiling-))}
+(defun namespace (ns)
+  (cond
+   ((classp ns)
+    (setq ns (namespace.process-class-syntax `(class ,(classname ns)) 'namespace))
+    (alist-get ns :*class-namespaces*) )
+   ((consp ns)
+    (setq ns (namespace.process-class-syntax ns 'namespace))
+    (alist-get ns :*class-namespaces*) )
+   ((symbolp ns)
+    (alist-get ns :*namespaces*))
+   ((isa ns HTable)
+    ns)
+   (t ()) 
+   ))
+
+
+#? (with-namespace <ns> <l1> <l2> ...)
+;; Evaluate forms <l1> <l2> ... in an environment where the objects bound 
+;; to the qualified names of namespace <ns> are bound to their corresponding
+;; unqualified names. Example:
+;; {<code>
+;;   (with-namespace mat- 
+;;     (setq m (rot90 m))
+;;   )
+;; </code>}
+(dm with-namespace (_ |__ns__| . body)
+  (let ((nsdict (or (namespace |__ns__|) (namespace (eval |__ns__|))))
+	(namemap ()) )
+    (when (not (isa nsdict HTable))
+      (error "not a namespace" |__ns__|) )
+    (dolist (key (htable-keys nsdict))
+      (when (not (symbolp key))
+	(error "invalid namespace: not a symbol" key) )
+      (setq namemap (cons (list key (nsdict key)) namemap)) )
+    `(let (,@namemap)
+       ,@body)
+      ))
+
+#? (with-namespaces (<ns1> <ns2> ...) <l1> <l2> ...)
+;; Shortcut for nested <with-namespace> forms.
+(dm with-namespaces (_ (ns . nss) . body)
+  (if nss
+      `(with-namespace ,ns (with-namespaces ,nss ,@body))
+    `(with-namespace ,ns ,@body)
+    ))
+
+(defun clear-namespace (ns)
+  (htable-clear (namespace ns)) )
+
+#? (delete-namespace <ns>)
+;; Delete all objects bound to the qualified names of <ns>, then
+;; undefine <ns> itself.
+(defun delete-namespace (ns)
+  (let ((nsdict (namespace ns)))
+    (when nsdict
+      (dolist ((name . qname) (htable-alist nsdict))
+        (if (symbol-globally-locked-p qname)
+            (printf "*** Warning: skipping globally locked name '%s'\n" qname)
+          (eval `(delete (scope ,qname)))
+          )) 
+      (clear-namespace nsdict)
+      ;; finally, remove nsdict from *namespaces*
+      (let ((ns ()) (namespaces (alist)))
+        (dolist ((n . d) :*namespaces*)
+          (when (<> d nsdict)
+            (setq namespaces (alist-add n d namespaces))
+            (setq ns n) )
+          )
+        (when ns
+          (unlock-symbol *namespaces*)
+          (setq :*namespaces* namespaces)
+          (lock-symbol *namespaces) ))
+      )))
+
+#? (join-namespaces <ns1> <ns2> ...)
+;; Create a new namespace including all the names of the given
+;; namespaces <ns1>, <ns2>, etc.
+(defun join-namespaces nss
+  (when (not (null nss))
+    (let ((ns (copy-htable (car nss))))
+      (reduce> htable-update ns (cdr nss)) )))
+
+#? (names <ns>)
+;; Return list of names in namespace <ns>.
+(defalias names htable-keys)
+
+#? (qualified-names <ns>)
+;; Return list of qualified names in namespace <ns>.
+(dm qualified-names (_ ns)
+  `(mapcar cdr (htable-alist ,ns))
+  )
+
+#? (import <names> from <ns> [as <alt-names>])
+;; For each name in <names> defined in namespace <ns> create an alias
+;; in the current namespace. When alternative names <alt-names> are
+;; given, define the alias with the name in <alt-names> otherwise
+;; use the name in <names>. Examples:
+;;
+;; {<code>
+;;   (import (flipud rot90) from mat-) 
+;; </code>}
+;; {<code>
+;;   (import (flipud rot90) from mat- as (mirror-vertical rotate90)) 
+;; </code>}
+
+#? (import all from <ns>)
+;; For every pair (<name> <qualified-name>) in namespace <ns> create an
+;; alias <name> for <qualified-name> and return the list of unqualified
+;; names.
+(dm import (_ names from |__ns__| . rest)
+  (when (<> from 'from) 
+    (error "syntax error") `(import ,names ,from ,|__ns__| ...))
+  (when rest 
+    (when (<> (car rest) 'as)
+      (error "import: syntax error") `(import ... from ... ,(car rest) ...))
+    (when (<> (length names) (length (cadr rest)))
+      (error "one alternate name for each name required") ))
+  (let ((nsdict (or (namespace |__ns__|) (namespace (eval |__ns__|))))
+        (anames (and rest (cadr rest)))
+        (aliases ()) )
+    (when (not (isa nsdict HTable))
+      (error "not a namespace" |__ns__|) )
+    (when (symbolp names)
+      (when (<> 'all names)
+        (error "syntax error") `(import ,all ...))
+      (setq names (htable-keys nsdict)) )
+    (if anames
+        (domapc ((name names) (aname anames))
+          (when (not (symbolp name))
+            (error "not a symbol" name) )
+          (when (not (symbolp aname))
+            (error "not a symbol" aname) )
+          (when (not (nsdict name))
+            (error (sprintf "symbol '%s' not in namespace" (nameof name)) |__ns__|) )
+          (setq aliases (cons (list aname (nsdict name)) aliases)) )
+      (dolist (name names)
+        (when (not (symbolp name))
+          (error "not a symbol" name) )
+        (when (not (nsdict name))
+          (error (sprintf "symbol '%s' not in namespace" (nameof name)) |__ns__|) )
+        (setq aliases (cons (list name (nsdict name)) aliases)) ))
+    `(prog1 ',(mapcar car aliases) ,@(domapcar ((a aliases)) (cons 'defalias a)))
+    ))
+
+#? (defnamespace <name> '((<n1> <qn1>) (<n2> <qn2>) ...))
+;; Create a namespace mapping names <n1>, <n2>, ... to qualified
+;; names <qn1>, <qn2>, ..., bind global variable <name> to it, 
+;; and return symbol <'name>.
+
+#? (defnamespace <name> <ns>)
+;; Bind global variable <name> to namespace <ns> and return
+;; symbol <'name>. Example:
+;;
+;; {<code>
+;;   (defnamespace blas- (join-namespaces blas1- blas2- blas3-))
+;; </code>}
+(df defnamespace def
+  (when define-hook (setq def (apply define-hook def)))
+  (let (((ns namess) def)
+	(l ())
+	(nsdict (htable)) )
+    (when (not (symbolp ns))
+      (error "syntax error, not a symbol" ns) )
+    (setq namess (eval namess))
+    (if (isa namess (classof nsdict))
+        ;; namess already is a namespace
+        (setq nsdict namess)
+      ;; namess is a list of name pairs, check it
+      (when (not (listp namess))
+        (error "not a list" namess))
+      (dolist (names namess)
+        (when (not (and (listp names) (= (length names) 2)))
+          (error "syntax error in names list" names) )
+        (when (not (symbolp (car names)))
+          (error "syntax error, not a symbol" (car names)) )
+        (when (not (symbolp (cadr names)))
+          (error "syntax error, not a symbol" (cadr names)) )
+        (setq l (cons (car names) l))
+        (setq l (cons (cadr names) l))
+        (apply nsdict (reverse l)) ))
+    
+    (prog1 (eval `(defparameter ,ns ,nsdict))
+      (unlock-symbol *namespaces*)
+      (setq :*namespaces* (alist-update *namespaces* (alist ns nsdict)))
+      (lock-symbol *namespaces*) )))
+
+(defvar *namespaces* (alist))
+(defvar *class-namespaces* (alist))
+(lock-symbol define-hook *namespaces* *class-namespaces*)
+
+(in-namespace (class object))  ; define namespace for class object

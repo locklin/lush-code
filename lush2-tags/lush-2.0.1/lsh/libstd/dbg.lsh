@@ -1,0 +1,479 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Debug Toplevel
+;; The debug toplevel is a simple facility for debugging
+;; programs. It allows recording function and method 
+;; invocations in a log file ("tracing"), interrupting
+;; execution at invocations of specified functions or
+;; methods ("stopping") and step-by-step evaluation of
+;; expressions ("stepping").
+;;
+;; Currently only non-compiled code may be debugged.
+
+(defvar *dbg-tracef* (htable))          ; functions to trace
+(defvar *dbg-tracem* (htable))          ; methods to trace
+(defvar *dbg-stopf* (htable))           ; functions to stop
+(defvar *dbg-stopm* (htable))           ; methods to stop
+(defvar *dbg-logfile* (sprintf "/tmp/.dbg-trace-%d.log" (getpid)))
+(defvar *dbg-logfile-h* ())
+(defvar *dbg-stepping-level* +INT-MAX+)
+
+(when (not *dbg-orig-toplevel*)
+  (defconstant *dbg-orig-toplevel* toplevel) )
+(when (not *dbg-orig-exit*)
+  (defconstant *dbg-orig-exit* exit) )
+
+;; we must hide some symbols
+(eval
+ `(defnamespace dbg-hidden-
+    '((choice ,(gensym))
+      (tb     ,(gensym))
+      (level  ,(gensym))
+      (line   ,(gensym))
+      (expr   ,(gensym))
+      (info   ,(gensym))
+      (func   ,(gensym))
+      (mthd1  ,(gensym))
+      (mthd2  ,(gensym)) 
+      (mthd   ,(gensym))
+      (action ,(gensym)) )
+      )
+ )
+
+(in-namespace* dbg-hidden-
+
+(defun dbg-stepping-choose ()
+  (let ((choice ""))
+    (while (not (member choice (list "n" "d" "a" "t" "m" "i" "c" "q")))
+      (flush)
+      (when (<> choice "\n") (printf "[n/d/a/i/c/q/t/m]"))
+      (flush)
+      (setq choice (read-string)) )
+    choice))
+
+(defun dbg-stepping-action ()
+  (selectq (dbg-stepping-choose)
+    ("n"
+     (setq *dbg-stepping-level* level)
+     ())
+    ("d" 
+     (setq *dbg-stepping-level* +INT-MAX+)
+     ())
+    ("a"
+     (setq *dbg-stepping-level* (max (- level 1) 0))
+     ())
+    ("i"
+     (printf "Inspect toplevel. use (exit) to leave.\n")
+     (let ((exit *dbg-orig-exit*)
+           (btrace dbg-btrace) )
+       (load "$stdin" "$stdout" "dbgi? |dbgi |> ") )
+     t)
+    ("m"
+     (printf "\n%2d" (- level mlevel 1))
+     (tab tb)
+     (if (= level (+ mlevel 1))
+         (printf "<event horizon>\n")
+       (pretty-print (nth mlevel info))
+       (incr mlevel) )
+     t)
+    ("t"
+     (printf "\n%2d" level)
+     (tab tb)
+     (pretty-print expr)
+     (setq mlevel 0)
+     t)
+    ("c"
+     (setq *dbg-stepping-level* -1)
+     ())
+    ("q"
+     (setq *dbg-stepping-level* -1)
+     (let ((debug-hook progn))     ; restart dbg-toplevel
+       (error))
+     ())
+    (t
+     (printf "fixme")
+     ()))
+  )
+
+(defun dbg-stepping-mode-blah ()
+  (printf "dbg: Entering stepping mode. Keys:\n")
+  (printf "dbg: [n]ext, [d]escend, [a]scend, [i]nspect, [c]ontinue, [q]uit\n")
+  (printf "dbg: [t]his, [m]ore\n") )
+
+;; don't need to wrap in (nodebug ...) because
+;; this will always be evaluated by eval_std
+(defun dbg-trace-hook (level line expr info)
+  (if (<= (abs level) *dbg-stepping-level*)
+      (let ((tb (+ 2 (abs level))))
+        (cond 
+         ((> level 0)
+          (printf "\n%2d" level)
+          (tab tb)
+          (printf "> %s\n" line)
+          (when (not (atom expr)) ; don't stop at self-evals
+            (let ((mlevel 0))
+              (while (dbg-stepping-action)) )))
+         
+         ((< level 0)
+          (printf "\n%2d" (abs level))
+          (tab tb)
+          (printf "< %s\n" line) )
+         
+         (t
+          (printf "dbg: stepping at level 0\n") ))
+        t)
+    
+    (if (atom expr)  ; skip self-evals
+        t
+      (let* ((tb (+ 1 (abs level)))
+             (func (car expr))
+             (mthd1 (and (= func '==>) (caddr expr)))
+             ;(mthd2 (and (= func 'send) (eval (caddr expr))))
+             ;(mthd (or mthd1 mthd2)) )
+             (mthd mthd1) )
+        (cond
+         ((>= level 0)
+          ;; check if a call to a traced function
+          (when (*dbg-tracef* func)
+            (writing *dbg-logfile-h*
+              (printf "\n")
+              (tab tb)
+              (printf "(%s ...) ->\n" (pname (*dbg-tracef* func)))
+              ;(tab tb)
+              ;(pretty-print expr) ))
+              ))
+           
+          ;; check if a call to a traced method
+          (when mthd
+            (when (and mthd1 (*dbg-tracem* mthd1))
+              (writing *dbg-logfile-h*
+                (printf "\n")
+                (tab tb)
+                (printf "(==> %l %l ...) ->\n" (cadr expr) mthd1)
+                ;;(tab tb)
+                ;;(pretty-print expr) ))
+                ))
+          
+;;             (when (and mthd2 (*dbg-tracem* mthd2))
+;;               (writing *dbg-logfile-h*
+;;                 (printf "\n")
+;;                 (tab tb)
+;;                 (printf "(send %l '%l ...) ->\n" (cadr expr) mthd2)
+;;                 ;;(tab tb)
+;;                 ;;(pretty-print expr) ))
+;;                 ))
+            )
+
+          ;; check if call to an interrupted function
+          (when (*dbg-stopf* func)
+            (setq *dbg-stepping-level* +INT-MAX+)
+            (printf "dbg: stopping at '%l'\n" func)
+            (dbg-stepping-mode-blah)
+            (let ((mlevel 0))
+              (while (dbg-stepping-action)) ))
+  
+          ;; check if call to an interrupted method
+          (when (*dbg-stopm* mthd)
+            (setq *dbg-stepping-level* +INT-MAX+)
+            (printf "dbg: stopping at method '%l'\n" mthd)
+            (dbg-stepping-mode-blah)
+            (let ((mlevel 0))
+              (while (dbg-stepping-action)) ))
+          t)
+
+         ((< level 0)
+          (when (or (*dbg-tracef* func) (*dbg-tracem* mthd))
+            (writing *dbg-logfile-h*
+              (tab tb)
+              (printf "%s <- \n" (pname info)) ))
+          t)
+     
+         (t
+          t))))))
+
+(de dbg-debug-hook ()
+  (when debug-action
+    (printf "\n")
+    (dolist (action debug-action)
+      (tab 5)
+      (pretty action)
+      (when (and (isatty "$stdin") (not (lush-is-quiet)))
+        (when (ask "dbg: evaluate this debug action?")
+          (eval action) ))))
+  
+  (printf "\n")
+  (printf "dbg: error '%s' in\n\n\007" (errname))
+  (tab 5)
+  (pretty-print (car (btrace -1)))
+  (printf "\n")
+  (printf "Inspect toplevel, use (exit) to leave.\n")
+  (let ((exit *dbg-orig-exit*))
+    (load "$stdin" "$stdout" "dbgi? |dbgi |> ")
+    t))
+
+(de dbg-break-hook ()
+  (when break-action
+    (printf "\n")
+    (dolist (action break-action)
+      (tab 5)
+      (pretty action)
+      (when (and (isatty "$stdin") (not (lush-is-quiet)))
+        (when (ask "dbg: evaluate this break action?")
+          (eval action) ))))
+  (printf "dbg: User break in.\n")
+  (dbg-stepping-mode-blah)
+  (setq *dbg-stepping-level* +INT-MAX+)
+  ())
+
+;; substitute for btrace
+(de dbg-btrace (&optional (n 15))
+  (if (< n 0)
+      (cons expr (deepcopy-list info))
+    (printf "** in:   %s\n" (first-line expr))
+    (domapc ((l info) (_ (range n)))
+      (printf "** from: %s\n" (first-line l)) )
+    ()))
+
+) ; in-namespace*
+
+;; don't need this namespace for anything else
+(delete dbg-hidden-)
+
+
+#? (dbg)
+;; Start <dbg>.
+;;
+;; When <dbg> is active, traced function and method invocations
+;; are logged in a file. Errors, the invocation of specified 
+;; functions and methods, or <CTRL-C> trigger stepping mode.
+;;
+(defun dbg ()
+  (if (== trace-hook dbg-trace-hook)
+      (printf "dbg: dbg already active\n")
+    ;; prepare globals
+    (printf "dbg: trace log is being written to %s. Type\n" *dbg-logfile*)
+    (printf "dbg: tail -F %s\n" *dbg-logfile*)
+    (printf "dbg: in other terminal window to view\n")
+    (setq *dbg-stepping-level* 0)
+    (when (null *dbg-logfile-h*)
+      (setq *dbg-logfile-h* (open-append *dbg-logfile*)) )
+    (writing *dbg-logfile-h*
+      (printf "\n\n*** dbg: Start tracing at %s.\n"
+              (date-to-string (now)) ))
+    
+    ;; start new toplevel
+    (printf "\n")
+    (printf "Starting debug toplevel. Use (exit) to leave.\n")
+    (dbg-toplevel) ))
+
+(defun dbg-toplevel ()
+  (let ((trace-hook dbg-trace-hook)
+        (break-hook dbg-break-hook)
+        (debug-hook dbg-debug-hook)
+        (exit (lambda args
+                (setq :toplevel *dbg-orig-toplevel*)
+                (let ((debug-hook progn))
+                  (error))
+                (*dbg-orig-exit*) )) )
+    ;; install our toplevel
+    (unlock-symbol toplevel)
+    (setq :toplevel dbg-toplevel)
+    (when (null *dbg-logfile-h*)
+      (setq *dbg-logfile-h* (open-append *dbg-logfile*)) )
+    (debug
+     (load "$stdin" "$stdout" "dbg? |dbg |> ")
+     ))
+  (when (null *dbg-logfile-h*)
+    (setq *dbg-logfile-h* (open-append *dbg-logfile*)) )
+  (writing *dbg-logfile-h*
+    (printf "\n\n*** dbg: Stop tracing at %s.\n"
+            (date-to-string (now)) )))
+
+#? (tracef [<fname> ...])
+;; Start tracing function <fname>.
+;; With no arguments, list all functions currently being traced.
+;;
+;; Example:
+;; {<code>
+;; (tracef >= isnan)
+;; </code>}
+(df tracef args
+  (nodebug
+   (if args
+       (dolist (name args)
+         (*dbg-tracef* name name)
+         (*dbg-tracef* (eval name) name) )
+     (printf "traced functions: \n")
+     (do (((k . v) *dbg-tracef*))
+       (when (symbolp k) (printf "%l " k)) )
+     (printf "\n") )
+   ()))
+
+#? (untracef <fname> ...)
+;; Stop tracing function <fname>.    
+(df untracef args
+  (nodebug
+   (dolist (name args)
+     (*dbg-tracef* name ())
+     (*dbg-tracef* (eval name) ()) )
+   ()))
+
+#? (tracem [<mname> ...])
+;; Start tracing method <mname>.
+;; With no arguments, list all methods currently being traced.
+(df tracem args
+  (nodebug
+   (if args
+       (dolist (name args)
+         (*dbg-tracem* name name) )
+     (printf "traced methods:\n")
+     (do (((k . v) *dbg-tracem*))
+       (printf "%l " k) )
+     (printf "\n") )
+   ()))
+
+#? (untracem [<mname> ...])
+;; Stop tracing method <mname>.
+(df untracem args
+  (nodebug
+   (dolist (name args)
+     (*dbg-tracef* name ()) )
+   ()))
+
+#? (stopf [<fname> ...])
+;; Start interrupting calls to function <fname>.
+;; With no arguments, list all functions whose invocations
+;; are currently being interrupted.
+;;
+;; Example:
+;; {<code>
+;; (stopf >= isnan)
+;; </code>}
+(df stopf args
+  (nodebug
+   (if args
+       (dolist (name args)
+         (*dbg-stopf* name name)
+         (*dbg-stopf* (eval name) name) )
+     (printf "interrupted functions: \n")
+     (do (((k . v) *dbg-stopf*))
+       (when (symbolp k) (printf "%l " k)) )
+     (printf "\n") )
+   ()))
+
+#? (unstopf <fname> ...)
+;; Stop interrupting function <fname>.    
+(df unstopf args
+  (nodebug
+   (dolist (name args)
+     (*dbg-stopf* name ())
+     (*dbg-stopf* (eval name) ()) )
+   ()))
+
+#? (stopm [<fname> ...])
+;; Start interrupting method invocations to <fname>.
+;; With no arguments, list all methods whose invcations
+;; are currently being interrupted.
+(df stopm args
+  (nodebug
+   (if args
+       (dolist (name args)
+         (*dbg-stopm* name name) )
+     (printf "interrupted methods: \n")
+     (do (((k . v) *dbg-stopm*))
+       (printf "%l " k) )
+     (printf "\n") )
+   ()))
+
+#? (unstopm <fname> ...)
+;; Stop interrupting method invocations to <fname>.    
+(df unstopm args
+  (nodebug
+   (dolist (name args)
+     (*dbg-stopm* name ()) )
+   ()))
+
+
+
+;; XXX this doesn't work yet
+;;#? (with-trace (<l> [<l0>]) ....)
+;; Embed tracing code <l> levels deep. Assign <l0> to the
+;; highest level.
+(defun -embed-trace (l l0 body)
+  (print l l0)
+  (if (< l 1)
+      body
+    (let ((ll (- l 1))
+          (ll0 (+ l0 1)) )
+      (if (= l 1)
+          (domapcar ((expr body))
+            (if (consp expr)
+                `(progn
+                   (printf ,(concat (make-string l0 " ") 
+                                    (str-left (pname expr) 50)
+                                    "\n"))
+                   ,expr)
+              expr))
+        (domapcar ((expr body))
+          (if (consp expr)
+              `(progn
+                 (printf ,(concat (make-string l0 " ") 
+                                  (str-left (pname expr) 50)
+                                  "\n"))
+                 ,(embed-trace ll ll0 expr) )
+            expr)))
+        ))))
+
+(defmacro with-trace ((l l0) . body)
+  (embed-trace (eval l) (eval l0) body)
+  )
+    
+(defun testfun ()
+  (with-trace (3 1)
+  (for (i 0 100)
+    (let ((a 'a))
+      (printf "1 ")
+      (progn 
+        (printf "2 ")
+        (let ((b 'b))
+          (printf "3 ")
+          3)
+        (sleep 0.1)
+        2)
+      1)
+    (printf "4 ")
+    (+ 10 10)
+    (printf "5 ") ))
+  )
+
+
+
+
+
+
+

@@ -1,0 +1,252 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;  'calctool'
+;;;  A Numeric Calculator
+;;;  Copyright (C) 1993 Neuristique SA
+
+
+(ogre)
+
+
+;;; c-calcbutton
+
+(defclass CCalcButton StdButton
+  key)
+
+(defmethod CCalcButton CCalcButton(label k)
+  (setq key k)
+  (==> this StdButton label 
+       (eval `(lambda (c) (==> thiswindowobject key ,key)))))
+
+
+;;; c-ruban
+
+(defclass CRuban VisualObject
+  (rubanl 1)
+  (rubandata ()) )
+
+(defmethod CRuban CRuban(w h)
+  (==> this VisualObject w h) )
+
+(defmethod CRuban backpaint()
+  (cls) )
+
+(defmethod CRuban repaint()
+  (font-8f)
+  (let (((x y w h) rect)
+	(th (text-height "0")))
+    (incr th 2)
+    (incr h -2)
+    (incr x 2)
+    (setq rubanl (div h th))
+    (while (> (length rubandata) rubanl)
+      (setq rubandata (cdr rubandata)) )
+    (setq y (+ y h (* (- th) (length rubandata))))
+    (each ((s rubandata))
+	  (draw-text x y s)
+	  (incr y th) ) ) )
+
+(defmethod CRuban add(s &optional c)
+  (if ~c (setq c " "))
+  (if ~s (setq s "") (setq s (pname s)))
+  (setq rubandata (nconc1 rubandata (sprintf "%-2s  %s" c s)))
+  (==> this expose rect) )
+
+
+
+;;; c-calctool
+
+
+(defclass CCalctool AutoWindowObject
+  resultstring
+  buttongrid
+  rmbutton
+  ruban
+  rubanview
+  ( rubanlen 30 )
+  ( memory 0 )
+  ( edit t )
+  x op y )
+
+
+
+
+(defmethod CCalctool CCalctool()
+  (==> this AutoWindowObject 0 0 380 235 "Calculator"
+       (new Column
+	    (new EmptySpace 1)
+	    (new Row
+		 (new EmptySpace 1)
+		 (new Column
+		      (setq resultstring (new EditNumber 16))
+		      (setq buttongrid 
+			    (new Grid 4
+				 (new CCalcButton "CM" "cm")
+				 (setq rmbutton (new CCalcButton "RM" "rm"))
+				 (new CCalcButton "M+" "m+")
+				 (new CCalcButton "M-" "m-")
+				 (new CCalcButton "Off" "off")
+				 (new CCalcButton "AC" "c")
+				 (new CCalcButton "<" "\b")
+				 (new CCalcButton "+" "+")
+				 (new CCalcButton "7" "7")
+				 (new CCalcButton "8" "8")
+				 (new CCalcButton "9" "9")
+				 (new CCalcButton "-" "-")
+				 (new CCalcButton "4" "4")
+				 (new CCalcButton "5" "5")
+				 (new CCalcButton "6" "6")
+				 (new CCalcButton "x" "x")
+				 (new CCalcButton "1" "1")
+				 (new CCalcButton "2" "2")
+				 (new CCalcButton "3" "3")
+				 (new CCalcButton "/" "/")
+				 (new CCalcButton "." ".")
+				 (new CCalcButton "0" "0")
+				 (new CCalcButton "+/-" "s")
+				 (new CCalcButton "=" "=") ) ) )
+		 
+		 (new EmptySpace 3)
+		 (setq rubanview 
+		       (new Viewer 145 10 
+			    (setq ruban (new CRuban 145 500))
+			    () t ) ) ) ) )
+  (==> rubanview setvpos 1e9)
+  (==> rmbutton disable) )
+
+
+(defmethod CCalctool keypress(s x y)
+  (when (= s "\x7f") (setq s "\b"))
+  (when (= s "\n") (setq s "="))
+  (when (= s "\r") (setq s "="))
+  (when (= s "*") (setq s "x"))
+  (let ((b ()))
+    (each ((x :buttongrid:contents))
+	  (when (= s :(car x):key)
+		(setq b (car x)) ) )
+    (if b
+	(==> b trigger) 
+      'ignored ) ) )
+
+
+(defmethod CCalctool key(s)
+  (selectq s
+
+	   ( ("." "0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "\b" "\x7f")
+	     (when (not edit)
+		   (==> resultstring setdata ())
+		   (when (not op) 
+			 (==> ruban add ()) ) )
+	     (==> resultstring keypress s 0 0) 
+	     (setq y ())
+	     (setq edit t) )
+
+	   ( "c"
+	     (setq x () op () y ())
+	     (==> resultstring setdata ()) 
+	     (==> ruban add ()) 
+	     (setq edit t) )
+
+	   ( "s"
+	     (when (<> y 'error)
+		   (==> this do-sign) ) )
+
+	   ( ("+" "-" "x" "/")
+	     (when (<> y 'error)
+		   (==> this do-equal)
+		   (setq op s x y) 
+		   (setq y ()) )
+	     (setq edit ()) )
+
+	   ( "="
+	     (when (<> y 'error)
+		   (==> this do-equal) 
+		   (==> ruban add y "=") )
+	     (setq edit ()) )
+
+	   ( ("m+" "m-" "cm" "rm")
+	     (when (<> y 'error)
+		   (==> this do-memory s) )
+	     (setq edit ()) )
+	   
+	   ( "off"
+	     (delete thiswindowobject) ) ) )
+
+
+(defmethod CCalctool do-sign()
+  (let ((n (==> resultstring getdata)))
+    (when n 
+	  (==> resultstring setdata (- n))
+	  (setq y ()) ) ) )
+
+(defmethod CCalctool do-memory(s)
+  (let ((y (==> resultstring getdata)))
+    (selectq s
+	     ("m+" 
+	      (when y
+		    (==> ruban add y "M+")
+		    (incr memory y) ) )
+	     ("m-"
+	      (when y
+		    (==> ruban add y "M-")
+		    (incr memory (- y)) ) )
+	     ("cm" 
+	      (==> ruban add 0 "CM")
+	      (setq memory 0) )
+	     ("rm"
+	      (==> ruban add memory "RM")
+	      (==> resultstring setdata memory)
+	      (setq y ()) ) ) )
+  (==> rmbutton enable)
+  (when (0= memory)
+	(==> rmbutton disable) ) )
+
+
+(defmethod CCalctool do-equal()
+  (let ((ny (==> resultstring getdata)))
+    (when (<> y ny)
+      (setq y ny)
+      (==> ruban add y op) ) )
+  (if (and x op y)
+      (selectq op
+        ("+" (setq y (+ x y)))
+        ("-" (setq y (- x y)))
+        ("x" (setq y (* x y)))
+        ("/" (setq y (if (0<> y) (/ x y) 'error))) ) )
+  (setq x () op ())
+  (if (<> y 'error)
+      (==> resultstring setdata y) 
+    (==> resultstring (EditString . setdata) "error") ) )
+
+
+
+;;; ----------------------------------------
+
+(de calctool()
+    (new CCalctool) )
+

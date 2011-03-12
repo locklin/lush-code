@@ -1,0 +1,235 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? *** Reading/Writing Run-Length-Encoded Image Files
+;; read and write RLE images.
+;; RLE images are a compact way of representing
+;; binary images by a list of "runs" of black pixels.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; read RLE files
+
+
+(libload "libc/stdio")
+(libload "libidx/idx-int")
+(libload "libimage/img-util")
+(libload "libimage/run-macros")
+
+#? (rle-read-ubim <f> <white> <black>)
+;; read binary image <m> from RLE file <f>.
+;; code black as <black> and white as <white>
+(de rle-read-ubim (f white black)
+    ((-str-) f)
+    ((-int-) white black)
+    (let ((f (fopen f "rb")))
+      (when (not f) (error "couldn't open RLE file"))
+      (let ((head (fscan-str f)))
+        (when (<> "R4" head)
+          (fclose f) (error "not a valid binary RLE file"))
+        (let* ((ncol (fscan-int f))
+               (nlin (fscan-int f))
+               (rez (ubyte-array nlin ncol))
+               (n 0) (c 0) (x 0) (color white))
+          ((-int-) n c x color)
+          (getc f)
+          (while (>= (setq x (getc f)) 0)
+            (if (>= x 0xc0)
+                (setq x (+ (getc f) (* (- x 0xc0) 256))) )
+            (when (> x 0)
+              (idx-bloop ((p (narrow (select rez 0 n) 0 x c)))
+                (p color) ) )
+            (incr c x)
+            (setq color (if (= color white) black white))
+            (when (>= c ncol)
+              (setq color white)
+              (setq c 0)
+              (incr n) ) )
+          (fclose f)
+          (when (<> n nlin)
+            (error "Malformed rle file") )
+          rez ) ) ) )
+
+
+#? (rle-read-runs <f> <runs> <img-dim>)
+;;.VP
+;; ((-str-) f):
+;; ((-idx2- (-int-)) runs):
+;; ((-obj- (img-dim-C)) img-dim):
+;;
+;; CREATED: P. Haffner, Feb 98
+;; MODIFIES: <runs> and <img-dim>
+;; RETURNS: ()
+;; DESCRIPTION:
+;; read runs IDX <runs> from RLE file <f>.
+;; dimension 0 of <runs> is the number of runs
+;; dimension 1 of <runs> must be >= 3 with
+;; 0: Y position
+;; 1: X1 position
+;; 2: X2 position
+;;
+;; populates object img-dim with both dimensions
+;;.SEE img-dim-C
+;; 
+;; EXAMPLE:        
+;; (setq runs-dim (new img-dim-C 0 0))
+;; (setq runs (int-array 1 4)) 
+;; (a 4th optional dimension for connected componanet analysis)
+;; 
+;; (rle-read-runs filename runs runs-dim)
+ 
+
+(de rle-read-runs (f runs img-dim)
+    ((-str-) f)
+    ((-idx2- (-int-)) runs)
+    ((-obj- (img-dim-C)) img-dim)
+
+    (let ((f (fopen f "rb"))
+          )
+      (when (not f) (error "couldn't open RLE file"))
+      (let ((head (fscan-str f)))
+        (when (<> "R4" head)
+          (fclose f) (error "not a valid binary RLE file"))
+        (let* ((ncol (fscan-int f))
+               (nlin (fscan-int f))
+               (id -1)
+               (n 0) (c 0) (x 0) (white t))
+          ((-int-) n c x id)
+
+          (idx-i2resize runs (2* nlin) (idx-dim runs 1))
+          (getc f)
+          (while (>= (setq x (getc f)) 0)
+            (if (>= x 0xc0)
+                (setq x (+ (getc f) (* (- x 0xc0) 256))) )
+            (when (> x 0)
+              (when ~white
+                (incr id)
+                (when (>= id (idx-dim runs 0))
+                  (idx-i2resize runs (2* (idx-dim runs 0)) (idx-dim runs 1)) )
+                (runs id (RUN-Y) n)
+                (runs id (RUN-X1) c)
+                (runs id (RUN-X2) (1- (+ c x)))
+                ))
+
+            (incr c x)
+            (setq white ~white)
+            (when (>= c ncol)
+              (setq white t)
+              (setq c 0)
+              (incr n) ) )
+          (fclose f)
+          (when (<> n nlin)
+            (error "Malformed rle file") )
+          (idx-i2resize runs (1+ id) (idx-dim runs 1))
+          (setq :img-dim:d0 nlin)
+          (setq :img-dim:d1 ncol)
+          ()
+          ) ) ) )
+
+#? (rle-write-runs <f> <runs>  <nlin> <ncol>)
+;;.VP
+;; ((-str-) f):
+;; ((-idx2- (-int-)) runs):
+;; ((-int-) nlin ncol):
+;;
+;; CREATED: P. Haffner, Oct 97
+;; DESCRIPTION:
+;; writes <runs> in file <f> as a RLE file.
+(de rle-write-runs (fname runs  nlin ncol)
+    ((-str-) fname)
+    ((-idx2- (-int-)) runs)
+    ((-int-) nlin ncol)
+
+    (let ((f (fopen fname "wb"))
+          (prevy 0)
+          (prevx2 0)
+          )
+      ((-int-) prevy prevx2)
+      (when (not f) (error "couldn't open RLE file"))
+      #{
+      fprintf((FILE *)$f,"R4 %d %d\n",$ncol,$nlin); 
+      #}
+      (idx-bloop ((run runs))
+        (let* (
+               (runy (run (RUN-Y)))
+               (runx1 (run (RUN-X1)))
+               (runx2 (1+ (run (RUN-X2))))
+               )
+          ((-int-) runy runx1 runx2)
+          (if (or (< runy 0) (>= runy nlin)) 
+              (printf "rle-write-runs(%s): runy out, removed\n" fname) 
+            
+            (when (< runx1 0) (printf "rle-write-runs(%s): runx1<0, cropped\n" fname) (setq runx1 0))
+            (when (> runx2 ncol) (printf "rle-write-runs(%s): runx2>=ncol, cropped\n" fname) (setq runx2 ncol))
+            (if (= runy prevy)
+                (write-rle f (- runx1 prevx2))
+              (write-rle f (- ncol prevx2))
+              (when (> runy (1+ prevy))
+                (for (i 1 (- runy prevy))
+                  (declare (-int-) i)
+                  (write-rle f ncol)))
+              (write-rle f runx1)
+              )
+            (write-rle f (- runx2 runx1))
+            )
+          (setq prevy runy)
+          (setq prevx2 runx2)
+          ))
+      (write-rle f (- ncol prevx2))
+      (for (i 1 (- nlin prevy))
+        (declare (-int-) i)
+        (write-rle f ncol) )
+      
+      (fclose f)
+      ))
+
+
+
+
+(de write-rle (f len)
+    ((-gptr-) f)
+    ((-int-) len)
+    
+    (when (>= len 0) 
+      #{
+      int n=$len;
+      FILE *outfile = (FILE *) $f;
+      if (n<0xc0)
+      putc(n, outfile);
+      else if (n<0x4000) {
+      putc( (n>>8)|0xc0, outfile);
+      putc( (n&0xff), outfile);
+      } else {
+    fprintf(stderr,"RLE run length overflow (%d>%d)\n", n, 0x4000-1);
+}
+#}
+)
+()
+)
+
+
+(dhc-make-sf "rle" write-rle rle-write-runs rle-read-ubim rle-read-runs)
+

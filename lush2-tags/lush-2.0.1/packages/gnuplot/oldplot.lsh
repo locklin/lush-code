@@ -1,0 +1,174 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gnuplot/gnuplot")
+
+#? (plot-ys <y1> <y2> ...)
+;; Plot curves for data points in vectors <y1> <y2> ...
+(defun plot-ys ys
+  (let ((preamble (or preamble "clear; unset key; set title \"plot-ys\"")))
+    (plot-ys/x (arange (length (car ys))) . ys) ))
+
+
+#? (plot-logys <y1> <y2> ...)
+;; Plot curves with logarithmic scaling for data
+;; points in vectors <y1> <y2> ...
+(defun plot-logys ys
+  (let ((preamble (or preamble "clear; unset key; set logscale y; set title \"plot-lys\"")))
+    (plot-ys/x (arange (length (car ys))) . ys) ))
+
+
+#? (plot-ys/x <x> <y1> <y2> ...)
+;; Plot curves for data points in vectors <y1> <y2> ... over points in <x>.
+(defun plot-ys/x (x . ys)
+  (let* ((gp   (or plotter (new Gnuplot 'interactive ())))
+         (ls   0)
+         (data (domapcar ((y ys)) (array-combine* x y)))
+         (args (domapcar ((y ys))
+                 (incr ls)
+                 (sprintf "'-' binary record=%d format=\"%%double\" with lines ls %d" (length y) ls) ))
+         (pre  (or preamble "clear; unset key; set title \"plot-ys/x\"")) )
+    (gp pre)
+    (let ((cmd (concat "plot " (str-join "," args))))
+      (apply ==> gp 'send-binary cmd data) )
+    gp))
+
+
+#? (plot-ys/xs <x1> <y1> <y2> <x2> ...)
+;; Plot curves for data points in vector <y1> over points in <x1>,
+;; points in <y2> over <x2> and so on.
+(defun plot-ys/xs xys
+  (when (not (evenp (length xys)))
+    (error "even number of arguments expected") )
+  (let* ((gp   (or plotter (new Gnuplot 'interactive ())))
+         (ls   0)
+         (args ())
+         (data ())
+         (pre  (or preamble "clear; unset key; set title \"plot-ys/xs\"")) )
+    (gp pre)
+    (while xys
+      (incr ls)
+      (setq data (cons (array-combine* (car xys) (cadr xys)) data))
+      (setq args (cons (sprintf "'-' binary record=%d format=\"%%double\" with lines ls %d"
+                                (length (cadr xys)) ls) args))
+      (setq xys (cddr xys)) )
+    (let ((cmd (concat "plot " (str-join "," (reverse args))))
+          (data (reverse data)) )
+      (apply ==> gp 'send-binary cmd data) )
+    gp))
+
+
+#? (plot-hist <data> <bs>)
+;; {<see> plot-hist*, vector-bin}
+;; Plot histogram with bins <bs> of data points in array <data>.
+(defun plot-hist (data bins)
+  (assert (vectorp bins))
+  (setq data (as-double-array (ravel data))  bins (as-double-array bins))
+  (let ((gp (or plotter (new Gnuplot 'interactive ())))
+	(bin-centers (/ (+ (idx-trim bins 0 1) (idx-trim bins 0 -1)) 2))
+        (counts (vector-bin data bins))
+        (pre (or preamble "clear; unset key; set title \"plot-hist\"")) )
+    (let ((xtics (str-join "," (mapcar sprintf (.cl "\"%f\" %d") 
+                                       (bin-centers ())
+                                       (range* (length bin-centers)) )))
+	  (maxy ((idx-sup counts))) )
+      (gp pre)
+      (gp "set style data histograms"
+	  "set style fill solid 1.0 border -1"
+	  (sprintf "set yrange [0:%d]" (ceil (* maxy 1.01)))
+ 	  (sprintf "set xtics (%s)" xtics)
+	  "set xtics rotate by -45")
+      (==> gp send-binary 
+           (sprintf "plot '-' binary record=%d format=\"%%int\" u 1" (length counts))
+           counts))
+;      (gp "plot '-'" (idx-sink counts 1)))
+    gp))
+
+
+#? (plot-hist* <data> <n>)
+;; {<see> plot-hist, vector-bin*}
+;; Plot histogram with <n> bins of data points in array <data>.
+(defun plot-hist* (data n)
+  (declare (-int-) n)
+  (setq data (as-double-array (ravel data)))
+  (let ((gp (or plotter (new Gnuplot 'interactive ())))
+	((bin-centers counts) (vector-bin* data n))
+        (pre (or preamble "clear; unset key; set title \"plot-hist*\"")) )
+    (let ((xtics (str-join "," (mapcar sprintf (.cl "\"%f\" %d") (bin-centers ()) (range* n))))
+	  (maxy ((idx-sup counts))) )
+      (gp pre)
+      (gp "set style data histograms"
+	  "set style fill solid 1.0 border -1"
+	  (sprintf "set yrange [0:%d]" (ceil (* maxy 1.01)))
+ 	  (sprintf "set xtics (%s)" xtics)
+	  "set xtics rotate by -45")
+      (==> gp send-binary 
+           (sprintf "plot '-' binary record=%d format=\"%%int\" u 1" (length counts))
+           counts) )
+;      (gp "plot '-'" (idx-sink counts 1)) )
+    gp))
+
+(autoload "libidx/binning" vector-bin* vector-bin)
+
+#? (plot-image <img>)
+;; Plot image <img>.
+(defun plot-image (img)
+  (let* ((r (idx-rank img))
+         (ratio (/ (idx-shape img 0) (idx-shape img 1)))
+         (descr ())
+         (style ())
+         (preamble "unset key; unset border; set size ratio -1")
+         (gp (or plotter (new Gnuplot 'interactive ()))) )
+    (cond
+     ((= r 2) 
+      (setq preamble (concat preamble 
+                             "; unset colorbox; set palette gray"))
+      (setq descr (-binary-descriptor img)) ; grayscale image
+      (setq style "with image") )
+
+     ((and (= r 3) (= (idx-shape img 2) 3)) ; rgb image
+      (setq descr (-binary-descriptor (idx-select img 2 0)))
+      (setq style "with rgbimage") )
+
+     ((and (= r 3) (= (idx-shape img 2) 4)) ; rgba image
+      (setq descr (-binary-descriptor (idx-select img 2 0)))
+      (let ((using (selectq (idx-element-type img)
+                     ('ubyte "using ($4*$1/255):($4*$2/255):($4*$3/255)")
+                     (t "using ($4*$1):($4*$2):($4*$3)") )))
+        (setq style (concat using " with rgbimage")) ))
+
+     (t 
+      (error "unknown image type" img)) )
+    
+    (gp preamble)
+    (gp (sprintf "set xrange [0:%d]" (idx-shape img 1)))
+    (gp (sprintf "set yrange [0:%d]" (idx-shape img 0)))
+    (==> gp send-binary
+         (sprintf "plot '-' %s flipy origin=(0.5,0.5) %s" descr style)
+         img)
+    gp))
+

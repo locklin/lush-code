@@ -1,0 +1,252 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "geometry/geometry")
+(libload "gnuplot/plot")
+
+;; Point and edge data are taken from file 'A.poly' that comes
+;; with the Triangle sources (see README)
+
+(defparameter a-points [
+  [0.200000 -0.776400] ;; 0
+  [0.220000 -0.773200]
+  [0.245600 -0.756400]
+  [0.277600 -0.702000]
+  [0.488800 -0.207600]
+  [0.504800 -0.207600] ;; 5
+  [0.740800 -0.739600]
+  [0.756000 -0.761200]
+  [0.774400 -0.772400]
+  [0.800000 -0.776400]
+  [0.800000 -0.792400] ;; 10
+  [0.579200 -0.792400]
+  [0.579200 -0.776400]
+  [0.621600 -0.771600]
+  [0.633600 -0.762800]
+  [0.639200 -0.744400] ;; 15
+  [0.620800 -0.684400]
+  [0.587200 -0.604400]
+  [0.360800 -0.604400]
+  [0.319200 -0.706800]
+  [0.312000 -0.739600] ;; 20
+  [0.318400 -0.761200]
+  [0.334400 -0.771600]
+  [0.371200 -0.776400]
+  [0.371200 -0.792400]
+  [0.200000 -0.792400] ;; 25
+  [0.374400 -0.570000]
+  [0.574400 -0.570000]
+  [0.473600 -0.330800]] )
+
+;; transform coordinates that it looks good on screen
+(setq a-points (* 500 (+ a-points [0 1])))
+(defparameter a-poly (new Polygon a-points [i 26]))
+
+(printf "\n")
+(printf "Available demos:\n")
+(printf "----------------\n")
+
+(defun display-a ()
+  (let ((pslg a-poly))
+    ;; display the Delaunay triangulation of the polygon ...
+    (let* ((xrange [60 440])
+           (yrange [60 440]) 
+           (scale  1.5) 
+           (win (==> (delaunay pslg) display 'xrange xrange  'scale scale
+                     'yrange yrange 'edge-color 'red  'plot-points () )))
+      (printf "Delaunay triangulation, ")
+      
+      ;; ... and the convex hull on top of that ...
+      (==> (convex-hull a-points) display 
+           'window win  'edge-color 'green  'edge-width 2  'plot-points ())
+      (printf "convex hull, ")
+      
+      ;; ... and the PLSG edges on top of that.
+      (==> pslg display  'window win  'edge-width 2  'point-size 2)
+      (printf "PSLG segments.\n")
+      
+      win)))
+
+(printf "(display-a) -- display character 'A' with Delaunay triangulation and convex hull\n") 
+
+(defun display-rot-a ()
+  (let ((pslg (new Polygon (copy-array a-points) [i 26])))
+    
+    ;; display the Delaunay triangulation of the points ..
+    (let* ((xrange [60 440])
+           (yrange [60 440]) 
+           (scale  1.5)
+           (llp (idx-select a-points 0 -1)) ) ; lower left points
+
+      (let ((win (==> pslg display  'edge-width 2  'point-size 2 'scale scale)))
+        (==> pslg rotate-about -0.3 (llp 0) (llp 1))
+        (==> pslg display  'point-size 2 'edge-color 'red  'window win) )
+      ;(print :pslg:points)
+      win)))
+
+(printf "(display-rot-a) -- display rotated character 'A' in Lush window\n") 
+
+(defmethod Mesh -gnuplot (plot-cmd . kwdargs)
+  (let* ((opt (parse-kwdargs kwdargs
+                             'debug     ()
+                             'plotter   ()
+                             'preamble  ()
+                             'plot-args ()
+                             'plot-data () ))
+         (gp (opt 'plotter)) )
+    (setq plot-cmd (concat plot-cmd " "))
+    (when (opt 'debug)
+      (printf "command send to gnuplot:\n")
+      (printf "------------------------\n")
+      (dolist (line (opt 'preamble))
+        (printf "%s\n" line) ))
+    (apply gp (opt 'preamble))
+    (gp (concat plot-cmd (str-join "," (opt 'plot-args))))
+    (when (opt 'debug) 
+      (printf (concat plot-cmd (str-join "," (opt 'plot-args))))
+      (printf "\n")
+      (dolist (l (opt 'plot-data))
+        (dolist (d l)
+          (if (< (length d) 30)
+              (print-array d)
+            (printf "%s " (pname d)) ))
+        (printf "e\n") ))
+    (dolist (pd (opt 'plot-data)) 
+      (apply gp pd) )
+    gp))
+
+(defmethod Mesh -gnuplot (plot-cmd . kwdargs)
+  (let* ((opt (parse-kwdargs kwdargs
+                             'debug     ()
+                             'plotter   ()
+                             'preamble  ()
+                             'plot-args ()
+                             'plot-data () ))
+         (gp (opt 'plotter)) )
+    (setq plot-cmd (concat plot-cmd " "))
+    (when (opt 'debug)
+      (printf "command send to gnuplot:\n")
+      (printf "------------------------\n")
+      (dolist (line (opt 'preamble))
+        (printf "%s\n" line) ))
+    (apply gp (opt 'preamble))
+    (gp (concat plot-cmd (str-join "," (opt 'plot-args))))
+    (when (opt 'debug) 
+      (printf (concat plot-cmd (str-join "," (opt 'plot-args))))
+      (printf "\n")
+      (dolist (l (opt 'plot-data))
+        (dolist (d l)
+          (if (< (length d) 2)
+              (print-array d)
+            (printf "%s " (pname d)) ))
+        (printf "\n") ))
+    (dolist (pd (opt 'plot-data)) 
+      (apply gp pd) )
+    gp))
+
+(defun plot-a ()
+  (let ((pslg (new Polygon a-points [i 26]))
+        (args ()) )
+
+    ;; plot the Delaunay triangulation of the polygon ...
+    (let ((triang (delaunay pslg))
+          (preamble "set terminal x11") 
+          )
+    
+      (setq args (==> triang -plot-arguments
+                      'plotter gp
+                      ;'plot-circles t 'circle-color 'gray50 ; requires gnuplot 4.4
+                      'edge-color 'light-pink  'plot-points () . args))
+      (setq args (mapcar dquote args))
+      (printf "Delaunay triangulation, ")
+      
+      (setq args (==> pslg -plot-arguments 
+                      'plot-edges t
+                      ;'fill  0.5  'fill-color 'violet
+                      'plotter gp  'edge-width 2  'point-size 1 . args))
+      (setq args (mapcar dquote args))
+      (printf "PSLG segments.")
+      
+      (==> pslg -gnuplot "plot" . args) )))
+
+
+(printf "(plot-a)    -- plot character 'A' with gnuplot\n") 
+
+
+(defun display-sp (&optional (from 0) (to 24))
+  (let ((pslg (new Polygon a-points [i 26])))
+    
+    ;; display the Delaunay triangulation of the polygon ...
+    (let* ((xrange [60 440])
+           (yrange [60 440]) 
+           (scale  3)
+           (es (==> pslg shortest-path from to))
+           (win ()) )
+      
+      (setq win (==> pslg display  'window win  'edge-width 2  'point-size 2
+                     'plot-edge-numbers t  'plot-point-numbers t))
+
+      (let ((m (new Mesh :pslg:points (array-take :pslg:edges 0 es))))
+        (==> m display 'edge-color 'red  'edge-width 3 
+             'plot-edge-numbers t
+             'window win)
+        (print (==> pslg shortest-path* from to)) )
+      win)))
+
+(printf "(display-sp [from to]) -- display character 'A' with shortest path\n") 
+
+
+;; generate n points around (0,0) and color depending on quadrant
+(defun test-point-in-angle (&optional (n 200))
+  (let ((points (double-array n 2))
+        (l 0)
+        (m n)
+        (p [0 0]) (a [-1 0]) (b [0 0]) (c [1 0]))
+    (declare (-int-) l m)
+    (for* (i 0 n)
+      (declare (-int-) i)
+      (p 0 (gauss 100))
+      (p 1 (gauss 100))
+      (if (point-in-angle-p p a b c)
+          (progn
+            (points l 0 (p 0))
+            (points l 1 (p 1))
+            (incr l) )
+        (decr m)
+        (points m 0 (p 0))
+        (points m 1 (p 1)) ))
+    (let* ((points-in (idx-trim points 0 0 l))
+           (points-out (idx-trim points 0 m))
+           (m (new Mesh points (int-array 0 2)))
+           (m-in (new Mesh points-in (int-array 0 2)))
+           (m-out (new Mesh points-out (int-array 0 2)))
+           (win ()))
+      (setq win (==> m display 'origin 'SW))
+      (==> m-out display 'window win  'point-size 2 'point-color 'blue)
+      (==> m-in display 'window win 'point-size 2 'point-color 'red) )))
+
+      

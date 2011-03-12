@@ -1,0 +1,330 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; $Id: gb-trainers.lsh,v 1.6 2003/05/05 14:18:27 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "gblearn2/gb-modules")
+(libload "gblearn2/gb-meters")
+
+
+#? **** Learning Algorithms
+;; {<author> Yann LeCun}
+;; Various learning algorithm classes are defined
+;; to train learning machines. Learning machines are
+;; generally subclasses of <gb-module>. Learning algorithm
+;; classes include gradient descent for supervised 
+;; learning, and others.
+
+#? ** eb-trainer
+;; Abstract class for energy-based learning algorithms.
+;; The class contains an input, a (trainable) parameter, 
+;; and an energy. this is an abstract class from which actual
+;; trainers can be derived.
+(defclass eb-trainer object
+  machine
+  param
+  input
+  energy
+  age
+  )
+
+(defmethod eb-trainer eb-trainer (m p &optional e in)
+  (setq machine m)
+  (setq param p)
+  (setq age 0)
+  (if e
+      (setq energy e)
+    ;; set energy slot to default idx0-ddstate
+    (setq energy (new idx0-ddstate))
+    (:energy:dx 1.0)
+    (:energy:ddx 0.0))
+  (if in
+      (setq input in)
+    (setq input (new idx3-ddstate 1 1 1))) ())
+
+
+#? ** supervised
+;; A an abstract trainer class for supervised training with of a 
+;; feed-forward classifier with discrete class labels. Actual 
+;; supervised trainers can be derived from this. The machine's fprop 
+;; method must have four arguments: input, output, energy, and 
+;; desired output. A call to the machine's fprop must look like this:
+;; {<code>
+;;    (==> machine fprop input output desired energy)
+;; </code>}
+;; By default, <output> must be a <class-state>, <desired> an
+;; idx0 of int (integer scalar), and <energy> and <idx0-ddstate>
+;; (or subclasses thereof).
+;; The meter passed to the training and testing methods
+;; should be a <classifier-meter>, or any meter whose
+;; update method looks like this:
+;; {<code>
+;;    (==> meter update output desired energy)
+;; </code>}
+;; where <output> must be a <class-state>, <desired> an
+;; idx0 of int, and <energy> and <idx0-ddstate>.
+(defclass supervised eb-trainer
+  output
+  desired
+  )
+
+#? (new supervised <m> <p> [<e> <in> <out> <des>])
+;; create a new <supervised> trainer. Arguments are as follow:
+;; {<ul>
+;;  {<li> <m>: machine to be trained.}
+;;  {<li> <p>: trainable parameter object of the machine.}
+;;  {<li> <e>: energy object (by default an idx0-ddstate).}
+;;  {<li> <in>: input object (by default an idx3-ddstate).}
+;;  {<li> <out>: output object (by default a class-state).}
+;;  {<li> <des>: desired output (by default an idx0 of int).}
+;; }
+(defmethod supervised supervised (m p &optional e in out des)
+  (==> this eb-trainer m p e in)
+  (if out
+      (setq output out)
+    (setq output (new class-state 2)))
+  (if des
+      (setq desired des)
+    (setq desired (int-array)))
+  ())
+
+
+#? (==> supervised train <dsource> <mtr>)
+;; train the machine with on the data source <dsource> and
+;; measure the performance with <mtr>.
+;; This is a dummy method that should be defined
+;; by subclasses.
+(defmethod supervised train (ds mtr)
+  (==> ds seek 0)
+  (==> mtr clear)
+  ())
+
+#? (==> supervised test <dsource> <mtr>)
+;; measures the performance over all the samples of data source <dsource>.
+;;<mtr> must be an appropriate meter.
+(defmethod supervised test (ds mtr)
+  (==> ds seek 0)
+  (==> mtr clear)
+  (repeat (==> ds size)
+    (==> ds fprop input desired)
+    (==> machine fprop input output desired energy)
+    (==> mtr update age output desired energy)
+    (==> ds next)))
+
+#? (==> supervised test-sample <dsource> <mtr> <i>)
+;; measures the performance over a single sample of data source <dsource>.
+;; This leaves the internal state of the meter unchanged, and
+;; can be used for a quick test of a whether a particular pattern
+;; is correctly recognized or not.
+(defmethod supervised test-sample (ds mtr i)
+  (==> ds seek i)
+  (==> ds fprop input desired)
+  (==> machine fprop input output desired energy)
+  (==> mtr test output desired energy))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#? ** supervised-gradient
+;; A basic trainer object for supervised stochastic gradient
+;; training of a classifier with discrete class labels. 
+;; This is a subclass of <supervised>. The machine's 
+;; fprop method must have four arguments: input, output, energy, 
+;; and desired output. A call to the machine's fprop must
+;; look like this:
+;; {<code>
+;;    (==> machine fprop input output desired energy)
+;; </code>}
+;; where <output> must be a <class-state>, <desired> an
+;; idx0 of int (integer scalar), and <energy> and <idx0-ddstate>.
+;; The meter passed to the training and testing methods
+;; should be a <classifier-meter>, or any meter whose
+;; update method looks like this:
+;; {<code>
+;;    (==> meter update output desired energy)
+;; </code>}
+;; where <output> must be a <class-state>, <desired> an
+;; idx0 of int, and <energy> and <idx0-ddstate>.
+;; The trainable parameter object must understand the following 
+;; methods:
+;; {<ul>
+;;  {<li> {<c> (==> param clear-dx)}: clear the gradients.}
+;;  {<li> {<c> (==> param update eta inertia)}: update the parameters with 
+;;   learning rate <eta>, and momentum term <inertia>.}
+;; }
+;; If the diagonal hessian estimation is to be used, the param
+;; object must also understand:
+;; {<ul>
+;;  {<li> {<c> (==> param clear-ddx)}: clear the second derivatives.}
+;;  {<li> {<c> (==> param update-ddeltas knew kold)}: update average second 
+;;    derivatives.}
+;;  {<li> {<c> (==> param compute-epsilons <mu>)}: set the per-parameter 
+;;          learning rates to the inverse of the sum of the second 
+;;          derivative estimates and <mu>.}
+;; }
+(defclass supervised-gradient supervised)
+
+#? (new supervised-gradient <m> <p> [<e> <in> <out> <des>])
+;; create a new <supervised-gradient> trainer. Arguments are as follow:
+;; {<ul>
+;;  {<li> <m>: machine to be trained.}
+;;  {<li> <p>: trainable parameter object of the machine.}
+;;  {<li> <e>: energy object (by default an idx0-ddstate).}
+;;  {<li> <in>: input object (by default an idx3-ddstate).}
+;;  {<li> <out>: output object (by default a class-state).}
+;;  {<li> <des>: desired output (by default an idx0 of int).}
+;; }
+(defmethod supervised-gradient supervised-gradient (m p &optional e in out des)
+  (==> this supervised m p e in out des)
+  ())
+
+#? (==> supervised-gradient train-online <dsource> <mtr> <n> <eta> [<inertia>] [<kappa>])
+;; train with stochastic (online) gradient on the next <n>
+;; samples of data source <dsource> with global learning rate <eta>.
+;; and "momentum term" <inertia>.  
+;; Optionally maintain a running average of the weights with positive rate <kappa>.  
+;; A negative value for kappa sets a rate equal to -<kappa>/<age>.
+;; No such update is performed if <kappa> is 0.
+;;
+;; Record performance in <mtr>. 
+;; <mtr> must understand the following methods:
+;; {<code>
+;;   (==> mtr update age output desired energy)
+;;   (==> mtr info)
+;; </code>}
+;; where <age> is the number of calls to parameter updates so far,
+;; <output> is the machine's output (most likely a <class-state>),
+;; <desired> is the desired output (most likely an idx0 of int),
+;; and <energy> is an <idx0-state>.
+;; The <info> should return a list of relevant measurements.
+(defmethod supervised-gradient train-online (ds mtr n eta &optional (inertia 0) (kappa 0))
+  (repeat n
+    (==> ds fprop input desired)
+    (==> machine fprop input output desired energy)
+    (==> mtr update age output desired energy)
+    (==> param clear-dx)
+    (==> machine bprop input output desired energy)
+    (==> param update eta inertia)
+    (cond ((> kappa 0) (==> param update-xaverage kappa))
+          ((< kappa 0) (==> param update-xaverage (/ (- kappa) (1+ age)))) )
+    (incr age)
+    ;; (print (==> ds tell) (desired) :machine:mout:x)
+    (==> ds next))
+  (==> mtr info))
+
+#? (==> supervised-gradient train <dsource> <mtr> <eta> [<inertia>] [<kappa>])
+;; train the machine on all the samples in data source 
+;; <dsource> and measure the performance with <mtr>.
+(defmethod supervised-gradient train (ds mtr eta &optional (inertia 0) (kappa 0))
+  (==> ds seek 0)
+  (==> mtr clear)
+  (==> this train-online ds mtr (==> ds size) eta inertia kappa))
+
+#? (==> supervised-gradient compute-diaghessian <dsource> <n> <mu>)
+;; Compute per-parameter learning rates (epsilons) using the
+;; stochastic diaginal levenberg marquardt method (as described in
+;; LeCun et al.  "efficient backprop", available at 
+;; {<hlink> http://yann.lecun.com}).  This method computes positive 
+;; estimates the second derivative of the objective function with respect 
+;; to each parameter using the Gauss-Newton approximation.  <dsource> is
+;; a data source, <n> is the number of patterns (starting at the current
+;; point in the data source) on which the
+;; estimate is to be performed. Each parameter-specific 
+;; learning rate epsilon_i is computed as 1/(H_ii + mu), where H_ii
+;; are the diagonal Gauss-Newton estimates and <mu> is the blowup 
+;; prevention fudge factor.  
+(defmethod supervised-gradient compute-diaghessian (ds n mu)
+  (==> param clear-ddeltas)
+  (repeat n
+    (==> ds fprop input desired)
+    (==> machine fprop input output desired energy)
+    (==> param clear-dx)
+    (==> machine bprop input output desired energy)
+    (==> param clear-ddx)
+    (==> machine bbprop input output desired energy)
+    (==> param update-ddeltas (/ 1 n) 1)
+    (==> ds next))
+  (==> param compute-epsilons mu)
+  (list ((idx-inf :param:epsilons)) ((idx-sup :param:epsilons))))
+
+#? (==> <supervised-gradient> saliencies <ds> <n>)
+;; Compute the parameters saliencies as defined in the 
+;; Optimal Brain Damage algorithm of (LeCun, Denker, Solla, 
+;; NIPS 1989), available at http://yann.lecun.com.
+;; This computes the first and second derivatives of the energy
+;; with respect to each parameter averaged over the next <n> 
+;; patterns of data source <ds>.
+;; A vector of saliencies is returned. Component <i> of the
+;; vector contains {<c> Si = -Gi * Wi + 1/2 Hii * Wi^2 }, this
+;; is an estimate of how much the energy would increase if the
+;; parameter was eliminated (set to zero).
+;; Parameters with small saliencies can be eliminated by
+;; setting their value and epsilon to zero.
+(defmethod supervised-gradient saliencies (ds n)
+  (==> param clear-deltas)
+  (==> param clear-ddeltas)
+  (repeat n
+    (==> ds fprop input desired)
+    (==> machine fprop input output desired energy)
+    (==> param clear-dx)
+    (==> param update-deltas (/ 1 n) 1)
+    (==> machine bprop input output desired energy)
+    (==> param clear-ddx)
+    (==> machine bbprop input output desired energy)
+    (==> param update-ddeltas (/ 1 n) 1)
+    (==> ds next))
+  (prog1
+      (==> param saliencies)
+    (==> param clear-deltas)
+    (==> param clear-ddeltas)))
+
+
+;; NOT FINISHED. compute optimal learning rate for on-line gradient
+(defmethod supervised-gradient find-eta (ds n alpha gamma) 
+  (let ((w (copy-array :param:x))
+	(psi (copy-array :param:dx))
+	(phi (idx-sqrt :param:epsilons))
+	(gradp (copy-array :param:dx)))
+    (repeat n
+      (idx-add w psi :param:x)
+      (==> ds fprop input desired)
+      (==> machine fprop input output desired energy)
+      (==> param clear-dx)
+      (==> machine bprop input output desired energy)
+      (array-copy :param:dx gp)
+
+      (array-copy w :param:x)
+      (==> ds fprop input desired)
+      (==> machine fprop input output desired energy)
+      (==> param clear-dx)
+      (==> machine bprop input output desired energy)
+      
+      ;; some stuff goes here
+
+      (==> ds next))) ())
+

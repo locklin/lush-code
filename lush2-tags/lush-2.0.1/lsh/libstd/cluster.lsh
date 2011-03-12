@@ -1,0 +1,404 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "remote.lsh")
+(when (filepath "clusterdefault.lsh")
+  (libload "clusterdefault.lsh") )
+
+
+
+#? * Scheduling Lush jobs on a cluster.
+;; Building on the Lush remote excution facilities,
+;; File <"cluster.lsh"> provides tools for running
+;; lush jobs on a cluster.
+;;
+;; Since there are very different ways to access
+;; cluster machines, you are expected to provide
+;; definitions for <cluster-default>, <cluster-connect>
+;; and possibly <cluster-kill>.  These are picked
+;; from a file named <"clusterdefault.lsh"> if it
+;; exists in your path.
+;;
+;;.SEE Remote Lush execution.
+
+#? cluster-default
+;;.TYPE VAR
+;; List of cluster machine names.
+(defvar cluster-default '("localhost")) )
+
+#? (cluster-connect <machine> <outputfile>)
+;; Attempts to start the script <lushslave> on computer <machine>.
+;; The standard output of the script should be redirected to <outputfile>.
+;; The default implementation first ping the machine to check
+;; whether it responds, and starts the script using ssh.
+(when (not cluster-connect)
+  (de cluster-connect(machine outputfile)
+    (when (0= (sys (sprintf "ping >/dev/null -c 1 -w 1 %s" machine)))
+      (sys (sprintf "ssh -fnx -oStrictHostKeyChecking=no %s %s > %s"
+		    machine cluster-lushslave outputfile )) ) ) )
+
+#? cluster-lushslave
+;;.TYPE VAR
+;; This is the name of the script launched by
+;; the default implementation of <cluster-connect>.
+(defvar cluster-lushslave 
+  "PATH=$PATH lushslave") 
+
+#? (cluster-kill <machine> <signal> <pid>)
+;; Sends unix signal <signal> to process <pid> of computer <machine>.
+;; Argument signal is a string (typically <"INT"> or <"QUIT">).
+;; The default implementation uses <ssh> and <kill>.
+
+(when (not cluster-kill)
+  (de cluster-kill(machine signal pid)
+    (sys (sprintf "ssh -fnx -oStrictHostKeyChecking=no %s kill -%s %d"
+		  machine signal pid )) ) )
+
+
+#? ClusterJob.
+;; Class <ClusterJob> represents a job submitted to the cluster.
+;; These objects are returned by method <job> of class <ClusterSession>.
+;; Several slots are relevant:
+;;.IP 
+;;  Slot <slave> is non null on running jobs.
+;;  It indicates which <RemoteLush> object handles the job.
+;;.IP
+;;  Slot <request> is the list to be evaluated on the remote
+;;  cluster machine.
+;;.IP
+;;  Slot <reply> contains the result of the evaluation performed
+;;  on the remote cluster machine. This is set when the job
+;;  is completed.
+;;.IP
+;;  Slot <error> contains possible error messages generated
+;;  by the remote cluster machine.  This is set when the job
+;;  is completed.
+
+(defclass ClusterJob object
+  slave
+  request
+  reply 
+  error )
+
+(demethod ClusterJob print()
+  (let ((m 40)(s (pname request)))
+    (setq s (regex-subst " " "" s))
+    (printf "::clusterjob:%s%s"
+	    (str-left s m) (if (> (str-len s) m) "..." "") ) ) )
+
+#? ClusterSession
+;; A <ClusterSession> object represents a set of remote lush 
+;; slaves and provides facilities for scheduling the
+;; execution of computation jobs.
+
+(defclass ClusterSession object
+  currentdir
+  sessiondir
+  slaves
+  silent
+  running
+  pending 
+  other )
+
+#? (new ClusterSession <sessionname> [<slavespermachines>] [<machines>])
+;; Create a <ClusterSession> object names <sessionname>.
+;; This function first attempts to start <slavespermachines> lush slaves
+;; on the computers specified by list <machines>.  
+;; By default <slavespermachine> is <1> and <machines> is the contents
+;; of variable <cluster-default>.  The output of each lush slave is sent 
+;; to files contained in directory named <"CLUSTERSESSION-<sessionname>">
+;; in the current directory.  These files must be kept around until
+;; the session is terminated.
+
+(demethod ClusterSession ClusterSession(sessname &optional (connect 1) machines)
+  (setq machines (or machines cluster-default))
+  (setq currentdir (relative-fname (getenv "HOME") (chdir)))
+  (setq sessiondir (concat-fname (sprintf "CLUSTERSESSION-%s" sessname)))
+  (sys (sprintf "rm -rf %s" sessiondir))
+  (sys (sprintf "mkdir %s" sessiondir))
+  (setq slaves ())
+  (let ((slavelist ()))
+    (each ((machine machines))
+      (for (i 1 connect)
+	   (setq slavelist (nconc1 slavelist 
+				   (list machine
+					 (sprintf "%s-%d" machine i) ) )) ) ) 
+    (==> this restart slavelist) ) )
+       
+
+#? (==> <session> restart)
+;; Restart all slaves afresh.
+(demethod ClusterSession restart(&optional slavelist)
+  ;; collect slave list
+  (when (not slavelist)
+    (each ((slave slaves))
+      (let ((machine (when :slave:info (car :slave:info)))
+	    (name :slave:name))
+	(when (and machine name)
+	  (setq slavelist (nconc1 slavelist (list machine name))) ) ) ) )
+  ;; cleanup all jobs
+  (let ((jobs (append running pending)))
+    (setq pending ())
+    (setq running ())
+    (each ((job jobs))
+      (setq :job:slave ())
+      (setq :job:error "Killed") ) )
+  ;; cleanup slaves
+  (each ((slave slaves))
+    (when :slave:info
+      (cluster-kill (car :slave:info) "TERM" (caddr :slave:info)) )
+    (delete :slave:fout)
+    (delete :slave:fin) )
+  (each ((slave slaves))
+    (when :slave:info
+      (cluster-kill (car :slave:info) "TERM" (caddr :slave:info))))
+  (setq slaves ())
+  ;; proceeed
+  (let ((connections ())
+	(attempts 8))
+    (each (((machine name) slavelist))
+      (cluster-connect machine (concat-fname sessiondir name)) 
+      (setq connections (cons name connections)) )
+    (setq connections (reverse connections))
+    (while (and connections (> attempts 0))
+      (sleep 1)
+      (incr attempts -1)
+      (let ((remaining ()))
+	(each ((name connections))
+	  (let* ((ofile (concat-fname sessiondir name))
+		 (data ()))
+	    (when (filep ofile)
+	      (reading (sprintf "|grep ^LUSHSLAVE %s" ofile)
+		(setq data (regex-extract 
+			    "LUSHSLAVE[ \t]*([^ \t\n\r]+)[ \t]*([0-9]+)([ \t].*)?"
+			    (read-string) )) ) )
+	    (if data
+		(let* ((slave (new remotelush (car data) (- (val (cadr data))))))
+		  (when :slave:info
+		    (setq :slave:name (basename ofile))
+		    (==> slave exec 
+			 `(progn (chdir ,currentdir) 
+				 (printf "LUSHSLAVE PID=%d\n" (getpid)) ) )
+		    (putp slave 'ofile (open-read ofile))
+		    (setq slaves (nconc1 slaves slave)) 
+		    (setq remaining (cons name remaining)) ) ) ) ) )
+	(setq connections (reverse remaining)) ) )
+    ;; remove invalid connections
+    (each ((name connections))
+      (let* ((ofile (concat-fname sessiondir name)))
+	(if (filep ofile)
+	    (unlink ofile) ) ) ) )
+  (==> this status)
+  (when (not slaves)
+    (error '==> "No available cpu" ()) ) )
+
+
+#? (==> <clustersession> status)
+;; Indicates which slaves are running,
+;; which slaves are waiting, 
+;; and how many jobs are pending
+(demethod ClusterSession status()
+  (let ((l (flatten (all ((slave slaves)) 
+		      (when (not :slave:status) :slave:name) ))))
+    (printf "RUNNING(%d)" (length l)) (tab 18)
+    (each ((i l)) 
+      (when (> (tab) 70) (printf "\n") (tab 18))
+      (printf " %s" i) )
+    (printf "\n") )
+  (let ((l (flatten (all ((slave slaves)) 
+		      (when :slave:status :slave:name) ))))
+    (if (not l)
+	(printf "PENDINGJOBS(%d)\n" (length pending))
+      (printf "WAITING(%d)" (length l))  (tab 18)
+      (each ((i l))
+	(when (> (tab) 70) (printf "\n") (tab 18))
+	(printf " %s" i) )
+      (printf "\n") 
+      (length l) ) ) )
+
+#? (==> <clustersession> output)
+;; Internal.
+(demethod ClusterSession output()
+  (each ((slave slaves))
+    (let ((ofile (getp slave 'ofile))
+	  (ostring (getp slave 'ostring))
+	  (odata ()) )
+      (while (<> "" (setq odata (reading ofile (read-string))))
+	(setq ostring (cons odata ostring)) )
+      (while (<> "" (setq odata (reading ofile (read-string 1))))
+	(setq ostring (cons odata ostring))
+	(when (= (car ostring) "\n")
+	  (when (not silent)
+	    (printf "[%s]\t%s" :slave:name (apply concat (reverse ostring))) )
+	  (setq ostring ()) ) )
+      (putp slave 'ostring ostring) ) ) )
+  
+#? (==> <clustersession> schedule)
+;; Display the pending output of running jobs,
+;; retire completed jobs, attempts to schedule
+;; new jobs, and returns immediately.
+;; Returns a non nil value until there are no more jobs
+;; running or pending.
+(demethod ClusterSession schedule()
+  (==> this output)
+  ;; check unaccounted busy slaves
+  (let ((slavetable (htable 17 t)))
+    (each ((slave slaves))
+      (slavetable slave (not :slave:status)) )
+    (each ((job running))
+      (slavetable :job:slave ()) )
+    (each ((slave (htable-keys slavetable)))
+      (==> slave receive t)
+      (when :slave:status
+	(slavetable slave ()) ) )
+    (setq other (htable-keys slavetable)) )
+  ;; retire terminated jobs
+  (let ((jobsleft ()))
+    (each ((job running))
+      (setq :job:reply (==> :job:slave receive t))
+      (when :job:slave:status
+	(when (not silent)
+	  (printf "[%s]\tFINISH %l\n" :job:slave:name job) )
+	(setq :job:error :job:slave:error)
+	(setq :job:slave ()) )
+      (when :job:slave
+	(setq jobsleft (cons job jobsleft)) ) )
+    (setq running (reverse jobsleft)) )
+  ;; begin pending jobs
+  (when pending
+    (each ((slave slaves))
+      (when (and :slave:status pending)
+	(let ((job (car pending)))
+	  (setq pending (cdr pending))
+	  (when (not silent)
+	    (printf "[%s]\tBEGIN %l\n" :slave:name job) )
+	  (setq :job:slave slave)
+	  (==> slave send :job:request)
+	  (setq running (cons job running)) ) ) ) )
+  (or running pending other) )
+
+#? (==> <clustersession> watch)
+;; Calls <schedule> until no more jobs 
+;; are either running or pending.
+;; This is the main way to see what is going on...
+(demethod ClusterSession watch()
+  (while (==> this schedule) (sleep 0.25))
+  (==> this output) 
+  t )
+
+#? (==> <clustersession> job <request>)
+;; Submits a new job to be scheduled on the cluster.
+;; Argument <request> is a lisp expression to be evaluated
+;; on the remote machine.
+;;.PP
+;; Example
+;;.VP
+;;   (setq myjobs
+;;     (all ((f myfiles))
+;;       (==> session job `(process ,f)) ) )
+;;.PP
+;; Then you can watch what is going on
+;; by typing
+;;.VP
+;;   (==> session watch)
+;;.PP
+;; When the jobs are completed,
+;; the results are available in the job objects.
+;;.VP
+;;   (all ((job myjobs)) :job:reply)
+
+(demethod ClusterSession job(request)
+  (let ((job (new ClusterJob)))
+    (setq :job:request request)
+    (setq pending (nconc1 pending job))
+    (==> this schedule) 
+    job ) )
+
+#? (==> <clustersession> exec <request>)
+;; Completes all running and pending jobs,
+;; and evaluates <request> on all slaves.
+;; This is useful to load programs...
+;;.VP
+;;  (==> session exec `(load "myprogram.lsh"))
+
+(demethod ClusterSession exec(request)
+  (==> this watch)
+  (each ((s slaves))
+    (==> s send request) )
+  (==> this watch) )
+
+#? (==> <clustersession> break [<forceful>])
+;; Deqeueue all pending jobs, 
+;; sends a BREAK to all running slaves
+;; and wait untils everything terminates.
+;; This works by sending an <"INT"> signal with <cluster-kill>,
+;; or a <"QUIT"> signal when argument <forceful> is true.
+;; 
+;; BUGS: Sending a BREAK sometimes desynchronizes the 
+;; remote lush protocol.
+;; Especially when <forceful> is set to true.
+
+(demethod ClusterSession break(&optional forceful)
+  ;; Dequeue jobs
+  (let ((jobs pending))
+    (setq pending ())
+    (each ((job jobs))
+      (setq :job:slave ())
+      (setq :job:error "Dequeued") ) )
+  (==> this schedule)
+  (each ((slave slaves))
+    (when (not :slave:status)
+      (cluster-kill (car :slave:info)
+		    (if forceful "QUIT" "INT")
+		    (caddr :slave:info) ) ) )
+  (==> this watch) )
+
+
+
+#? (resolve-cluster-jobs <expr>)
+;; Recursively scans the expression <expr> and replaces
+;; atoms representing terminated jobs by the 
+;; job results.
+;;.VP 
+;;  (setq j (mapfor (i 0 10) (list i (==> session job `(longstuff ,i)))))
+;;  (==> session watch)
+;;  (setq j (resolve-cluster-jobs j))
+;;.PP
+;; Bug: Does not work on loopy expressions.
+
+(de resolve-cluster-jobs(x)
+  (cond
+   ((isa x ClusterJob)
+    (if :x:slave x (or :x:error :x:reply)))
+   ((consp x)
+    (tree-mapcar resolve-cluster-jobs x) )
+   ((indexp x)
+    (error 'resolve-cluster-jobs "Cannot yet traverse arrays" x) )
+   ((isa x object)
+    (error 'resolve-cluster-jobs "Cannot yet traverse objects" x) )
+   (t
+    x) ) )

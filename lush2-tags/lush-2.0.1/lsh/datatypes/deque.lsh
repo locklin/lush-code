@@ -1,0 +1,211 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Double-ended Queue
+;; The <IDeque> datatype supports adding and removing items from
+;; front or back of the queue. It may be used as a stack or as a
+;; queue or both. This deque implementation supports the iterator
+;; protocol.
+
+(defclass IDeque iterator
+  ((-int-) capacity)
+  ((-int-) first)
+  ((-int-) last)
+  ((-idx1- (-int-)) dir)
+  ((-idx1- (-int-)) dir2) )
+
+(in-namespace (class IDeque)
+(defmacro -emptyp ()
+  `(= (mod (- first 1) capacity) last)
+  )
+(defmacro check-nonempty ()
+  `(when (-emptyp)
+     (error "deque is empty") )
+  )
+)
+
+#? (new IDeque <n>)
+;; Create a new deque with initial capacity for <n> items.
+(defmethod IDeque IDeque (n)
+  (declare (-int-) n)
+  (setq capacity (max 32 n))
+  (setq dir (int-array capacity))
+  (setq dir2 (int-array 0))
+  (setq first 0)
+  (setq last (- capacity 1)) )
+
+;; enlarge deque
+(defmethod IDeque -extend ()
+  (array-extend! dir2 0 (* 2 capacity))
+  (let ((i 0)
+	(j (mod (+ last 1) capacity))
+	(k (if (> first last) first capacity)) )
+    (declare (-int-) i j k)
+    (while (< j k)
+      (dir2 i (dir j))
+      (incr j)
+      (incr i) )
+    (when (<> j first)
+      (setq j 0)
+      (while (< j first)
+	(dir2 i (dir j))
+	(incr j)
+	(incr i) ))
+    (incr capacity capacity)
+    (setq first i  last (- capacity 1))
+    (rotatef dir dir2) )
+  ())
+
+(defmethod IDeque -emptyp ()
+  (-emptyp) )
+
+;; destructive iteration
+(defmethod IDeque -iterate ()
+  this)
+
+#? (==> <IDeque> number-of-items)
+;; Number of items in deque.
+(defmethod IDeque number-of-items ()
+  (let ((last (if (< last first) last (- last capacity))))
+    (- first last 1) ))
+
+#? (==> <IDeque> clear)
+;; Clear deque. After calling this method the deque will be
+;; empty.
+(defmethod IDeque clear ()
+  (setq first 0  last (- capacity 1))
+  ())
+
+#? (==> <IDeque> push <i>)
+;; Add item <i> to front of deque, return <()>.
+(defmethod IDeque push (i)
+  (declare (-int-) i)
+  (dir first i)
+  (setq first (mod (+ first 1) capacity))
+  (when (= first last)
+    (==> this -extend) )
+  ())
+ 
+#? (==> <IDeque push-all <v>)
+;; Add all items in vector <v> to front of deque, return <()>.
+(defmethod IDeque push-all (v)
+  (declare (-idx1- (-int-)) v)
+  (for* (i 0 (length v))
+    (declare (-int-) i)
+    (dir first (v i))
+    (setq first (mod (+ first 1) capacity))
+    (when (= first last)
+      (==> this -extend) ))
+  ())
+
+#? (==> <IDeque> pop)
+;; Remove item from front of deque and return it.
+(defmethod IDeque pop ()
+  (check-nonempty)
+  (setq first (mod (- first 1) capacity))
+  (dir first) )
+
+#? (==> <IDeque> next)
+;; Remove item from front of deque and return it.
+(putmethod IDeque 'next (getmethod IDeque 'pop))
+
+#? (==> <IDeque> peeknext)
+;; Return item at the front of deque.
+(defmethod IDeque peeknext ()
+  (check-nonempty)
+  (dir (mod (- first 1) capacity)) )
+
+#? (==> <IDeque> puhslast <i>)
+;; Add item <i> to back of deque, return <()>.
+(defmethod IDeque pushlast (i)
+  (declare (-int-) i)
+  (dir last i)
+  (setq last (mod (- last 1) capacity))
+  (when (= first last)
+    (==> this -extend) )
+  ())
+  
+#? (==> <IDeque> puhslast-all <v>)
+;; Add all items in vector <i> to back of deque, return <()>.
+(defmethod IDeque pushlast-all (v)
+  (declare (-idx1- (-int-)) v)
+  (for* (i 0 (length v))
+    (declare (-int-) i)
+    (dir last (v i))
+    (setq last (mod (- last 1) capacity))
+    (when (= first last)
+      (==> this -extend) ))
+  ())
+
+#? (==> <IDeque> poplast)
+;; Remove item from back of deque and return it.
+(defmethod IDeque poplast ()
+  (check-nonempty)
+  (setq last (mod (+ last 1) capacity))
+  (dir last) )
+
+#? (==> <IDeque> peeklast)
+;; Return item from back of deque.
+(defmethod IDeque peeklast ()
+  (check-nonempty)
+  (dir (mod (+ last 1) capacity)) )
+
+;(defmethod IDeque -destructor ()
+;  (printf "IDeque says bye\n") )
+
+(dhc-make-class () IDeque)
+
+(defun test-deque ()
+  (let ((dq (new IDeque 20)))
+    (for (i 1 10)
+      (==> dq push i))
+    (pretty dq)
+    (printf "number of items: %d (should be %d)\n" 
+            (==> dq number-of-items) 10)
+            
+    (for (i 11 50)
+      (==> dq push i)
+      (==> dq poplast) )
+    (pretty dq)
+    (printf "number of items: %d (should be %d)\n" 
+            (==> dq number-of-items) 10)
+    (print (==> dq peeknext))
+    (print (==> dq peeklast))
+    (for (i 51 100 2)
+      (==> dq push i)
+      (==> dq pushlast (+ i 1)) )
+    (pretty dq)
+    (printf "number of items: %d (should be %d)\n" 
+            (==> dq number-of-items) 60)
+    
+    (print (take 10 dq))
+    (print (==> dq next))
+    (printf "number of items: %d (should be %d)\n" 
+            (==> dq number-of-items) 49)
+    
+  )) 
+

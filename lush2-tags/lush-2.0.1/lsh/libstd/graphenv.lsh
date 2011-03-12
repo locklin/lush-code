@@ -1,0 +1,756 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;    "graphenv.lsh"    (C) 87,88 Y. Le Cun & L. Y. Bottou
+;;;    Standard graphics environnement
+;;;    Standard window creation function
+
+
+
+(de new-window l
+  (when ~(stringp (lasta l))
+    (setq l (append l '("Lush Graphics"))) )
+  (let ((default-window 
+	  (or gpr-window sun-window mac-window 
+	      wbm-window x11-window ) ))
+    (when (not default-window)
+      (error 'new-window "No default window driver" ()) )
+    (when (and getenv x11-window (<> "" (getenv "DISPLAY")))
+      (setq default-window x11-window) )
+    (apply default-window l) ))
+
+(defmacro new-window! args
+  `(setq :window (new-window ,@args)) )
+
+(de print-window (&optional (w 512) (h 512) destination)
+  (let ((default-window
+	  (or wpr-window ps-window) ))
+    (when (not default-window)
+      (error 'new-window "No default print driver" ()) )
+    (let ((window (if destination
+                      (default-window w h destination)
+                    (default-window w h) )))
+      (when (not window)
+        (error 'new-window "No printing device" ()) )
+      window)))
+
+(autoload "svgwindow" svg-window)
+
+;;; ---------- Color constants and functions
+
+
+
+(defvar color-fg   -1)
+(defvar color-bg   -2)
+(defvar color-gray -3) 
+(defvar color-grey -3)
+
+(de color-shade(c)    
+  ; 0<=c<=1  gray intensity
+  (color_rgb c c c) )
+
+(de color-rgb(r g b)  
+  (color (alloccolor r g b)))
+
+(de colorp ()
+  ;; Get default window (like new-window)
+  (let ((default-window 
+	  (or gpr-window sun-window mac-window 
+	      wbm-window x11-window ps-window) ))
+    (when (and getenv x11-window (<> "" (getenv "DISPLAY")))
+      (setq default-window x11-window) )
+    ;; Test color
+    (cond
+     ;; Windows
+     ((= default-window wbm-window)
+      (and win-depth (> (win-depth) 2)) )
+     ;; X11
+     ((= default-window x11-window)
+      (if x11-depth
+          (> (x11-depth) 2)
+        (<> (reading "| xdpyinfo | grep planes" (read-string "~\e")) "") ) )
+     ;; Other
+     (t
+      () ) ) ) )
+
+(de color-std (x &optional kind)
+  (setq kind (apply color-stdmap kind))
+  (kind (* (- x (int x)) (- (shape kind 0) 1))) )
+
+(de color-stdmap (&optional (kind rainbow) drv)
+  (let* ((cache    '((())))
+	 (color-set ())
+	 (acolor    (lambda (x) (apply alloccolor x))) )
+    (when ~drv  (setq drv (gdriver)))
+    (setq color-set (named (sprintf "%s-%s" (pname kind) drv)))
+    (when ~(cdr (assoc color-set cache))
+          (nconc1 
+           cache
+           (cons color-set
+                 (selectq kind
+		   (shade
+		    ((int-array 64) ()
+		     (mapcar acolor
+			     (mapfor (i 0 1 (/ 63)) (list i i i)) ) ) )
+		   (spread
+		    ((int-array 7) ()
+		     (mapcar acolor
+			     '((0      0.8078 0.8196) ;; darkturquoise
+			       (1      0.6471 0     ) ;; orange
+			       (0.7294 0.3333 0.8275) ;; mediumorchid
+			       (0.1961 0.8039 0.1961) ;; limegreen
+			       (1      0.0784 0.5765) ;; deeppink
+			       (0      0      1     ) ;; blue
+			       (0.6471 0.1647 0.1647) ;; brown
+			       ) ) ) )
+		   (rainbow
+		    (let ((cn ((int-array 64) ()
+			       (let* ((f (lambda (x)
+					   (setq x (/ (acos (cos (* 6.2832 x))) 3.1416))
+					   (sqrt (min 1 (max 0 (- 2 (* 3 x))))) )))
+				 (mapcar acolor
+					 (mapfor (i 0 1 (/ 1 63))
+					    (list
+					     (f (- i (/ 0 6)))
+					     (f (- i (/ 2 6)))
+					     (f (- i (/ 4 6))) )))))))
+		      (defparameter *color-to-colornumber*
+			((htable) 'red (cn 0)  'green (cn 21)  'blue (cn 42)  'magenta (cn 52)  
+			 'cyan (cn 32)  'brown (cn 1) 'yellow (cn 9)  'orange (cn 3)
+			 'black (alloccolor 0 0 0) 
+			 'dark-gray (alloccolor 0.8 0.8 0.8)
+			 'gray (alloccolor 0.5 0.5 0.5) 
+			 'light-gray (alloccolor 0.2 0.2 0.2)
+			 'white (alloccolor 1 1 1)) )
+		      cn))
+		   (t
+		    (error 'color-stdmap 
+			   "unrecognized standard colormap"
+			   kind ) ) ) ) ) )
+    (cdr (assoc color-set cache)) ) )
+
+(de show-stdmap args
+  (let ((window (new-window 10 10 610 510 (sprintf "Standard map %s" (pname sym))))
+        (map ()) )
+    (setq map (apply color-stdmap args))
+    (idx-bloop ((c map) (i (array-range* (length map))))
+      (color (c))
+      (let ((x (* (mod (i) 10) 60))
+	    (y (* (div (i) 10) 60)))
+	(fill-rect x y 40 25)
+	(color color-fg)
+	(draw-text x (+ y 37) (str(c))) ))
+    window))
+
+(autoload "color-tools" distinct-colors)
+
+;;; ---------------------- Linestyles
+
+
+(de linestyle-solid()    
+  (linestyle 0))
+
+(de linestyle-dotted()
+  (linestyle 1))
+
+(de linestyle-dashed() 
+  (linestyle 2))
+
+(de linestyle-dotdashed()
+  (linestyle 3))
+
+
+;;; ---------------------- Text function
+
+
+(de gprintf (x y . l)
+  (draw-text x y (apply sprintf l)) )
+
+(de text-width(s)
+  (let ((r (rect-text 0 0 s)))
+    (if r
+	(nth 2 r)
+      (* (len s) 7) ) ) )
+
+(de text-height(s)
+  (let ((r (rect-text 0 0 s)))
+    (if r
+	(nth 3 r)
+      10 ) ) )
+
+
+;;; ---------------------- Rect and Points functions
+
+;;; rect = (x y w h)
+;;; points = (x1 y1 x2 y2 x3 y3 ... )
+
+(de window-rect()
+  (list 0 0 (xsize) (ysize)) )
+
+(de points-2-rect(points)
+  (let ((xlist ())
+	(ylist ()) )
+    (while points
+      (setq xlist (cons (car points) xlist))
+      (setq ylist (cons (cadr points) ylist))
+      (setq points (cddr points)) )
+    (let ((x (apply min xlist))
+	  (y (apply min ylist)) )
+      (list x y (1+ (- (apply max xlist) x)) (1+ (- (apply max ylist) y))) ) ) )
+
+(de rect-2-points(rect)
+  (let (((x y w h) rect))
+    (list x y (+ x w -1) (+ y h -1)) ) )
+
+
+;;; ---------------------- Hilite
+
+
+(defvar hilite-none   0)
+(defvar hilite-invert 1)
+(defvar hilite-line   2)
+(defvar hilite-rect   3)
+
+
+;;; ---------------------- Plotting
+
+
+;;; plotting objects
+
+(defvar object-size 3)
+
+(de object-nil(x y) ())
+
+(de closed-square(x y)
+  (let ((s (2* object-size)))
+    (fill-rect (- x object-size) (- y object-size) s s) ) )
+
+(de open-square(x y)
+  (gsave (color color-bg) (closed-square x y))
+  (let ((s (2* object-size)))
+    (draw-rect (- x object-size) (- y object-size) s s) ) )
+
+(de closed-circle(x y)            
+  (fill-circle x y object-size) )
+
+(de open-circle(x y)
+  (gsave (color color-bg) (closed-circle x y))
+  (draw-circle x y object-size) )
+
+(de closed-up-triangle(x y)
+  (fill-polygon (- x object-size) (+ y object-size)
+		(+ x object-size) (+ y object-size) 
+		x (- y object-size) ) )
+
+(de open-up-triangle(x y)
+  (gsave (color color-bg) (closed-up-triangle x y))
+  (draw-line (- x object-size) (+ y object-size) 
+	     (+ x object-size) (+ y object-size))
+  (draw-line x (- y object-size) (- x object-size) (+ y object-size))
+  (draw-line x (- y object-size) (+ x object-size) (+ y object-size)) )
+
+(de closed-down-triangle(x y)
+  (fill-polygon (- x object-size) (- y object-size)
+		(+ x object-size) (- y object-size) 
+		x (+ y object-size) ) )
+
+(de open-down-triangle(x y)
+  (gsave (color color-bg) (closed-down-triangle x y))
+  (draw-line (- x object-size) (- y object-size) 
+	     (+ x object-size) (- y object-size))
+  (draw-line x (+ y object-size) (- x object-size) (- y object-size))
+  (draw-line x (+ y object-size) (+ x object-size) (- y object-size)) )
+
+(de straight-cross(x y)
+  (draw-line x (- y object-size) x (+ y object-size))
+  (draw-line (- x object-size) y (+ x object-size) y) )
+
+(de oblique-cross(x y)
+  (draw-line (- x object-size) (- y object-size) 
+	     (+ x object-size) (+ y object-size))
+  (draw-line (- x object-size) (+ y object-size) 
+	     (+ x object-size) (- y object-size)) )
+
+
+;;; plotting functions
+
+(autoload "plotenv"
+  setup-axes new-plot-port copy-plot-port 
+  nice-brect rect-2-ppbrect nice-scale graph-scale
+  graph-xy graph-xyv graph-options )
+
+
+;;; -------------------- drawing matrices
+
+(defun mat-disp (mat &optional (x 0) (y 0))
+  (chk-idx-rankeq2 m)
+  (let* ((mat  (as-double-array mat))
+         (lmin ((idx-inf mat)))
+         (lmax ((idx-sup mat))) )
+    (when (or (infinityp lmin) (infinityp lmax))
+      (error "some matrix values are infinite") )
+    (let* (((m n) (idx-shape mat))
+           (dmin (min m n))
+           (dmax (max m n))
+           (mag 1)
+           (window window) )
+      (while (and (< (* dmin mag) 400) (< (* dmax mag) 1000))
+        (incr mag) )
+      (when (null window)
+        (setq window (new-window (* mag n) (* mag m))) )
+      (gray-draw-matrix x y mat lmin lmax mag mag)
+      window)))
+
+;;; -------------------- drawing matrices
+
+(de save-window-as-ppm(filename)
+  (let* ((ys (ysize))
+	 (xs (xsize))
+	 (m (ubyte-array ys xs 3)) )
+    (rgb-grab-matrix 0 0 m)
+    (let ((f (open-write filename "ppm")))
+      (writing f (printf "P6 %d %d 255\n" xs ys))
+      (export-raw-matrix m f) )
+    filename ) )
+
+;;; ---------------------- Simple event functions
+
+(defclass Timer object
+  timerid
+  call )
+
+(defmethod Timer Timer args
+  (when (and (consp args) (numberp (car args)))
+    (if (not (and (consp (cdr args)) (numberp (cadr args))))
+        (==> this set (car args))
+      (==> this set (car args) (cadr args))
+      (setq args (cdr args)) )
+    (setq args (cdr args)) )
+  (when (and (consp args) (functionp (car args)))
+    (==> this setcall (car args))
+    (setq args (cdr args)) )
+  (when args
+    (error 'timer "Illegal arguments" args) ) )
+      
+(defmethod Timer handle(event)
+  (when call (call this)) )
+
+(defmethod Timer set(delay &optional interval)
+  (when (isa timerid Gptr)
+    (kill-timer timerid)
+    (setq timerid ()) )
+  (when delay
+    (setq timerid (create-timer this delay (or interval 0)))
+    t ) )
+
+(defmethod Timer setcall(c)
+  (setq call c) )
+
+(defclass EventHandler object
+  window
+  handler )
+
+(defmethod EventHandler EventHandler(w)
+  (setq window w)
+  (setq handler (set-event-handler w this)) )
+
+(defmethod EventHandler handle(event)
+  (when handler (==> handler handle event)))
+
+(defmethod EventHandler read-event()
+  (let ((h ()) 
+        (ev (checkevent this)))
+    (while (not ev)
+      (setq h (waitevent))
+      (cond
+       ((= h this)
+        (setq ev (checkevent this)) )
+       ((getmethod (classof h) 'handle)
+        (while (setq ev (checkevent h)) (==> h handle ev))
+        (setq ev ()) )
+       (t
+        (while (checkevent h) ()) ) ) )
+    ev ) )
+
+(defclass EventLock object
+  handler )
+
+(defmethod EventLock EventLock(w)
+  (setq handler (new EventHandler w)) )
+
+(defmethod EventLock read-event()
+  (==> handler read-event) )
+
+(defmethod EventLock check-event()
+  (checkevent handler) )
+
+(defmethod EventLock -destructor()
+  (delete handler) )
+
+(de get-click(&optional rect)
+  (when (null (or window))
+    (error "window not bound"))
+  (let* ((h (new EventLock window))
+	 (event ())
+	 (answer ()) )
+    (while (not answer)
+      (setq event (==> h read-event))
+      (if (= (car event) 'mouse-down)
+	  (let (((type x y) event))
+	    (if (or (not rect) (point-in-rect x y rect))
+		(setq answer (list x y)) ) ) ) )
+    answer ) )
+
+(de get-vector(&optional rect)		
+  (when (null (or window))
+    (error "window not bound"))
+  (let* ((h (new EventLock window))
+	 (event ())
+	 (answer ()) )
+    (while (not answer)
+      (setq event (==> h read-event))
+      (when (member (car event) '(mouse-drag mouse-up))
+	(let (((x1 y1 x2 y2) (cdr event))
+	      (r (points-2-rect (cdr event))) )
+	  (when rect (setq r (collide-rect rect r)))
+	  (when r
+	    (let (((x y w h) r))
+	      (if (<= x1 x2)
+		  (setq x1 x x2 (+ x w -1))
+		(setq x1 (+ x w -1) x2 x) )
+	      (if (<= y1 y2)
+		  (setq y1 y y2 (+ y h -1))
+		(setq y1 (+ y h -1) y2 y) )
+	      (if (= (car event) 'mouse-drag)
+		  (hilite hilite-line x1 y1 x2 y2)
+		(hilite hilite-none x1 y1 x2 y2)
+		(setq answer (list x1 y1 x2 y2)) ) ) ) ) ) )
+    answer ) )
+
+(de get-rect(&optional rect)		
+  (when (null (or window))
+    (error "window not bound"))
+  (let* ((h (new EventLock window))
+	 (event ())
+	 (answer ()) )
+    (while (not answer)
+      (setq event (==> h read-event))
+      (when (member (car event) '(mouse-drag mouse-up))
+	(let ((r (points-2-rect (cdr event))))
+	  (when rect (setq r (collide-rect rect r)))
+	  (when r
+	    (let (((x y w h) r))
+	      (if (= (car event) 'mouse-drag)
+		  (hilite hilite-rect x y (+ x w) (+ y h)) 
+		(hilite hilite-none x y (+ x w) (+ y h))
+		(setq answer r) ) ) ) ) ) ) 
+    answer ) )
+
+
+
+
+
+;;; ---------------------- PostScript
+
+
+(de ps-play-reads()
+  ;; read a parenthezized PS string...
+  (let ((level 0)
+	(char "")
+	(line "") )
+    (read-string 1)
+    (while (>= level 0)
+      (setq line (concat line (read-string "~()\\")))
+      (setq char (skip-char ""))
+      (selectq char
+	("(" 
+	 (incr level 1) 
+	 (setq line (concat line (read-string 1))) )
+	(")"
+	 (incr level -1)
+	 (when (>= level 0)
+	   (setq line (concat line (read-string 1))) ) )
+	("\\"
+	 (read-string 1)
+	 (let ((ch 0)(c ()))
+	   (while (and (setq c (read-string 1)) (>= c "0") (<= c "8"))
+	     (setq ch (+ (* 8 ch) (val c))) )
+	   (when (and (> ch 0) (< ch 256))
+	     (setq line (concat line (chr ch))) )
+	   (setq line (concat line c)) ) ) ) )
+    line ) )
+
+(de ps-play-read8()
+  ;; read a byte in hexadecimal notation.
+  (skip-char)
+  (let ((c1 (read-string 1))
+	(c2 (read-string 1)) 
+	(hex "0123456789ABCDEF") )
+    (setq c1 (str-find (upcase c1) hex))
+    (setq c2 (str-find (upcase c2) hex))
+    (+ (* 16 c1) c2) ) )
+
+(de parse-bounding-box(bb) 
+    (let ((bbx () )
+	  (bby () )
+	  (bbx2 () )
+	  (bby2 () )
+	  (index 1)
+	  (pos () )
+	  (reg-number "(+|-)?[0-9]+(\\.[0-9]*)?") )
+      (setq pos (regex-seek reg-number bb index))
+      (if (not pos)
+	  (error 'ps-plot "Corrupted BoundingBox" filename)
+	(setq bbx (val (str-mid bb (1+ (car pos)) (cadr pos))))
+	(setq index (+ (car pos) (cadr pos))) )
+      (setq pos (regex-seek reg-number bb index))
+      (if (not pos)
+	  (error 'ps-plot "Corrupted BoundingBox" filename)
+	(setq bby (val (str-mid bb (1+ (car pos)) (cadr pos))))
+	(setq index (+ (car pos) (cadr pos))) )
+      (setq pos (regex-seek reg-number bb index))
+      (if (not pos)
+	  (error 'ps-plot "Corrupted BoundingBox" filename)
+	(setq bbx2 (val (str-mid bb (1+ (car pos)) (cadr pos))))
+	(setq index (+ (car pos) (cadr pos))) )
+      (setq pos (regex-seek reg-number bb index))
+      (if (not pos)
+	  (error 'ps-plot "Corrupted BoundingBox" filename)
+	(setq bby2 (val (str-mid bb (1+ (car pos)) (cadr pos)))) )
+      ;;(printf "Bounding Box is <%f %f %f %f> \n" bbx bby bbx2 bby2)
+      (list bbx bby bbx2 bby2) ) )
+
+(de ps-play(filename &optional f x y w h bb)
+  ;; plays a PS file...
+  (setq f (or f eval))
+  (let ((fd (open-read filename "ps"))
+        (char "")
+        (stack ())
+        (poly ())
+        (line "")
+        (bb "")
+        (ok () )
+        (end-of-prolog () )
+        (reg-creator "^%% ?Creator: \\(?(sn|SN|TL|Lush)\\)?.*")
+        (reg-end-prolog "^%%EndProlog$")
+        (reg-bb "^%%BoundingBox:.*" ) )
+    (when ~fd
+      (error 'ps-play "file not found" filename) )
+    (reading fd
+      ;; skip prolog, check whether it's a PSdriver file and
+      ;; try to find its BoundingBox
+      (while (not end-of-prolog)
+        (cond ((regex-match reg-creator line) 
+               (setq ok t) )
+              ((regex-match reg-end-prolog line)
+               (setq end-of-prolog t) )
+              ((regex-match reg-bb line)
+               (setq bb (regex-subst
+                         "(^%%BoundingBox:[ \t]*)(+|-)?([0-9]+)(.*)"
+                         "%1%2%3" line)) ) )
+        (setq line (read-string))
+        (when (and (= (skip-char) "\e") ok (not end-of-prolog))
+          (error 'ps-play "Incorrect PS file" filename)) )
+      (when (not ok)
+        (error 'ps-play "Only plays PS files generated by Lush" filename)) )
+    (reading fd
+      (while (<> (setq char (skip-char)) "\e")
+        (selectq char
+          ("/"
+           (read-string 1)
+           (setq line (read-string "~ \t\n\r")))
+          ("("
+           (setq line (ps-play-reads))
+           (skip-char ")"))
+          ("%"
+           (skip-char "~\n\r")
+           (setq line ()) )
+          (t
+           (setq line (read))))
+        (cond
+         ((not line)
+          () )
+         ((stringp line)
+          (setq stack (cons line stack)))
+         ((numberp line)
+          (setq stack (cons line stack)))
+         (t
+          ;; now interpret PSdriver macros...
+          (selectq line
+            ;; initialisation and print
+            ((showpage ENDPAGE)
+             () )
+            ((INI BEGINPAGE)
+             (f `(cls)) )
+            ;; set font
+            (SF
+             (let (((name size . aux) stack))
+               (when (> size 0)
+                 (setq name (concat name "-" (str size))) )
+               (f `(font ,name)) ) )
+            ;; linestyle
+	    (L0 
+	     (f `(linestyle 0)) )
+	    (L1
+	     (f `(linestyle 1)) )
+	    (L2 
+	     (f `(linestyle 2)) )
+	    (L3
+	     (f `(linestyle 3)) )
+            ;; set color
+            (SCFG
+             (f `(color color-fg)) )
+            (SCBG
+             (f `(color color-bg)) )
+            (SCGRAY
+             (f `(color color-gray)) )
+            (SC
+             (let (((b g r . aux) stack))
+               (f `(color-rgb ,r ,g ,b)) ) )
+            ;; set clip
+            (CLIP
+             (let (((y x h w . aux) stack))
+               (if (and (0= h) (0= w))
+                   (f `(clip ()))
+                 (f `(clip ,x ,y ,w ,h)) ) ) )
+            ;; draw line
+            (DL
+             (let (((y1 x1 y0 x0 . aux) stack))
+               (f `(draw-line ,x0 ,y0 ,x1 ,y1)) ) )
+            ;; draw rect
+            (DR
+             (let (((y x h w . aux) stack))
+               (f `(draw-rect ,x ,y ,w ,h)) ) )
+            ;; fill rect
+            (FR
+             (let (((y x h w . aux) stack))
+               (f `(fill-rect ,x ,y ,w ,h)) ) )
+            ;; draw circle
+            (DC
+             (let (((r y x . aux) stack))
+               (f `(draw-circle ,x ,y ,r)) ) )
+            ;; fill circle
+            (FC
+             (let (((r y x . aux) stack))
+               (f `(fill-circle ,x ,y ,r)) ) )
+            ;; draw arc
+            (DA
+             (let (((to from r y x . aux) stack))
+               (f `(draw-arc ,x ,y ,r ,from ,to)) ) )
+            ;; fill arc
+            (FA
+             (let (((to from r y x . aux) stack))
+               (f `(fill-arc ,x ,y ,r ,from ,to)) ) )
+            ;; draw text
+            (DT
+             (let (((y x text . aux) stack))
+               (f `(draw-text ,x ,y ,text)) ) )
+            ;; polygons
+            (PSTART
+             (setq poly ())
+             (let (((y x . aux) stack))
+               (setq poly (nconc poly (list x y))) ) )
+            (FP
+             (let (((y x . aux) stack))
+               (setq poly (nconc poly (list x y))) ) )
+            (PEND
+             (let (((y x . aux) stack))
+               (setq poly (nconc poly (list x y))) )
+             (f `(fill-polygon ,@poly)) )
+            ;; hinton_map
+            (HM
+             (let (((y x ap ap h w . aux) stack))
+               (setq poly ())
+               (for (i 0 (1- h))
+                    (for (j 0 (1- w))
+                         (let ((x (ps-play-read8)))
+                           (when (> x 127)
+                             (incr x -256) )
+                           (setq poly (nconc1 poly x)) ) ) )
+               (skip-char "~\n\r")
+               (f `(draw-list ,x ,y (quote ,poly) ,w ,ap ,ap ,ap) ) ) )
+            ;; pixel_map
+            (PM
+             (let (((y x apy apx h w . aux) stack))
+               (setq poly (ubyte-array h w))
+               (for (i 0 (1- h))
+                    (for (j 0 (1- w))
+                         (poly i j (ps-play-read8)) ) )
+               (skip-char "~\n\r")
+               (f `(rgb-draw-matrix ,x ,y ,poly ,apx ,apy)) ) )
+            ;; color_pixel_map
+            (CPM
+             (let (((y x apy apx b h w . aux) stack))
+               (setq poly (ubyte-array h w 3))
+               (for (i 0 (1- h))
+                    (for (j 0 (1- w))
+			 (for (c 0 2)
+			      (poly i j c (ps-play-read8)) ) ) )
+               (skip-char "~\n\r")
+               (f `(rgb-draw-matrix ,x ,y ,poly ,apx ,apy)) ) )
+            ;; unrecognized stuff.
+            (t
+             (printf "ps-play: Unrecognized gspecial '%l %l'\n" stack line) ))
+            (setq stack ()) )) ) )
+    bb ) )
+
+
+
+
+;;----------- Driver features
+
+(df gdriver-feature (feat &optional opt &rest r)
+    (let* ((f (selectq feat
+		(clip-to-text (selectq (gdriver)
+				("X11" x11-clip-to-text)
+				("WBM" wbm-clip-to-text) ))
+		(text-to-clip (selectq (gdriver)
+				("X11" x11-text-to-clip)
+				("WBM" wbm-text-to-clip) ))
+		(fontname     (selectq (gdriver)
+				("X11" x11-fontname)
+				("WBM" ()) ))
+		(configure    (selectq (gdriver)
+				("X11" x11-configure)
+				("WBM" wbm-configure) ))
+		(hide         (selectq (gdriver)
+				("X11" x11-iconify)
+				("WBM" ()) ))
+		(lookup-color (selectq (gdriver)
+				("X11" x11-lookup-color)
+				("WBM" ()) ))
+		(depth        (selectq (gdriver)
+				("X11" x11-depth)
+				("WBM" wbm-depth) ))
+		(t (error "unknown feature" feat)) )))
+      (when (not f)
+        (selectq opt
+          (strict ())
+          (loose (setq f (lambda args ())))
+          (t (error 'gdriver-feature "Feature not available" feat))) )
+      f ) )
+

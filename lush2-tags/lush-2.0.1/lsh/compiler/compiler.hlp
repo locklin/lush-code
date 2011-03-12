@@ -1,0 +1,1039 @@
+
+#? **** CLush: Compiled Lush
+{<author> Leon Bottou, Yann LeCun}
+
+[under construction]
+
+One of Lush's most interesting features is its Lisp-to-C compiler
+and the ability to freely intermix Lisp and C code in a single function.
+Unlike many other interpreted/compiled languages, and contrary to
+many well established principles of language design, the two dialects 
+that the Lush interpreter and the Lush compiler implement are two
+very different languages, though they share the same syntax.
+The compiled dialect is strongly typed, lexically bound, and has
+no garbage collector, while the interpreted dialect has loose typing,
+is dynamically bound, and is garbage collected. 
+
+In fact, the Lush compiler is not designed to replace the interpreter, 
+but rather to complement it. Lush applications are generally a combination 
+of compiled and interpreted code. The compiled part is often itself a 
+combination of Lush and C code. The compiled code will generally 
+contain the "expensive" and heavily numerical parts of an application, 
+where performance is the main requirement, while the interpreted part 
+will contain the high-level logic, the user interface, the memory 
+management, etc, where flexibility is more important than pure 
+performance.
+
+
+#? *** A Simple Example
+
+[under construction]
+
+Numerous examples of compiled functions with and without
+in-line C-code are available in the libraries (in directories
+lsh and packages). 
+
+#? *** Using libload and dhc-make
+
+Lush contains convenient functions that implement
+capabilities similar to make.  Properly using these
+functions ensures that the Lush interpreter loads
+the most recent version of the functions as necessary, 
+and that all functions are judiciously recompiled when
+functions they call have been redefined.
+
+Users should just follow the following four rules:
+{<ul>
+ {<li> Every Lush file should use the function <libload>
+   to load all required files (i.e. files defining functions
+   or classes required by this lush file).}
+ {<li> The compilation of Lush functions and classes should
+   be performed by inserting one or several calls
+   to <dhc-make> at the end of the lush file that 
+   defines those functions and classes.}
+ {<li> Users should identify the main Lush file of the project,
+   that is to say the file that directly or indirectly loads
+   all the Lush files of your project.  This is usually the file
+   with the higher level functions.  It is sometimes convenient
+   to create a Lush file for the sole purpose of being
+   the main Lush file.}
+ {<li> When you want to load the most recent version of all 
+   your project files, you just need to load the main Lush
+   file using either <libload> or the macro-character <|^L|>.
+   This will load all modified files, reload all files that depends
+   on modified files, and recompile all functions and classes that
+   need recompilation, either because they have been modified,
+   or because they depend on modified classes or functions.}
+}
+{<see> (libload <libname> [<opt>])}
+{<see> (dhc-make <fname> <fspec1>...<fspecN>)}
+
+#? *** Compilation Functions
+
+#? ** High-Level Compilation Functions
+
+#? (dhc-make <fname> <fspec1>...<fspecN>)
+{<type> DM}
+{<location> lsh/compiler/dh-compile.lsh}
+
+Function <dhc-make> controls the compilation of classes 
+and functions specified by the <fspecs> arguments.
+
+Although this function can be used from the command line, it 
+mostly is used within a Lush file to control the compilation of 
+classes and functions defined in this file.  We will assume now
+that <dhc-make> is invoked from a Lush file.
+
+The first argument <fname> is either the empty list or a string representing
+filenames of the C and object files output by the Lush compiler.  
+{<ul>
+ {<li> Passing the empty list instructs <dhc-make> to generate a suitable
+  filename derived from the name of the Lush file containing the <dhc-make>
+  command.  Generated C files will be created in a subdirectory <"C">
+  of the directory contaning the Lush file.  Generated object files
+  will be created in a subdirectory of <"C"> whose platform dependent
+  name is provided by expression <(getconf "host")>.}
+ {<li> Passing a string specifies a particular base name.  Function <dhc-make> adds
+  the suitable suffixes for C files or object files, replacing any other suffix
+  possibly present in <fname>.  Argument <fname> may specify a directory for
+  both the C and object files.  Otherwise the C and object files
+  will be generated as explained above.}
+}
+Each of the following arguments <fspec> is either a function name or a list
+composed of a class name and method names.   The following example, for
+instance, first compiles function <foo>, then compiles methods <rectangle> 
+and <area> of class <rectangle>, and finally compiles function <bar>.
+{<code>
+        (dhc-make () 
+                  foo 
+                  (rectangle rectangle area)
+                  bar )
+</code>}
+The order of the <fspec> arguments is important because no function, class or
+method can be compiled before compiling all functions, classes, or methods it
+references.  This order can be different from the function and class
+definition order in the Lush file.
+
+Before starting the compilation, function <dhc-make> tests 
+whether the target files already exist and are up-to-date:
+
+The C file will be generated if any of the 
+following conditions is true.
+{<ul>
+ {<li> no such C file exists, }
+ {<li> the Lush file is more recent than the existing C file, }
+ {<li> the Lush file depends on another Lush file which is more recent than the
+  existing C file.  These dependencies are those collected by 
+  function <libload>.}
+}
+
+The object file will be generated if any of the 
+following conditions is true:
+{<ul>
+ {<li> no such object file exists, }
+ {<li> the C file is more recent than the existing object file,
+  as happen, for instance, when the C file was regenerated 
+  during this invocation of <dhc-make>.}
+}
+
+Finally <dhc-make> performs a <mod-load> of the object file
+and checks that the compiled functions are now executable.
+It returns the name of the object file.
+
+Note: Function <dhc-make> can also be invoked from the command line.  
+When this is the case, it always generates fresh C and object files, 
+and derives their names from the last <fspec> argument.
+
+
+#? (dhc-make-class <fname> <classname1> [<classname2> ...])
+{<type> DM}
+{<location> lsh/compiler/dh-compile.lsh}
+{<see> (dhc-make <fname> <fspec1>...<fspecN>)}
+Compile each class with all its methods in the order in which the
+methods were defined.
+
+
+#? (dhc-make-with-libs <fname> <libs> <fspec1>...<fspecN>)
+{<type> DM}
+{<location> lsh/compiler/dh-compile.lsh}
+{<see> (dhc-make <fname> <fspec1>...<fspecN>)}
+
+This function is similar to <dhc-make> but takes 
+an additional argument <libs> to handle cases where the compiled 
+functions depend on external C libraries. 
+This argument can take two values:
+{<ul>
+ {<li> Argument <libs> may be a list of library names.
+  Function <dhc-make-with-libs> works like <dhc-make> 
+  but also loads all the specified libraries after
+  loading the compiled functions, and before checking
+  whether the compiled functions are executable.}
+ {<li> Argument <libs> may be the symbol <t>.
+  Function <dhc-make-with-libs> then works like <dhc-make> but does not cause an
+  error if the compiled functions are not executable because they contain
+  unresolved references.  The caller is expected to load additional modules
+  using <mod-load> in order to satisfy these unresolved references.}
+}
+
+#? (dhc-make-with-c++ <fname> <libs> <fspec1>...<fspecN>)
+.TYPE DM
+.FILE lsh/compiler/dh-compile.lsh
+.SEE (dhc-make <fname> <fspec1>...<fspecN>)
+.SEE (cinline <format> <var1>...<varn>)
+
+This function is similar to <dhc-make-with-libs> but uses the C++ 
+compiler instead of the C compiler to generate the object file.
+This makes no difference except that one can use C++ constructs 
+when inlining C code with <cinline>.  This is particularly handy
+when interfacing external C++ libraries.
+
+
+#? (dhc-make-all <fname> <fspeclist> <libs>)
+.TYPE DE
+.FILE lsh/compiler/dh-compile.lsh
+.SEE (dhc-make <fname> <fspec1>...<fspecN>)
+.SEE (dhc-make-with-libs <fname> <libs> <fspec1>...<fspecN>)
+
+This is the elementary function called by <dhc-make>, 
+<dhc-make-with-libs> and <dhc-make-with-c++>.
+
+Argument <fspeclist> is a list containing the <fspec1>...<fspecN> arguments of
+function <dhc-make>.  Argument <fname> is similar to the <fname> argument of
+functions <dhc-make> or <dhc-make-with-libs>.  Argument <libs> is similar to
+the <libs> argument of function <dhc-make-with-libs>.
+
+#? **  Customizing the Behavior of dhc-make
+The following variables control the behavior of <dhc-make>.
+
+#? dhc-make-force
+.TYPE VAR
+.FILE lsh/compiler/dh-compile.lsh
+
+Setting this variable to a non null value
+forces the recompilation of all files,
+even when they have not been modified.
+
+The following example, for instance,
+forces the compilation of functions <foo> and <bar>.
+.CODE
+(let ((dhc-make-force t))
+   (dhc-make () (foo bar)) )
+
+#? dhc-make-lushflags
+.TYPE VAR
+.FILE lsh/compiler/dh-compile.lsh
+
+This variable contains a string containing the 
+compilation flags for invoking the C or C++ compiler.  
+The following example, for instance,
+insert additional options <"-w -DMMX"> for the C compiler:
+.CODE
+ (let ((dhc-make-lushflags (concat dhc-make-lushflags " -w -DMMX")))
+    (dhc-make () (foo bar)) )
+.PP
+The initial value is derived from the Makefile variable <LUSHFLAGS>.
+It might reference other predefined varibales prefixed with character <$>.
+These variables are expanded using <dhc-substitute-env>.
+
+#? dhc-make-command
+.TYPE VAR
+.FILE lsh/compiler/dh-compile.lsh
+
+This variable is a string containing the command for generating object files.  
+Variables prefixed with <$> will be expanded using <dhc-substitute-env>.
+Four additional variables are defined:
+.IP <$LUSHFLAGS>
+Compilation flags defined by <dhc-make-lushflags> 
+or by the optional argument of <dhc-make-o>.
+.IP <$INCS>
+Flags specifying all the include directories specified by
+variable <c-include-path>. With this option, the C compiler
+can locate all include files that can be located using 
+function <find-c-include>.
+.IP <$SRC>
+The pathname of the source file.
+.IP <$OBJ>
+The pathname of the object file.
+.SEE (find-c-include <name>)
+
+
+#? dhc-make-overrides
+.TYPE VAR
+.FILE lsh/compiler/dh-compile.lsh
+
+This variable contains an a-list of additional variable definitions
+for interpreting <dhc-make-lushflags> and <dhc-make-commands>.
+Definitions provided in <dhc-make-overrides> take precedence
+over the defaults provided by Lush.
+
+The following example, for instance, invokes
+the C++ compiler instead of the C compiler:
+.CODE
+(let ((dhc-make-overrides 
+         (cons (cons "CC" (dhc-substitute-env "$CXX")) dhc-make-overrides) ))
+  (dhc-make () (foo bar)) )
+
+
+#? ** Querying File Dependencies
+
+The following functions can be used to determine
+whether <dhc-make> will invoke the compiler.
+
+#? (dhc-make-get-dependencies [<lushfile>])
+
+Returns the list of Lush files on which file <lushfile> is dependent.
+These are the files directly or indirectly loaded using <libload>.
+When argument <lushfile> is not provided, <file-being-loaded> 
+is assumed.
+
+#? (dhc-make-test <fname>)
+
+This function tests whether a subsequent invocation of <dhc-make> with the
+same <fname> argument needs to generate a new version of the C file.  When
+there is no need to generate a new C file, function <dhc-make-test> makes sure
+that the object file is up-to-date and returns the name of the object file.
+Otherwise it returns the empty list.
+
+This function is useful to avoid processing long files
+when we are only interested in precompiled functions.
+See <"packages/lapack/lapack-s.lsh"> for an example.
+
+
+#? ** Low-Level Compilation Functions
+Most users will rarely use the functions described in this section,
+but they come in handy in certain cases.
+
+#? (dhc-make-o-filename <src>)
+Returns a suitable filename for the object file
+
+#? (dhc-generate-c <filename> '([<func1> [<funcn>]]))
+Translate lisp functions and classes <func1>...<funcn> to C code
+and produces a source file suitable for a file named <filename>.
+Argument <filename> should be provided without the ".c" suffix
+and must be a legal C identifier as it is used for the initialization
+function in the C code.
+
+#? (dhc-substitute-env <str> [<htable>])
+Returns a copy of string <str> after substituting all
+environment variables.  Substitution values are
+searched in <htable> when available, then passed
+to functions <getconf> and <getenv>.
+
+#? (dhc-make-c <fname> <fsymblist>)
+Compile functions or classes <fsymblist>
+into a new source file <fname>.
+Argument <fname> must be provided without
+the <".c"> suffix.
+
+#? (dhc-make-o <src-file> [<obj-file> [<lushflags>]])
+Compile C source file <src-file> generated by the 
+dh compiler into object file <obj-file>.
+Argument <lushflags> is an optional string 
+containing compiler options.
+
+#? (dhc-make-c-maybe <snname> <fname> <fsymblist>)
+Compile functions or classes <fsymblist>
+producing the file <fname>.  Argument <fname> 
+must be provided without the suffix ".c".
+Compilation will only occur if the existing <fname>
+was created before the file <snname> or any file
+loaded from <snname> using <libload>.
+
+#? (dhc-make-o-maybe <src-file> [<obj-file> [<cflags>]])
+Same as <dhc-make-o> but only recompiles if
+source file is newer than object file
+
+
+#? *** What is Compilable, and What is Not
+[under construction]
+
+There is a simple test to determine if a particular
+function is compilable or not: (compilablep <func>).
+This may returns <'yes>, <'maybe> or <()>. The value 
+<'maybe> is returned when the argument is a macro
+whose compilability cannot be determined without
+expansion.
+
+Basically the kinds of things that can be compiled 
+by the CLush compiler are the kinds of things that
+you expect to be compilable in a "conventional" 
+language like C. All the really "Lispish" stuff like 
+<eval>, <lambda>, etc is not compilable (those things
+don't exist in C). 
+
+There are three types of things that cannot be compiled:
+.LI
+ Things that construct functions and code at run time
+ (e.g. <lambda>, <mlambda>), or things that evaluate
+ dynamically generated code (e.g. <eval>).
+.LI
+ Things that allocate dynamic structures that would
+ require garbage collection 
+.LI
+ Things that call non-compilable functions.
+.P
+
+#? (compilablep <function>)
+Tests if a function is compilable.  Returns t, maybe or ().  The value
+<'maybe> is returned when the argument is a macro whose compilability
+cannot be determined without expansion.
+
+
+#? *** CLush Specific Functions and Constructs
+
+#? ** Numerical Type Declarations
+
+#? (declare (-double-) <var1> ... <varn>)
+declare double precision floating point variables.
+
+#? (declare (-float-) <var1> ... <varn>)
+declare single precision floating point variables.
+
+#? (declare (-int-) <var1> ... <varn>)
+declare integer variables (32 bits).
+
+#? (declare (-short-) <var1> ... <varn>)
+declare short  integer variables (16 bits).
+
+#? (declare (-byte-) <var1> ... <varn>)
+declare signed byte variables (8 bits).
+
+#? (declare (-ubyte-) <var1> ... <varn>)
+declare unsigned byte variables (8 bits).
+
+#? (declare (-str-) <var1>...<varN>)
+declare character string variables.
+
+#? (declare (-gptr- [<spec>]) <var1> ... <varn>)
+This declares the symbols <var1>...<varn> as C-style pointers.
+In the absence of a <spec> the pointers will be equivalent to
+universal pointers (<void *>). An optional string <spec> can
+be specified to explicitely declare the C type of the pointer.
+Examples:
+.CODE
+  (declare (-gptr- "int *") integer-pointer)
+  (declare (-gptr- "FILE *") file-pointer)
+
+  (cpheader "<my_header_file.h>")
+  (declare (-gptr- "MyObjectType *") myobject-pointer)
+.P
+Argument <spec> may also be a list containing a Lisp
+class name. This will define the type of the variable as
+a pointer to the C version of that class.
+Example:
+.CODE
+  (declare (-gptr- (myclass)) myclass-pointer)
+.P
+The C type of <myclass-pointer> will be <"struct CClass_myclass *">.
+
+#? (declare (-obj- (<class>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+being instances of the class <class>.
+
+#? (declare (-idx0- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx0 (scalars) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? (declare (-idx1- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx1 (vector) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? (declare (-idx2- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx2 (matrix) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? (declare (-idx3- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx3 (3-tensor) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? (declare (-idx4- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx4 (4-tensor) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? (declare (-idx5- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx5 (5-tensor) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? (declare (-idx6- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx6 (6-tensor) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? (declare (-idx7- (<type>)) <var1>...<varN>)
+This syntax declares the variables  <var1>...<varN> as
+idx7 (7-tensor) of type <type>, where <type> is one 
+of the Lush numerical types (-ubyte-, -double-, -float-, etc).
+
+#? ** Class Declaration and Compilation
+
+Classes can be compiled with some restrictions. In short:
+{<ul>
+ {<li> The types of all the slots of a compiled class must be declared.}
+ {<li> It is preferrable to include the constructor in the list
+       of methods being compiled.}
+ {<li> The constructor of a compiled class {<b> must} set initialize
+       all the slots with an object of the type declared in the class
+       definition.}
+ {<li> The parent class of a compiled class must be compiled
+       prior to the class}
+ {<li> Methods defined in a subclass that overload a method
+       of the parent class must have the {<b> same prototype}
+       as the method they overload (i.e. the same arguments
+       with the same type, the same return type, and the same 
+       temporary variables).}
+}
+
+Here is an example of compiled class declaration syntax
+(taken from <packages/gblearning/modules.lsh>):
+{<code>
+(defclass mle-cost sn-module
+  ((-obj- (logadd-layer)) logadder)
+  ((-obj- (idx1-ddstate)) logadded-dist)
+  ((-idx1- (-int-)) label2classindex))
+</code>}
+Essentially, the type of each slot must be declared 
+using the same syntax as parameters of a function.
+
+Compiling a class with <dhc-make> and its variants is done
+by passing a list whose first element is the class name
+and the remaining elements are the methods to be compiled.
+Here is an example:
+{<code>
+  (dhc-make ()
+    (sn-module)
+    (mle-cost mle-cost fprop bprop bbprop))
+</code>}
+It is not required to compile all the methods of a class.
+A compiled class can have a mixture of compiled and 
+non-compiled methods.
+
+#? ** Type Conversions
+Functions are provided to convert objects from one type to another.
+Their behavior is somewhat different in interpreted and compiled mode.
+
+#? * Numerical Type Conversions
+
+These functions convert one numerical or object type to another. 
+In compiled mode, they behave like C casts. In interpreted mode,
+the argument is casted to the corresponding C type, and then 
+converted back to a <double> since <double> is the only numerical
+type manipulated by the interpreter.
+
+#? (to-bool <arg>)
+Convert <arg> to a boolean.
+
+#? (to-char <arg>).
+Convert <arg> to a char value.
+
+#? (to-uchar <arg>).
+Convert <arg> to an unsigned char value.
+
+#? (to-int <arg>)
+Convert <arg> to an integer.
+
+#? (to-float <arg>)
+Convert <arg> into a single precision floating point number.
+
+#? (to-double <arg>)
+Convert <arg> into a double precision floating point number.
+
+#? * Other Type-casts 
+
+#? (to-gptr <arg>)
+{<see> to-mptr}
+Yield address of C-representation of <arg>.
+
+This is not really a type conversion but yields the address of an
+object and is the counterpart to C's &-operator. It is generally
+unsafe to use the address returned by <to-gptr> for accessing an
+object because the interpreter is unaware of this reference and
+will reclaim any managed objects that appears unreferenced. 
+
+
+#? (to-mptr <arg>)
+{<see> to-gptr}
+Yield address of C-representation of managed object <arg>
+
+This is similar to the <to-gptr> function but only succeeds if
+<arg> is a managed object. In addition, the result of <to-mptr>
+is an <MPTR> object, which is considered a reference by the
+interpreter. This means that <arg> will not be reclaimed as long
+as the <MPTR> exists.
+
+
+#? (to-str <mptr>)
+Create a STRING object from managed address <mptr>.
+
+
+#? (to-idx <p> [<rank> [<elem-type>]])
+Cast pointer <p> into an index. Optionally, check index rank and element type.
+
+
+#? (to-obj [<class>] <arg>)
+Interpret <arg> as an object of class <class>. Argument <arg> must
+be a gptr or an object. Argument <class> is mandatory in compiled
+mode. 
+{<ul>
+ {<li> When argument <arg> is an object, this function checks that
+ the object class is a subclass of <class> and returns the unmodified
+ object.}
+ {<li> The compiler converts the GPTR into a pointer to an object 
+  of the specified class. Class membership is checked at run time.}
+}
+
+
+
+#? ** Inline C Code
+CLush allows to freely intermix Lisp and C code within
+a single function. This can be done in several ways,
+the simplest of which is the "hash-brace" construct.
+
+#? * Hash-Brace Construct
+
+The macro character pair <#{ c-code #}> allows easy embedding of C 
+code inside a Lisp function. The embedded C code is delimited 
+by <#{> and <#}>. Functions containing hash-brace segments 
+cannot be executed by the interpreter and must be compiled.
+
+Any C code can be written within a hash-brace construct.
+Lisp expressions and variables can be evaluated and refered
+to in the Lisp code by preceding them with a dollar sign.
+{<ul>
+ {<li> <$legal-c-identifier> refers to the lisp variable of the same name}
+ {<li> <${legal-lisp-variable}> refers to the lisp variable (the braces
+   are required if the lisp variable name is not a legal C name,
+   e.g. if it contains dashes).}
+ {<li> <$(lisp expression)> refers to the result returned be the lisp 
+  expression.}
+}
+
+Examples:
+{<code>
+ [under construction]
+ [insert juicy hash-brace examples here]
+</code>}
+The hash-brace macro calls the lower-level compiler macro <cinline>.
+
+Example:
+{<code>
+ (de add-to-integer( intg arg )
+   ((-int-) intg arg)
+   #{ $intg += $arg; #}
+   intg )
+</code>}
+
+expands to:
+{<code>
+ (de add-to-integer (intg arg)
+   ((-int-) intg arg)
+   (cinline " %s += %s; " intg arg)
+   intg )
+</code>}
+
+{<see> (cinline <format> [<arg1> [<arg2> ... [<argn>]]]) }
+
+
+#? * C Directives and Macros
+
+#? (cpheader <s1> <s2> ...)
+This directive can be used to insert lines
+in the C file generated by the CLush compiler.
+This is primarily used to include header files
+or to define macros. Examples:
+{<code>
+  (cpheader "#include <stdio.h>")
+</code>}
+
+The lines are inserted at the beginning of the
+C file, before all the Lush header files.
+
+#? (cheader <s1> <s2> ...)
+Same as <cpheader>, but inserts the lines
+after the Lush header files instead of before.
+
+#? (cinit <s1> <s2> ...)
+Insert lines of code in the module's init function.
+This may be used to initialize module-global variables.
+
+#? (cinline <format> <var1>...<varn>)
+Insert C code in the C file generated by the Lush compiler. The
+<format> is an printf-like format where instances of "%s" are
+substituted by the C name of the lisp variables <var1>...<varn>.
+Example:
+{<code>
+  ;; set element 2 of v to x.
+  (de choucroute (v x) 
+    (declare (-idx1- (-int-)) v) 
+    (declare (-double-) x)
+    (cinline "(IDX_PTR(%s,int))[2] = (int)(%s);" v x) ())
+</code>}
+The C function generated by the Lush compiler looks like this:
+{<pre>
+    extern_c char
+    C_choucroute (struct idx *L1_v, real L1_x)
+    {
+      TRACE_PUSH ("C_choucroute");
+      {
+        (IDX_PTR (L1_v, int))[2] = (int) (L1_x);
+        TRACE_POP ("C_choucroute");
+        return 0;
+      }
+    }
+</pre>}
+Function <cinline> is rarely used, as most users will 
+prefer to use the hash-brace construct.
+
+#? * Locating Include Files and Libraries
+
+#? c-include-path
+.TYPE VAR
+.FILE sysenv.lsh, stdenv.lsh
+.SEE (find-c-include <name>)
+.SEE dhc-make-command
+
+This variable is initialized by the Lush startup code and contains a list of
+directories containing potential include files.  Include files along this path
+can be searched using function <find-c-include>.
+
+Furthermore, the compilation command, defined by variable <dhc-make-command>,
+typically uses the macro <"$INCS"> to specify all these directories to the
+compiler. Appending directories to <c-include-path> is then the easiest
+way to handle additional directories for include files.
+
+#? shared-library-path
+.TYPE VAR
+.FILE sysenv.lsh, stdenv.lsh
+.SEE (find-shared-library <name> [<extlist>])
+
+This variable is initialized by the Lush startup code and contains a list of
+directories containing potential shared libraries. Function <find-shared-library> 
+should be used to locate libraries located along this path, 
+or in standard system locations.
+
+
+#? static-library-path
+.TYPE VAR
+.FILE sysenv.lsh, stdenv.lsh
+.SEE (find-static-library <name> [<extlist>])
+
+This variable is initialized by the Lush startup code and contains a list of
+directories containing potential shared libraries.  
+Function <find-static-library> should be used to locate libraries located
+along this path.
+
+#? (find-c-include <name>)
+{<type> DE}
+{<location> sysenv.lsh}
+Returns the pathname of a C include file named <name>.
+Include files are searched in the directories
+specified by variable <c-include-path>
+which is initialized by <"lushenv.lsh">.
+{<ex> (find-c-include "stdio.h")}
+
+Here is an example of how to use <find-c-include> to 
+precompute an include file:
+{<code>
+  (defconstant qqq (sprintf "#include \"%s\"" (find-c-include "stdio.h")))
+  = qqq
+  ? (de asd () (cpheader #.qqq) #{ printf("asd\n") #} ())
+  = asd
+  ? (dhc-make "junk" asd)
+</code>}
+
+
+
+#? ** Compiler Directives
+
+#? (ifcompiled <compiled-expr> <interpreted-expr>)
+This allows to execute different codes in interpreted
+mode and in compiled mode. 
+
+#? (ifdef <symb> <expr1> <expr2>)
+[under construction]
+
+#? #@<expr>
+{<type> DMC}
+Expressions prefixed by #@ are not evaluated
+unless <dhc-debug-flag> is set to <t>.
+This can be used to insert debugging code.
+
+#? dhc-debug-flag
+{<type> VAR}
+Turns on execution of code prefixed with |#@|
+
+#? ** Dynamic Allocation in Compiled Code
+[under construction]
+This will eventually become a tutorial on how to
+use the <pool> class defined in <libstd/dynamic.lsh>.
+The reference manual for <dynamic.lsh> is available 
+in the standard library section of this manual.
+.SEE Dynamic Allocation with Pools.
+
+#? *** Interfacing Existing C/C++/FORTRAN Libraries to Lush
+[under construction]
+
+#? ** Interfacing C/C++ Code
+
+Using Lush's inline C capability and the <mod-load> function,
+interfacing existing C code to Lush is extremely simple.
+
+#? * Calling C/C++ functions defined in a library
+
+If the code is available as a dynamic library <libasd.so>
+or a static library <libasd.a>, one merely needs to 
+include the library and the header file in a call
+to <dhc-make-with-libs>. Let's assume that our library
+defines a function <cblah> that we would like to call
+in a Lush function <blah>. Here is an example:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+
+ (dhc-make-with-libs ()
+   '("libasd.so")
+   #{ #include <asd.h> #}
+   blah)
+</code>}
+This will only work if <libasd.so> is in the system's library search path,
+and if <asd.h> is in the standard header file search path.
+
+Let's say that <libasd.so> and <asd.h> were placed in the same directory
+as our Lush file, we can do the following:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+
+ (libload "libc/make")
+ (let* ((current-dir (dirname file-being-loaded))
+        (dhc-make-lushflags (concat dhc-make-lushflags (sprintf " -I%s" current-dir))))
+
+   (dhc-make-with-libs ()
+     (list (concat current-dir "/libpng.so"))
+     #{ #include "asd.h" #}
+   blah))
+</code>}
+
+
+
+#? * Calling C/C++ functions defined in an object file
+
+If the code is available as an object file </wherever/asd.o>, one
+merely needs to do <(mod-load "/wherever/asd.o")>.  The C functions
+and global variables defined in <asd.o> are automatically visible from
+inline C code in Lush.
+
+Here is a simple example of a Lush file that dynamically loads <asd.o>
+and defines a function <blah> that calls the C function <cblah>
+defined in <asd.o>:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+ 
+ (mod-load "/wherever/asd.o")
+ (dhc-make ()
+   #{ double cblah(double); #}
+   blah)
+</code>}    
+
+Rather than explicitely defining the C prototype of <cblah> in
+the <dhc-make> call, one may prefer to include the header file <asd.h> 
+that corresponds to <asd.o>. This can be done easily:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+ 
+ (mod-load "/wherever/asd.o")
+ (dhc-make ()
+   #{ #include "/wherever/asd.h" #}
+   blah)
+</code>}    
+
+Naturally, rather than refering to absolute paths, we may prefer
+to put <asd.o> and <asd.h> in the same directory as our Lush file.
+In that case, we need to tell Lush and the C compiler where to find
+everything:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+ 
+ (let* ((current-dir (dirname file-being-loaded))
+        (dhc-make-lushflags (concat dhc-make-lushflags (sprintf " -I%s" current-dir))))
+   (mod-load (concat current-dir "/asd.o"))
+   (dhc-make ()
+     #{ #include "asd.h" #}
+   blah))
+</code>}
+Redefining <dhc-make-lushflags> like this will add the directory where the
+Lush file resides to the path in which the C compiler looks for header files.
+
+Naturally, all of this assumes that <asd.o> has previously been compiled.
+Lush conveniently provides a "make"-like utility to compile C files
+and specify dependencies called <LushMake> (see the corresponding documentation. 
+Using <LushMake> as shown below will automatically generate
+<asd.o> when the Lush file is loaded, whenever <asd.c> or <asd.h> 
+have been modified:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+
+ (libload "libc/make")
+ (let* ((current-dir (dirname file-being-loaded))
+        (dhc-make-lushflags (concat dhc-make-lushflags (sprintf " -I%s" current-dir)))
+        (lm (new LushMake current-dir)))
+   ;; compile asd.c to asd.o and mod-load asd.o
+   (==> lm setflags (sprintf "-I%s" current-dir))
+   (==> lm rule "asd.o"  '("asd.c" "asd.h"))
+   (==> lm load)
+
+   (dhc-make ()
+     #{ #include "asd.h" #}
+   blah))
+</code>}
+
+Perhaps the functions defined in <asd.o> call functions from 
+a library that must be linked-in, say <libpng.so>. These 
+libraries can easily be added into using <dhc-make-with-libs> 
+instead of <dhc-make>:
+{<code>
+ (de blah (x) ((-double-) x) (to-double #{ cblah($x) #}))
+
+ (libload "libc/make")
+ (let* ((current-dir (dirname file-being-loaded))
+        (dhc-make-lushflags (concat dhc-make-lushflags (sprintf " -I%s" current-dir)))
+        (lm (new LushMake current-dir)))
+   ;; compile asd.c to asd.o and mod-load asd.o
+   (==> lm setflags (sprintf "-I%s" current-dir))
+   (==> lm rule "asd.o"  '("asd.c" "asd.h"))
+   (==> lm load)
+
+   (dhc-make-with-libs ()
+     '("libpng.so")
+     #{ #include "asd.h" #}
+   blah))
+</code>}
+
+If our code in <asd.c> is written in C++ instead of C,
+we must replace the call to <dhc-make-with-libs> with
+<dhc-make-with-c++>.
+
+
+
+#? ** Interfacing FORTRAN Code
+
+[This section is under construction]
+
+Basically, this works like calling C code.
+FORTRAN libraries can be loaded 
+
+
+
+#? *** << make-standalone.lsh
+
+
+
+#? *** More on the Lisp-C Interface
+[under construction]
+
+#? ** DH: the Compiled Function Class
+
+#? (dhinfo-t <dhfunc>)
+[under construction]
+
+#? (dhinfo-c <dhfunc>)
+[under construction]
+
+
+
+#? ** Classinfo
+
+#? (classinfo-t <class>)
+[under construction]
+.P
+Similar to the SN3 function but takes a class
+as argument instead of now obsolete cclass objects.
+
+#? (classinfo-c <class>)
+[under construction]
+.P
+Similar to the SN3 function but takes a class
+as argument instead of now obsolete cclass objects.
+
+#? ** Controling the Lisp/C Interface
+
+#? (lisp-c-map [<arg>])
+.PP
+This function displays the internal data structure of the interface between
+Lisp and Compiled code. The LISP-C interface maitains a sorted avl tree of
+all objects currently allocated. This table relates the address of the
+compiled structure, the type of the structure, the way the object was
+created and possibly the Lisp representation of this object.
+.IP
+Calling this function without arguments returns the 
+number of entries in the table.
+.IP
+Calling this function with <arg> equal to <0> or <()>
+prints all the table.  You better check the size
+of the table before doing this.
+.IP
+Calling this function with <arg> equal to <1>
+prints all the table entries that needs to be synchronized
+before calling a compiled function.
+.IP
+Calling this function with <arg> equal to <2>
+prints all the table entries that represent temporary objects.
+.IP
+Calling this function with <arg> equal to an object, a storage,
+an index, or a strng prints the table entry (if any) associated
+with this object.
+.PP
+You can redirect the output of this command using function <writing>.
+
+Example:
+.CODE
+? (lisp-c-map)
+= 12
+? (lisp-c-map ())
+  =                L 0x1e29b0 str              "A string for class c1"
+ <                 L 0x2f10a0 idx              ::INDEX1:<3>
+<                  L 0x2f12e0 obj:c2           ::c2:2f1330
+ =                 L 0x2f1370 idx              ::INDEX1:<3>
+=                   L 0x2f1c98 srg              ::FSTORAGE:static@2fe820
+  =                L 0x2f1e18 str              "A second string for class c1"
+ =                 L 0x2ff050 str              "A third string for class c1"
+  =                L 0x2ff068 obj:c1           ::c1:2f1b08
+=                  L 0x2ff080 idx              ::INDEX1:<3>
+  =                L 0x2ff0a8 srg              ::FSTORAGE:static@2fe82c
+ =                 L 0x31cb20 obj:c1           ::c1:1e2980
+  =                L 0x31cb38 srg              ::FSTORAGE:ram@1e2968:<3>
+= 12
+The first character describes the position of the entry in the balanced
+tree.  The second character tells wether the object was created by LISP (L)
+or by compiled code (C) (e.g. Pool). Each entry displays then the address
+of the compiled object and the lisp representation of the object. An object
+created by C code may have no lisp representation until it is referenced by
+a represented object or until the proper GPTR is casted by function <obj>.
+
+#? (lisp-c-dont-track-cside)
+Restrict the synchronization of the lisp and C data structures
+in a way similar to previous versions of the system (SN3.x).
+C objects managed by compiled code will appear as gptrs
+in Lisp code instead of being translated into equivalent
+Lisp objects.
+
+#? (lisp-c-no-warnings <..exprs..>)
+Evaluates expressions <..exprs..> like function <progn>
+without displaying the usual diagnostic about the 
+synchronization of the lisp and C data structures.
+        
+
+
+#? *** Compiler Internals
+
+#? ** << dh-compile.lsh
+#? ** << dh-util.lsh
+#? ** << dh-macro.lsh
+
+#? ** u-nodes
+[under construction]
+
+

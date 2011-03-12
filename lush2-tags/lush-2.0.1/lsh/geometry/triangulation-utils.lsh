@@ -1,0 +1,377 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmacro number-of-triangles () `(length triangles))
+(defalias nth-triangle identity)
+
+#? (other-triangle <e> <tr>))
+;; Triangle sharing edge <e> with triangle <tr>.
+;; Return -1 when there is not other triangle.
+(defmacro other-triangle (e tr)
+  (let (((tr0 tr1 ee ttr) (gensyms 4)))
+    `(to-int
+      (let ((,ee ,e) (,ttr ,tr))
+        (declare (-int-) ,ee ,ttr)
+        (let ((,tr0 (edge-triangles ,ee 0)) (,tr1 (edge-triangles ,ee 1)))
+          (declare (-int-) ,tr0 ,tr1)
+          (if (<> ,tr0 ,ttr) (progn (assert (= ,tr1 ,ttr)) ,tr0) ,tr1) )))
+    ))
+
+
+#? (point-interior-p <p>)
+;; True if point <p> is an interior point.
+;;
+;; This macro refers to the variable 'edge-trianglees'.
+(defmacro point-interior-p (e)
+  (error "not implemented"))
+
+
+#? (edge-interior-p <e>)
+;; True if edge <e> is an interior edge.
+;;
+;; This macro refers to the variable 'edge-trianglees'.
+(defmacro edge-interior-p (e)
+  `(let ((e ,e))
+     (and (<> -1 (edge-triangles e 0)) (<> -1 (edge-triangles e 1))) )
+  )
+
+
+#? (with-triangles (<tr0> <tr1> .. <tri> ..) . <body>)
+;; Establish an environment with the following bindings for each triangle <tri>:
+;; triangle-<tri> - triangle <tri> (a three element vector)
+;; <tri>.p0  - point 0 of triangle <tri>
+;; <tri>.p1  - point 1 of triangle <tri>
+;; <tri>.p2  - point 2 of triangle <tri>
+;; <tri>.e0  - triangle edge opposite point <tri>.p0
+;; <tri>.e1  - triangle edge opposite point <tri>.p1
+;; <tri>.e2  - triangle edge opposite point <tri>.p2
+;;
+;; This macro refers to variable 'triangle'.
+(defmacro with-triangles (trs . body)
+  (when (not (consp trs)) (error "with-triangles: syntax error"))
+  (let ((decls ()) (tdecls ()))
+    (dolist (tr (reverse trs))
+      (when (not (symbolp tr))
+	(error "triangle arguments must be variables (symbols)"))
+      (setq decls (cons (list (symbol-concat tr '|.e2|)
+			      `(triangle-edges ,tr 2) )
+			decls))
+      (setq decls (cons (list (symbol-concat tr '|.e1|)
+			      `(triangle-edges ,tr 1) )
+			decls))
+      (setq decls (cons (list (symbol-concat tr '|.e0|)
+			      `(triangle-edges ,tr 0) )
+			decls))
+      (setq decls (cons (list (symbol-concat tr '.p2)
+			      (list (symbol-concat 'triangle- tr) 2) )
+			decls))
+      (setq decls (cons (list (symbol-concat tr '.p1)
+			      (list (symbol-concat 'triangle- tr) 1) )
+			decls))
+      (setq decls (cons (list (symbol-concat tr '.p0)
+			      (list (symbol-concat 'triangle- tr) 0) )
+			decls))
+      (setq decls (cons (list (symbol-concat 'triangle- tr)
+			      `(idx-select triangles 0 ,tr) )
+			decls))
+      (setq tdecls (cons (symbol-concat tr '.p0) 
+			 (cons (symbol-concat tr '.p1) 
+			       (cons (symbol-concat tr '.p2) tdecls) )))
+      (setq tdecls (cons (symbol-concat tr '|.e0|) 
+			 (cons (symbol-concat tr '|.e1|) 
+			       (cons (symbol-concat tr '|.e2|) tdecls) ))))
+    `(let* (,@decls)
+       (declare (-int-) ,@tdecls)
+       ,@body)
+    ))
+
+
+#? (triangle-interior-p <tr>)
+;; True if triangle <tr> is an interior triangle.
+;;
+;; This macro refers to the variable 'triangle-edges'.
+(defmacro triangle-interior-p (tr)
+  `(let ((tr ,tr))
+     (with-triangles (tr)
+       (and (<> (edge-triangles tr.e0 0) -1)
+            (<> (edge-triangles tr.e0 1) -1)
+            (<> (edge-triangles tr.e1 0) -1)
+            (<> (edge-triangles tr.e1 1) -1)
+            (<> (edge-triangles tr.e2 0) -1)
+            (<> (edge-triangles tr.e2 1) -1) )))
+  )
+
+
+#? (triangle-midpoint <tr> [<result>])
+;; Return midpoint of triangle <tr> as vector
+(defmacro triangle-midpoint (tr &optional result)
+  (let ((args `((tr ,tr))))
+    (when (null result) (setq result `(double-array 2)))
+    (when (not (symbolp result))
+      (setq args (cons `(result ,result) args) result 'result) )
+    `(let (,@args)
+       (declare (-int-) tr)
+       (with-triangles (tr)
+         (with-points (tr.p0 tr.p1 tr.p2)
+           (,result 0 (/ (+ tr.p0x tr.p1x tr.p2x) 3))
+           (,result 1 (/ (+ tr.p0y tr.p1y tr.p2y) 3)) ))
+       ,result)
+    ))
+
+#? (do-triangles <tr> . <body>)
+;; Loop over all triangles.
+;; The loop may be broken by setting <continue> to false.
+(defmacro do-triangles (tr . body)
+  (when (not (symbolp tr)) (error "do-triangles: syntax error"))
+  (let ((i (gensym)) (nt (gensym)))
+    `(let ((,i 0) (,nt (number-of-triangles)) (continue t))
+       (declare (-int-) ,i ,nt)
+       (declare (-bool-) continue)
+       (while (and continue (< ,i ,nt))
+	 (let ((,tr (nth-triangle ,i)))
+	   (declare (-int-) ,tr)
+	   ,@body)
+	 (incr ,i)))
+    ))
+
+#? (do-triangles* <tr> . <body>)
+;; Expands to {<code> (do-triangles <tr> (with-triangles (<tr>) . <body>))}
+(defmacro do-triangles* (tr . body)
+  `(do-triangles ,tr (with-triangles (,tr) ,@body))
+  )
+
+
+#? (do-interior-edges <e> . body)
+;; Loop over all interior edges.
+;; The loop may be broken by setting <continue> to false.
+(defmacro do-interior-edges (e . body)
+  `(do-edges ,e
+     (when (edge-interior-p ,e)
+       ,@body))
+  )
+
+#? (do-interior-edges* <e> . body)
+;; Expands to {<code> (do-interior-edges <e> (with-edges (<e>) . <body>))}
+(defmacro do-interior-edges* (e . body)
+  `(do-interior-edges ,e
+     (with-edges (,e)
+       ,@body))
+  )
+
+
+#?  (triangle-next-edge <tr> <e>)
+;; Return the edge that follows edge <e> in triangle <tr> in counterclockwise
+;; order. Raise an error if <e> is not an edge in triangle <tr>.
+;;
+;; This macro refers to variable 'triangle-edges'.
+(defmacro triangle-next-edge (tr e)
+  (let (((tre0 tre1 tre2) (gensyms 3)))
+    `(let* ((tr ,tr) (e ,e)
+	    (,tre0 (triangle-edges tr 0))
+	    (,tre1 (triangle-edges tr 1))
+	    (,tre2 (triangle-edges tr 2)) )
+       (declare (-int-) tr e ,tre0 ,tre1 ,tre2)
+       (cond 
+	((= e ,tre0) ,tre1)
+	((= e ,tre1) ,tre2)
+	((= e ,tre2) ,tre0)
+	(t (error "triangle-next-edge: not an edge in triangle") -1) ))
+    ))
+
+
+#?  (triangle-next-point <tr> <p>)
+;; Return the point that follows point <p> in triangle <tr> in counterclockwise
+;; order. Raise an error if <p> is not a point in triangle <tr>.
+;;
+;; This macro refers to variable 'triangles'.
+(defmacro triangle-next-point (tr p)
+  (let (((trp0 trp1 trp2) (gensyms 3)))
+    `(let* ((tr ,tr) (p ,p)
+	    (,trp0 (triangles tr 0))
+	    (,trp1 (triangles tr 1))
+	    (,trp2 (triangles tr 2)) )
+       (declare (-int-) tr p ,trp0 ,trp1 ,trp2)
+       (cond 
+	((= p ,trp0) ,trp1)
+	((= p ,trp1) ,trp2)
+	((= p ,trp2) ,trp0)
+	(t (error "triangle-next-point: not a point in triangle") -1) ))
+    ))
+
+
+#? (do-edges-around <e> (point <p>) . body)
+;; Loop in counterclockwise order over all edges incident on point <p>.
+
+#? (do-edges-around <e> (edge <f>) . body)
+;; Loop in counterclockwise order over all edges incident on edge <e>.
+
+#? (do-edges-around <e> (triangle <tr>) . body)
+;; Loop in counterclockwise order over all edges incident on triangle <tr>.
+
+(defmacro do-edges-around (e (what i) . body)
+  (when (not (symbolp e)) (error "do-edges-around: syntax error"))
+  (selectq what
+    ('point 
+     (let (((p ee e0 e1 e2 efinal tr) (gensyms 7)))
+       `(let* ((continue t) (,p ,i) (,e0 (p-edge ,p)) (,e1 -1) (,e2 -1) (,efinal (p-edge ,p)))
+	  (declare (-int-) ,p ,e0 ,e1 ,e2 ,efinal)
+	  (declare (-bool-) continue)
+	  (do-while (and continue (<> ,e0 ,efinal))
+	    (let ((,e ,e0) (,ee ,e0))
+	      (declare (-int-) ,e ,ee)
+	      (prog1 (progn ,@body)
+		(let ((,tr (if (= ,p (edges ,e0 0)) (edge-triangles ,e0 0) (edge-triangles ,e0 1))))
+		  (declare (-int-) ,tr)
+		  (if (<> ,tr -1)
+		      (progn 
+			(setq ,e0 (triangle-edges ,tr 0)
+			      ,e1 (triangle-edges ,tr 1)
+			      ,e2 (triangle-edges ,tr 2))
+			(while (<> ,ee ,e1) (rotatef ,e0 ,e1 ,e2)) )
+		    ;; exterior -> rewind
+		    (setq ,tr (if (= ,p (edges ,e0 0)) (edge-triangles ,e0 1) (edge-triangles ,e0 0)))
+		    (setq ,e0 (triangle-next-edge ,tr ,e0))
+		    (while (edge-interior-p ,e0)
+		      (setq ,tr (if (= (edge-triangles ,e0 0) ,tr) (edge-triangles ,e0 1) (edge-triangles ,e0 0)))
+		      (setq ,e0 (triangle-next-edge ,tr ,e0)) )))))))
+       ))
+    ('edge
+     (let (((ee p0 p1 _) (gensyms 4)))
+       `(let* ((,ee ,i)
+	       (,p0 (edges ,ee 0))
+	       (,p1 (edges ,ee 1)) )
+	  (declare (-int-) ,ee ,p0 ,p1)
+	  (p-edge (edges ,ee 0) ,ee) 
+	  (p-edge (edges ,ee 1) ,ee)
+	  (for (,_ 1 2)
+	    (do-edges-around ,e (point ,p0) (if (= ,ee ,e) (rotatef ,p0 ,p1) ,@body)) ))
+       ))
+    ('triangle 
+     (let (((tr p0 p1 p2 _) (gensyms 5)))
+       `(let* ((,tr ,i)
+	       (,p0 (triangles ,tr 0))
+	       (,p1 (triangles ,tr 1))
+	       (,p2 (triangles ,tr 2)) )
+	  (declare (-int-) ,tr ,p0 ,p1 ,p2)
+	  (p-edge ,p0 (triangle-edges ,tr 2))
+	  (p-edge ,p1 (triangle-edges ,tr 0))
+	  (p-edge ,p2 (triangle-edges ,tr 1))
+	  (for (,_ 1 3)
+	    (do-edges-around ,e (point ,p0) (if (= ,e (p-edge ,p0)) (rotatef ,p0 ,p2 ,p1) ,@body)) ))
+       ))
+    (t (error "do-edges-around: syntax error"))))
+
+#? (do-border (<p> <e> <tr> [<p-start>]) . body)
+;; Loop over non-interior points and edges in counterclockwise order.
+;; For each triple (<p> <e> <tr>), edge <e> belongs to triangle <tr> 
+;; and connects point <p> with the border point following in 
+;; counterclockwise order. If <p-start> is given, border traversal
+;; starts with point <p-start>.
+;;
+;; The loop may be broken by setting <continue> to false.
+;; This macro refers to variables 'border-point', 
+(defmacro do-border (args . body)
+  (when (> (length args) 4) (error "do-border: syntax error"))
+  (when (< (length args) 3) (error "do-border: syntax error"))
+  (when (not (symbolp (car args))) (error "do-border: syntax error"))
+  (when (not (symbolp (cadr args))) (error "do-border: syntax error"))
+  (when (not (symbolp (caddr args))) (error "do-border: syntax error"))
+  (let (((ip ie itr ipstart) (gensyms 4)))
+    `(let ((,ip ,(or (nth 3 args) -1)) (,ie -1) (,itr -1) (,ipstart -1) (continue t))
+       ;; search for the right edge and triangle
+       (declare (-int-) ,ip ,ie ,itr ,ipstart)
+       (declare (-bool-) continue)
+       (if (= ,ip -1)
+	   (do-edges* e
+	     (when (not (edge-interior-p e))
+	       (setq ,ie e  continue ())
+	       (with-edge-quad e
+		 (if (<> e.trl -1) 
+		     (setq ,itr e.trl ,ip (triangle-next-point e.trl e.pl))
+		   (error "do-border: internal consistency error") ))))
+	 (error "option <p-start> not implemented"))
+       (setq ,ipstart ,ip)
+       (do-while (and continue (<> ,ipstart ,ip))
+	 (let ((,(car args) ,ip) (,(cadr args) ,ie) (,(caddr args) ,itr))
+	   (declare (-int-) ,(car args) ,(cadr args) ,(caddr args)) 
+	   ,@body)
+	 (setq ,ip (if (= (edges ,ie 0) ,ip) (edges ,ie 1) (edges ,ie 0)))
+	 (setq ,ie (triangle-next-edge ,itr ,ie))
+	 (while (edge-interior-p ,ie)
+	   (setq ,itr (if (= (edge-triangles ,ie 0) ,itr) (edge-triangles ,ie 1) (edge-triangles ,ie 0)))
+	   (setq ,ie (triangle-next-edge ,itr ,ie)) )))
+    ))
+
+
+#? (with-edge-quad <e> . <body>)
+;; Establish an environment with the following bindings:
+;; edge    - edge <e> (a two element vector)
+;; <e>.p0  - point 0 of edge <e>
+;; <e>.p1  - point 1 of edge <e>
+;; <e>.pl  - point left of edge <e> (-1 when non-existent)
+;; <e>.pr  - point right of edge <e> (-1 when non-existent)
+;; <e>.trl - triangle left of edge <e> (-1 when non-existent)
+;; <e>.trr - triangle right of edge <e> (-1 when non-existent)
+;; 
+;; Note: When <e>.trl exists, its points in counterclockwise order
+;        are <e>.p0, <e>.p1, <e>.pl.
+;;       When <e>.trr exists, its points in counterclockwise order
+;;       are <e>.p1, <e>.p0, <e>.pr.
+;;
+;; This macro refers to the variables 'edges', and 'edge-triangles'.
+(defmacro with-edge-quad (e . body)
+  (when (not (symbolp e))
+    (error "edge argument must be a variable (a symbol)") )
+  (let ((e0 (symbol-concat e '.p0))
+	(e1 (symbol-concat e '.p1)) 
+	(el (symbol-concat e '.pl))
+	(er (symbol-concat e '.pr))
+ 	(etrl (symbol-concat e '.trl))
+ 	(etrr (symbol-concat e '.trr))
+	((trl.p trl.q trr.p trr.q) (gensyms 4)) )
+    `(let* ((edge (idx-select edges 0 ,e))
+	    (,e0 (edge 0))
+	    (,e1 (edge 1))
+	    (,etrl (edge-triangles ,e 0))
+	    (,etrr (edge-triangles ,e 1))
+	    (,el (if (= ,etrl -1) -1 (triangles ,etrl 0)))
+	    (,trl.p (if (= ,etrl -1) -1 (triangles ,etrl 1)))
+	    (,trl.q (if (= ,etrl -1) -1 (triangles ,etrl 2)))
+	    (,er (if (= ,etrr -1) -1 (triangles ,etrr 0)))
+	    (,trr.p (if (= ,etrr -1) -1 (triangles ,etrr 1)))
+	    (,trr.q (if (= ,etrr -1) -1 (triangles ,etrr 2))) )
+       (declare (-int-) ,e0 ,e1 ,el ,er ,etrl ,etrr ,trl.p ,trl.q ,trr.p ,trr.q)
+       (when (<> ,el -1)
+	 (while (<> ,trl.q ,e1) (rotatef ,el ,trl.p ,trl.q)) )
+       (when (<> ,er -1)
+	 (while (<> ,trr.p ,e1) (rotatef ,er ,trr.p ,trr.q)) )
+       ,@body)
+    ))
+
+(defun array-mean (m)
+  (let ((n (idx-shape m 0)))
+    (/ (array-sum m 0) n) ))

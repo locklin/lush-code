@@ -1,0 +1,80 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "threads")
+(libload "libimage/image-io")
+(libload "libimage/rgbaimage")
+
+(defparameter *thumbnail-add-rate* 12)
+
+(defclass ThumbnailPanel Grid
+  nc w h     ; #colums width height
+  ifiles     ; image file iterator
+  btn-cb     ; button callback
+  thr)       ; add-thumbnail thread
+
+  
+(defmethod ThumbnailPanel add-thumbnail ()
+  (if (emptyp ifiles)
+      ()
+    (let ((imf (next ifiles))
+          (img ())
+          (tn  ()) )
+      (on-error (when thr (kill-thread thr))
+        (setq img (image-read-rgba imf))
+        (setq tn (rgbaim-resize img w h 0)) )
+      (putp tn 'image-file imf)
+      (==> this insert (new ImageButton tn tn tn btn-cb))
+      t)))
+
+#? (new ThumbnailPanel <image-files> <callback> &optional <ncols> <width> <height>)
+;; Read each image file, create a thumbnail and associate 
+;; the filename with it. When pressing the thumbnail button,
+;; <callback> is called with the image filename as argument.
+;;
+;; <Image-files> is an iterable object whose iterator yields
+;; image file names, <ncols> is the number of columns in the
+;; panel (default: 10), and <width>x<height> is the maximum
+;; thumbnail size (default: 100x100).
+;;
+(defmethod ThumbnailPanel ThumbnailPanel (files cb &optional (ncols 10) (width 100) (height 100))
+  (setq ifiles (iterate files))
+  (setq nc ncols  w width  h height)
+  (setq btn-cb (eval `(lambda (btn) 
+                        (let ((fn (getp :btn:up-image 'image-file)))
+                          (when fn (,cb fn)) ))
+                     ))
+  (setq thr ())
+  (prog1 (==> this Grid ncols)
+    ;; fill the first row
+    (let ((i ncols))
+      (while (and (not (emptyp ifiles)) (> i 0))
+        (==> this add-thumbnail)
+        (decr i) ))
+    (setq thr (new-thread this 'add-thumbnail *thumbnail-add-rate*)) ))
+
+

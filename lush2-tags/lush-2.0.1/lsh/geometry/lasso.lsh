@@ -1,0 +1,372 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(libload "opencv/opencv")
+(libload "libidx/idx-ubyte")
+(libload "libidx/idx-sort")
+(libload "libidx/idx-convol")
+(libload "polygon")
+
+(when (null distance-transform)
+
+(defun distance-transform (img)
+  (declare (-idx2- (-ubyte-)) img)
+
+  (let* ((distt (float-array (shape img 0) (shape img 1)))
+         (cvimg (make-cvMat img))
+         (cvdistt (make-cvMat distt)) )
+
+    (cvDistTransform :cvimg:p :cvdistt:p @CV_DIST_L2 5 () ())
+    distt))
+)
+
+(in-namespace -lasso-
+
+(defun refine (c dmap max-edge-length search-order)
+  (declare (-obj- (SimplePolygon)) c)
+  (declare (-idx2- (-float-)) dmap)
+  (declare (-double-) max-edge-length search-order)
+
+  (let* ((els (==> c edges-length))
+         (long-edges (int-array (length els)))
+         (np (length :c:points))
+         (ne (length :c:edges))
+         (nle 0)
+         (dl (* max-edge-length .6666)) )
+    (declare (-int-) np ne nle)
+
+    (unprotect
+
+    ;; find long edges
+    (for* (i 0 ne)
+      (when (> (els i) max-edge-length)
+        (long-edges nle i)
+        (incr nle) ))
+    (idx-trim! long-edges 0 0 nle)
+    
+    ;; make space for new points and edges
+    (protect
+     (idx-extend! :c:points 0 nle)
+     (idx-extend! :c:edges 0 nle)
+     )
+    (for* (i 0 nle)
+      (let* ((le (long-edges i))                   ; long edge
+             (el (els le))                         ; edge length
+             (e0 (:c:edges le 0))
+             (e1 (:c:edges le 1))
+             (e0xy (idx-select* :c:points e0))
+             (e1xy (idx-select* :c:points e1))
+             (tvxy (tangent-vector (idx-sub e1xy e0xy)))
+             (pxy (idx-add e0xy (scale-vector tvxy (/ el 2))))
+             (p (+ np i))                          ; index of new point
+             (p0 (round (pxy 0)))
+             (p1 (round (pxy 1)))
+             (mind (dmap p1 p0)) )
+        (declare (-int-) i le e0 e1 p p0 p1)
+
+        ;; find minimum distance point along edge
+        (when (> search-order 0)
+          (for (l dl (/ el 2) dl)
+            (let* ((pxy (idx-add e0xy (scale-vector tvxy l)))
+                   (p0* (round (pxy 0)))
+                   (p1* (round (pxy 1))) )
+              (declare (-int-) p0* p1*)
+              (when (< (dmap p1* p0*) mind)
+                (setq mind (dmap p1* p0*)  p0 p0*  p1 p1*) )))
+          (for (l (+ dl dl) (/ el 2) dl)
+            (let* ((pxy (idx-sub e1xy (scale-vector tvxy l)))
+                   (p0* (round (pxy 0)))
+                   (p1* (round (pxy 1))) )
+              (declare (-int-) p0* p1*)
+              (when (< (dmap p1* p0*) mind)
+                (setq mind (dmap p1* p0*)  p0 p0*  p1 p1*) ))))
+        (when (< search-order 0)
+          (for (l dl (/ el 2) dl)
+            (let* ((pxy (idx-sub e1xy (scale-vector tvxy l)))
+                   (p0* (round (pxy 0)))
+                   (p1* (round (pxy 1))) )
+              (declare (-int-) p0* p1*)
+              (when (< (dmap p1* p0*) mind)
+                 (setq mind (dmap p1* p0*)  p0 p0*  p1 p1*) )))
+          (for (l (+ dl dl) (/ el 2) dl)
+            (let* ((pxy (idx-add e0xy (scale-vector tvxy l)))
+                   (p0* (round (pxy 0)))
+                   (p1* (round (pxy 1))) )
+              (declare (-int-) p0* p1*)
+              (when (< (dmap p1* p0*) mind)
+                (setq mind (dmap p1* p0*)  p0 p0*  p1 p1*) ))))
+        
+        (:c:points p 0 p0)
+        (:c:points p 1 p1)
+        (:c:edges le 1 p)
+        (:c:edges (+ ne i) 0 p)
+        (:c:edges (+ ne i) 1 e1)
+        ))
+    ) ; unprotect
+    c))
+
+
+(defun move-points (c ps dmap omap)
+  (declare (-obj- (SimplePolygon)) c)
+  (declare (-idx1- (-int-)) ps)
+  (declare (-idx2- (-float-)) dmap)
+  (declare (-idx2- (-ubyte-)) omap)
+
+  (unprotect
+
+  (let ((urdwin (idx-trim* dmap 3 3))
+        (urowin (idx-trim* omap 3 3)) )
+
+    (for* (i 0 (length ps))
+      (declare (-int-) i)
+      (let* ((p (ps i))
+             (p0 #{ (int) round($(:c:points p 0)) #})
+             (p1 #{ (int) round($(:c:points p 1)) #})
+             (d 0)
+             (dwin (copy-index urdwin))
+             (owin (copy-index urowin))
+             (vx (- (:c:points (:c:edges p 1) 0) (:c:points (:c:edges p 0) 0)))
+             (vy (- (:c:points (:c:edges p 1) 1) (:c:points (:c:edges p 0) 1)))
+             (v (.v vx vy))
+             (nxi 0) (nyi 0)
+             (movedp t) )
+        (declare (-int-) p p0 p1 nxi nyi)
+        (declare (-bool-) movedp)
+
+        ;; make two jumps in normal direction
+        (normal-vector! v)
+        (setq d (dmap p1 p0))
+        (setq p0 #{ (int) floor($(+ p0 (* (v 0) d))) #})
+        (setq p1 #{ (int) floor($(+ p1 (* (v 1) d))) #})
+        (setq d (dmap p1 p0))
+        (when (> d 0)
+          (setq p0 #{ (int) floor($(+ p0 (* (v 0) d))) #})
+          (setq p1 #{ (int) floor($(+ p1 (* (v 1) d))) #}) )
+        (idx-shift! dwin 0 (- p1 1)) (idx-shift! dwin 1 (- p0 1))
+        (idx-shift! owin 0 (- p1 1)) (idx-shift! owin 1 (- p0 1))
+
+        ;; now move step by step
+        (quantize-direction! v)
+        (setq nxi #{ (int) round($(- (v 1))) #})
+        (setq nyi #{ (int) round($(v 0)) #})
+
+        (while movedp
+          (setq movedp ())
+
+          ;; make a step normal to edge (as long it is not uphill)
+          (when (and (> (dwin 1 1) 0)
+                     (<= (dwin (+ nyi 1) (+ nxi 1)) (dwin 1 1))
+                     (= (owin (+ nyi 1) (+ nxi 1)) 0) )
+            (idx-shift! dwin 0 nyi) (idx-shift! dwin 1 nxi)
+            (idx-shift! owin 0 nyi) (idx-shift! owin 1 nxi)
+            (incr p1 nyi) (incr p0 nxi) (setq movedp t) )
+
+          ;; make a step towards the object
+          (when (> (dwin 1 1) 0)
+            (let ((mind ((idx-inf dwin))))
+              (when (< mind (dwin 1 1))
+                (cond
+                 ((and (= (dwin 0 0) mind) (= (owin 0 0) 0))
+                  (idx-shift! dwin 0 -1) (idx-shift! dwin 1 -1)
+                  (idx-shift! owin 0 -1) (idx-shift! owin 1 -1)
+                  (decr p1) (decr p0) (setq movedp t) )
+                       
+                 ((and (= (dwin 1 0) mind) (= (owin 1 0) 0))
+                                         (idx-shift! dwin 1 -1)
+                                         (idx-shift! owin 1 -1)
+                            (decr p0) (setq movedp t) )
+                 ((and (= (dwin 2 0) mind) (= (owin 2 0) 0))
+                  (idx-shift! dwin 0  1) (idx-shift! dwin 1 -1)
+                  (idx-shift! owin 0  1) (idx-shift! owin 1 -1)
+                  (incr p1) (decr p0) (setq movedp t) )
+                 
+                 ((and (= (dwin 0 1) mind) (= (owin 0 1) 0))
+                  (idx-shift! dwin 0 -1)
+                  (idx-shift! owin 0 -1)
+                  (decr p1)           (setq movedp t) )
+
+                 ((and (= (dwin 2 1) mind) (= (owin 2 1) 0))
+                  (idx-shift! dwin 0  1)
+                  (idx-shift! owin 0  1)
+                  (incr p1)           (setq movedp t) )       
+                 
+                 ((and (= (dwin 0 2) mind) (= (owin 0 2) 0))
+                  (idx-shift! dwin 0 -1) (idx-shift! dwin 1  1)
+                  (idx-shift! owin 0 -1) (idx-shift! owin 1  1)
+                  (decr p1) (incr p0) (setq movedp t) )
+                 
+                 ((and (= (dwin 1 2) mind) (= (owin 1 2) 0))
+                                         (idx-shift! dwin 1  1)
+                                         (idx-shift! owin 1  1)
+                            (incr p0) (setq movedp t) )
+                 ((and (= (dwin 2 2) mind) (= (owin 2 2) 0))
+                  (idx-shift! dwin 0  1) (idx-shift! dwin 1  1)
+                  (idx-shift! owin 0  1) (idx-shift! owin 1  1)
+                  (incr p1) (incr p0) (setq movedp t) )) )))
+                )
+        
+        ;; update points
+        (:c:points p 0 p0)
+        (:c:points p 1 p1)
+        (owin 1 1 1) )))
+
+  ) ; unprotect
+  c)
+     
+
+(defun move-points-with-gaps (c ps dmap omap)
+  (declare (-obj- (SimplePolygon)) c)
+  (declare (-idx1- (-int-)) ps)
+  (declare (-idx2- (-float-)) dmap)
+  (declare (-idx2- (-ubyte-)) omap)
+
+  (let ((urdwin (idx-trim* dmap 3 3))
+        (urowin (idx-trim* omap 3 3)) )
+    (declare (-idx2- (-float-)) urdwin)
+    (declare (-idx2- (-ubyte-)) urowin)
+
+    (for* (i 0 (length ps))
+      (declare (-int-) i)
+      (let* ((p (ps i))
+             (p0 #{ (int) round($(:c:points p 0)) #})
+             (p1 #{ (int) round($(:c:points p 1)) #})
+             (d 0)
+             (dwin (copy-index urdwin))
+             (owin (copy-index urowin))
+             (vx (- (:c:points (:c:edges p 1) 0) (:c:points (:c:edges p 0) 0)))
+             (vy (- (:c:points (:c:edges p 1) 1) (:c:points (:c:edges p 0) 1)))
+             (v (.v vx vy))
+             (nxi 0) (nyi 0)
+             (movedp t) )
+        (declare (-int-) p p0 p1 nxi nyi)
+        (declare (-bool-) movedp)
+
+        (setq d (dmap p1 p0))
+        (normal-vector! v)
+        (setq nxi #{ (int) round($(+ p0 (* (v 0) d))) #})
+        (setq nyi #{ (int) round($(+ p1 (* (v 1) d))) #})
+        
+        (if (> (dmap nyi nxi) (/ d 3))
+            (omap p1 p0 1)
+
+          ;; else move point to the object
+          (idx-shift! dwin 0 (- nyi 1)) (idx-shift! dwin 1 (- nxi 1))
+          (idx-shift! owin 0 (- nyi 1)) (idx-shift! owin 1 (- nxi 1))
+
+          ;; make steps towards the object
+          (while movedp
+            (setq movedp ())
+            
+            (let ((mind ((idx-inf dwin)))
+                  (d11 (dwin 1 1)) )
+              (when (and (> d11 0) (< mind d11))
+                (cond
+
+                 ((and (= (dwin 0 0) mind) (= (owin 0 0) 0))
+                  (idx-shift! dwin 0 -1) (idx-shift! dwin 1 -1)
+                  (idx-shift! owin 0 -1) (idx-shift! owin 1 -1)
+                  (decr nyi) (decr nxi) (setq movedp t) )
+                       
+                 ((and (= (dwin 1 0) mind) (= (owin 1 0) 0))
+                                         (idx-shift! dwin 1 -1)
+                                         (idx-shift! owin 1 -1)
+                             (decr nxi) (setq movedp t) )
+
+                 ((and (= (dwin 2 0) mind) (= (owin 2 0) 0))
+                  (idx-shift! dwin 0  1) (idx-shift! dwin 1 -1)
+                  (idx-shift! owin 0  1) (idx-shift! owin 1 -1)
+                  (incr nyi) (decr nxi) (setq movedp t) )
+                 
+                 ((and (= (dwin 0 1) mind) (= (owin 0 1) 0))
+                  (idx-shift! dwin 0 -1)
+                  (idx-shift! owin 0 -1)
+                  (decr nyi)            (setq movedp t) )
+
+                 ((and (= (dwin 2 1) mind) (= (owin 2 1) 0))
+                  (idx-shift! dwin 0  1)
+                  (idx-shift! owin 0  1)
+                  (incr nyi)            (setq movedp t) )                        
+
+                 ((and (= (dwin 0 2) mind) (= (owin 0 2) 0))
+                  (idx-shift! dwin 0 -1) (idx-shift! dwin 1  1)
+                  (idx-shift! owin 0 -1) (idx-shift! owin 1  1)
+                  (decr nyi) (incr nxi) (setq movedp t) )
+                 
+                 ((and (= (dwin 1 2) mind) (= (owin 1 2) 0))
+                                         (idx-shift! dwin 1  1)
+                                         (idx-shift! owin 1  1)
+                             (incr nxi) (setq movedp t) )
+
+                 ((and (= (dwin 2 2) mind) (= (owin 2 2) 0))
+                  (idx-shift! dwin 0  1) (idx-shift! dwin 1  1)
+                  (idx-shift! owin 0  1) (idx-shift! owin 1  1)
+                  (incr nyi) (incr nxi) (setq movedp t) )) )))
+            
+          ;; update points
+          (:c:points p 0 (to-double nxi))
+          (:c:points p 1 (to-double nyi))
+          (owin 1 1 1) )
+        )))
+  c)
+
+
+(defun as-simple-polygon (c f)
+  (declare (-obj- (SimplePolygon)) c)
+  (declare (-double-) f)
+  (let ((e0s (copy-array (idx-select :c:edges 1 0)))
+        (e1s (copy-array (idx-select :c:edges 1 1)))
+        (points (clone-array :c:points))
+        (p 0) )
+    (declare (-int-) p)
+
+    (idx-i1i1sortup e0s e1s)
+    (idx-bloop ((point points))
+      (point 0 (/ (:c:points p 0) f))
+      (point 1 (/ (:c:points p 1) f))
+      (setq p (e1s p)) )
+
+    (new SimplePolygon points) ))
+
+
+(defun magnify-and-invert (image f)
+  (declare (-idx2- (-ubyte-)) image)
+  (declare (-int-) f)
+  (let* ((m (* (shape image 0) f))
+         (n (* (shape image 1) f))
+         (img (ubyte-array m n)) )
+    (declare (-int-) m n)
+    (idx-u2oversample image f f img)
+    (idx-copy-inv img img)
+    img))
+
+) ; namespace -lasso-
+
+
+(dhc-make-all () (qualified-names -lasso-) ())
+
+
+

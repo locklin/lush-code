@@ -1,0 +1,145 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LUSH Lisp Universal Shell
+;;;   Copyright (C) 2009 Leon Bottou, Yann LeCun, Ralf Juengling.
+;;;   Copyright (C) 2002 Leon Bottou, Yann LeCun, AT&T Corp, NECI.
+;;; Includes parts of TL3:
+;;;   Copyright (C) 1987-1999 Leon Bottou and Neuristique.
+;;; Includes selected parts of SN3.2:
+;;;   Copyright (C) 1991-2001 AT&T Corp.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU Lesser General Public License as 
+;;; published by the Free Software Foundation; either version 2.1 of the
+;;; License, or (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU Lesser General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU Lesser General Public
+;;; License along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, 
+;;; MA 02110-1301  USA
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#? ** Nonlinear Conjugate Gradient Descent
+;; This is an interface to William Hager and Hongchao Zhang's CG-DESCENT
+;; nonlinear conjugate gradient descent algorithm (see cg-descent/README).
+
+(libload "libc/make")
+(libload "libc/cstruct")
+
+(defvar *cg-dir* (concat-fname (dirname file-being-loaded) "cg-descent"))
+(defvar *cg-user-h* (concat-fname *cg-dir* "cg_user.h"))
+
+(let ((cg (new LushMake *cg-dir*)))
+  (==> cg rule "cg_descent.o" `("cg_descent.c" "cg_descent.h" "cg_user.h"))
+  (==> cg rule "cg_adaptor.o" `("cg-adaptor.c"))
+  (==> cg setflags "-O2 -Wall")
+  (==> cg make)
+  (==> cg load) )
+
+
+(defun -cg-descent (x tol cgp cgs)
+  (declare (-srg- (-double-)) x)
+  (declare (-double-) tol)
+  (declare (-obj- (cstruct)) cgp cgs)
+  (cheader #.(concat "#include \"" *cg-user-h* "\""))
+  (when (<> :cgp:tag "cg_parameter_struct")
+    (error "not a cg_parameter_struct") )
+  (when (<> :cgs:tag "cg_stats_struct")
+    (error "not a cg_stats_struct") )
+  (let ((ret 0))
+    (declare (-int-) ret)
+    #{
+    extern double (cg_value_adaptor) (double *, int);
+    extern void   (cg_grad_adaptor) (double *, double *, int);
+    cg_value_adaptor(NULL, -1);
+    cg_grad_adaptor(NULL, NULL, -1);
+    
+    $ret = cg_descent($x->data, (int)$x->size, $cgs->ptr, $cgp->ptr,
+                      $tol, cg_value_adaptor, cg_grad_adaptor, NULL, NULL);
+    #}
+    ret))
+
+
+#? (cg-descent <x0> <f> <g> <gtol> [<cgp> <arg0> <arg1> ...])
+;; Minimize <f> by nonlinear conjugate gradient descent. Start
+;; from <x0> and return the minimizer.
+;;
+;; Argument <x0> is a double array, and <f> and <g> are functions
+;; computing the objective function value and its gradient,
+;; respectively. Argument <gtol> is used in the stopping criterion
+;; (<cg-descent> terminates when the gradient's infinity-norm
+;; drops below <gtol>).
+;;
+;; Function <f> takes the arguments <x>, <arg0>, <arg1>, ... and
+;; returns a double.
+;;
+;; Function <g> takes the arguments <gx>, <x>, <arg0>, <arg1>, ..., 
+;; writes the gradient at <x> into <gx> and returns nothing.
+;;
+;; Several aspects of the algorithm's search behavior may be controlled
+;; through entries in the struct <cgp>. If <cgp> is not provided, 
+;; <cg-descent> will use the default values returned by <cg-params>.
+;;
+;; After terminating <cg-descent> assigns execution statistics to
+;; variable <*cg-descent-stats*> and a return code to 
+;; <*cg-descent-errno*> (see cg-descent/cg_user.h for more info).
+(defun cg-descent (x0 f g tol &optional cgp &rest vargs)
+  (setq x0 ##x0)
+  (when (not (functionp f))
+    (error "not a function" f) )
+  (when (not (functionp g))
+    (error "not a function" g) )
+  (when (not (numberp tol))
+    (error "not a number" tol) )
+  (if (null cgp)
+      (setq cgp (cg-params))
+    (when (not (isa cgp CStruct))
+      (error "not a parameter struct") cgp))
+  (let ((x (idx-storage x0)) (cgs (make-cstruct 'cg_stats_struct)))
+    (setq *cg-descent-errno* (-cg-descent x tol cgp cgs))
+    (setq *cg-descent-stats* cgs) )
+  (when (<> *cg-descent-errno* 0)
+    (printf "*** Warning: cg-descent failed to converge (see *cg-descent-errno*)\n") )
+  x0)
+
+
+(defun cg-set-parameter-defaults (ps)
+  (declare (-obj- (cstruct)) ps)
+  ;(cheader #.(concat "#include \"" *cg-user-h* "\""))
+  (when (<> :ps:tag "cg_parameter_struct")
+    (error "not a cg_parameter_struct") )
+  #{ cg_default($ps->ptr); #}
+  ())
+
+#? (cg-params)
+;; Make new default parameter struct for <cg-descent>.
+(defun cg-params ()
+  (let ((p (make-cstruct 'cg_parameter_struct)))
+    (cg-set-parameter-defaults p)
+    (p PrintFinal 0)
+    p))
+
+
+#? *cg-descent-errno*
+;; Failure code from most recent execution of <cg-descent>.
+;; Zero means success. See <cg-descent/cg_user.h> for more info.
+(defvar *cg-descent-errno* 0)
+
+#? *cg-descent-stats*
+;; Statistics from most recent execution of <cg-descent>.
+(defvar *cg-descent-stats* ())
+
+
+(register-cstruct *cg-user-h* 'cg_parameter_struct)
+(register-cstruct *cg-user-h* 'cg_stats_struct t)
+
+(dhc-make "optim_cg_descent"
+          -cg-descent
+          cg-set-parameter-defaults)
+  
