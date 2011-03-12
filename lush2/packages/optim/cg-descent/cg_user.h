@@ -3,9 +3,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-//#define INT long int
+//#define INT long
+//#define INT_INF LONG_MAX
 #define INT int
-#define INT_INF LONG_MAX
+#define INT_INF INT_MAX
 #define INF DBL_MAX
 
 #ifndef FALSE

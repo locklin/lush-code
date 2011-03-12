@@ -50,7 +50,7 @@ double cg_value_adaptor(double *x, int n)
       index_t *ind = Mptr(x0);
       nx = storage_nelems(IND_ST(ind));
       st = new_storage(ST_DOUBLE);
-      st->flags = STS_FOREIGN;
+      st->kind = STS_FOREIGN;
       st->size = nx;
       st->data = (char *)-1;
 
@@ -89,12 +89,12 @@ void cg_grad_adaptor(double *g, double *x, int n)
       index_t *ind = Mptr(x0);
       nx = storage_nelems(IND_ST(ind));
       stx = new_storage(ST_DOUBLE);
-      stx->flags = STS_FOREIGN;
+      stx->kind = STS_FOREIGN;
       stx->size = nx;
       stx->data = (char *)-1;
 
       stg = new_storage(ST_DOUBLE);
-      stg->flags = STS_FOREIGN;
+      stg->kind = STS_FOREIGN;
       stg->size = nx;
       stg->data = (char *)-1;
       call = new_cons(g, 
