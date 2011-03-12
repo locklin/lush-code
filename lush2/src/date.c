@@ -990,7 +990,7 @@ void init_date(void)
    date_class->serialize = date_serialize;
    date_class->compare = date_compare;
    date_class->hash = date_hash;
-   class_define("DATE", date_class);
+   class_define("Date", date_class);
   
    dx_define("date-to-day",xdate_to_day);
    dx_define("day-to-date",xday_to_date);
