@@ -54,6 +54,10 @@ static htable_t *lbfgs_params(void)
 
    /* LBFGS parameters */
    htable_set(p, NEW_SYMBOL("lbfgs-m"), NEW_NUMBER(7));
+
+   /* this controls termination */
+   htable_set(p, NEW_SYMBOL("maxiter"), NEW_NUMBER(1E9));
+
    return p;
 }
 
@@ -97,6 +101,10 @@ static int lbfgs(index_t *x0, at *f, at *g, double gtol, htable_t *p, at *vargs)
    lb3_.gtol = Number(htable_get(params, NEW_SYMBOL("ls-gtol")));
    lb3_.stpmin = Number(htable_get(params, NEW_SYMBOL("ls-stpmin")));
    lb3_.stpmax = Number(htable_get(params, NEW_SYMBOL("ls-stpmax")));
+   int maxiter = (int)Number(htable_get(params, NEW_SYMBOL("maxiter"))); 
+   ifn (maxiter > 0)
+      error(NIL, "maxiter value not positive", NEW_NUMBER(maxiter));
+
    int m = (int)Number(htable_get(params, NEW_SYMBOL("lbfgs-m")));
    int n = index_nelems(x0);
    double *x = IND_ST(x0)->data;
@@ -113,14 +121,18 @@ static int lbfgs(index_t *x0, at *f, at *g, double gtol, htable_t *p, at *vargs)
    ifn (m>0)
       error(NIL, "m-parameter must be positive", NEW_NUMBER(m));
 
+   int iter = 0;
    /* reverse communication loop */
    do {
+      iter++;
       fval = Number(listeval_f(Car(callf), callf));
       listeval_g(Car(callg), callg);
       lbfgs_(&n, &m, x, &fval, gval, &diagco, diag, iprint, &gtol, &xtol, w, &iflag);
       assert(iflag<2);
-   } while (iflag > 0);
-   
+   } while ((iflag > 0) && (iter < maxiter) && !break_attempt);
+
+   if (iflag > 0 || break_attempt)
+      iflag = 100;   /* signal termination by maxiter */
    return iflag;
 }
 
