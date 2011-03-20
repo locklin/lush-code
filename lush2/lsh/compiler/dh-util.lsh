@@ -343,28 +343,36 @@
       (str-join "\n" (nconc1 (cons struct ms) "};")) )))
 
   
-#? (dhc-type-to-c-decl <type>)
+#? (dhc-type-to-c-decl <type> [<name>])
 ;; Returns a short string with the C equivalent of type <type>.
-(de dhc-type-to-c-decl (type)
-  (cond ((==> type is-an-idx)  "index_t")
-        ((==> type is-a-srg)   "storage_t")
-        ((==> type is-a-flt)   "float")
-        ((==> type is-a-real)  "double")
-        ((==> type is-an-int)  "int")
-        ((==> type is-a-short) "short")
-        ((==> type is-a-byte)  "char")
-        ((==> type is-a-ubyte) "unsigned char")
-        ((==> type is-a-bool)  "bool")
-        ((==> type is-a-str)   "char*")
-        ((==> type is-a-gptr)  (or (dhu-name type) "gptr"))
-        ((==> type is-a-mptr)  (or (dhu-name type) "mptr"))
-        ((==> type is-an-obj)
-         (let ((class-cname (dhc-lisp-to-c-name (dhu-name (dhu-type type)))))
-           (sprintf "struct CClass_%s" class-cname) ))
-        ((==> type is-a-ptr)  
-         (concat (dhc-type-to-c-decl (dhu-type type)) "*"))
-        (t 
-         (dhc-error "Unknown Type") ) ) )
+(de dhc-type-to-c-decl (type &optional (name ""))
+  (sprintf 
+   (cond ((==> type is-an-idx)  "index_t %s")
+         ((==> type is-a-srg)   "storage_t %s")
+         ((==> type is-a-flt)   "float %s")
+         ((==> type is-a-real)  "double %s")
+         ((==> type is-an-int)  "int %s")
+         ((==> type is-a-short) "short %s")
+         ((==> type is-a-byte)  "char %s")
+         ((==> type is-a-ubyte) "unsigned char %s")
+         ((==> type is-a-bool)  "bool %s")
+         ((==> type is-a-str)   "char* %s")
+         ((==> type is-a-gptr)
+          (concat (or (dhu-name type) "gptr") " %s") )
+         ((==> type is-a-mptr)
+          (concat (or (dhu-name type) "mptr") " %s") )
+         ((==> type is-an-obj)
+          (let ((class-cname (dhc-lisp-to-c-name (dhu-name (dhu-type type)))))
+            (sprintf "struct CClass_%s %%s" class-cname) ))
+         ((==> type is-a-ptr)  
+          (concat (dhc-type-to-c-decl (dhu-type type)) "* %s"))
+         ((==> type is-a-func)
+          (sprintf "%s(*%%s)(%s)"
+                   (dhc-type-to-c-decl (dhu-type type))
+                   (str-join "," (mapcar dhc-type-to-c-decl (dhu-extra type))) ))
+         (t 
+          (dhc-error "Unknown Type") ))
+   name))
 
 (de dhc-arg-format (type)
   (cond  
@@ -384,6 +392,9 @@
    ((==> type is-a-gptr)   "dh_gptr")
    ((==> type is-a-mptr)   "dh_mptr")
    ((==> type is-a-bool)   "dh_bool")
+   ((==> type is-a-func)
+    (let ((retarg (dhc-arg-format (dhu-type type))))
+      (concat "dh_func" (str-right retarg -2)) ))
    (t (dhc-error "Argument type is unknown"))))
 
 (de dhc-type-to-srg-type (ty)
@@ -443,7 +454,7 @@
    ((or (==> type is-a-simple) 
         (==> type is-a-ptr) )
     (dhc-add-c-declarations 
-     (sprintf "%s %s;" (dhc-type-to-c-decl type) name) ) )
+     (concat (dhc-type-to-c-decl type name) ";") ))
    
    ((==> type is-an-idx) 
     (let ((ndim (unode-val :type:u-ndim)))
@@ -2548,8 +2559,8 @@
            ;; Case of a symbol
            ;;  (special cases for compiled functions and t)
            ((symbolp source)
-            (let ((sym (or (dhc-search-symtable source global-table)
-                           (dhc-search-symtable source symbol-table) )))
+            (let ((sym (or (dhc-search-symtable source symbol-table)
+                           (dhc-search-symtable source global-table) )))
               (cond
                ((and sym (not (getp sym 'defconstant)))
                 (let ((symb (dhc-parse-variable-t source)))
@@ -3042,8 +3053,9 @@
   (when (not (symbolp (car source)))
     (dhc-error "Unsupported call to unnamed function" (car source)) )
   (let* ((dhfunc (eval (car source)))
-         (symbol (or (dhc-search-symtable (car source) symbol-table)
-                     (dhc-search-symtable (car source) global-table) ))
+         (local-symbol (dhc-search-symtable (car source) symbol-table))
+         (global-symbol (dhc-search-symtable (car source) global-table))
+         (symbol (or local-symbol global-symbol))
          (func-type (if symbol 
                         (==> :symbol:type copy)
                       (dhc-desc-to-type (dhinfo-t dhfunc))))
@@ -3059,7 +3071,10 @@
            (da calling-types))    
       (dhc-unify-types ty da))
     (dhc-unify-all-dh calling-types func-temps return-type)
-    (setq tnl (cons (new t-node () func-type (car source)) tnl))
+    (setq tnl (cons (if local-symbol
+                        (dhc-parse-expr-t (car source))
+                      (new t-node () func-type (car source)) )
+                    tnl))
     (setq return-node (new t-node tnl return-type))
     (setq :return-node:transfer 
           (all ((ty func-temps))
@@ -3079,7 +3094,7 @@
         (args (dhu-extra functype))
         (tmps (if *dhc-no-hidden-args* () (dhu-temps functype))) )
     ;; check externs
-    (each ((arg (append args tmps)))
+    (dolist (arg (append args tmps))
       (when (==> arg is-an-objptr)
         (setq arg (dhu-type arg)) )
       (when (==> arg is-an-obj)
@@ -3090,8 +3105,7 @@
     ;; build arg type list
     (setq output
           (append
-           (all ((arg args)) ;; arguments
-             (dhc-type-to-c-decl arg) )
+           (mapcar dhc-type-to-c-decl args) ;; arguments
            (all ((arg tmps)) ;; temporaries
              (when (not (==> arg is-a-ptr))
                (setq arg (new dhc-type 'dht-ptr arg)) )
@@ -3106,13 +3120,17 @@
 (de dhc-parse-dh-c(source treetype retplace)
   (when (not (symbolp (car source)))
     (dhc-error "Unsupported call to unnamed function" (car source)) )
-  (let ((symbol (dhc-search-symtable (car source) global-table)))
+  (let* ((local-symbol :(car :treetype:tn-list):symbol)
+         (global-symbol (dhc-search-symtable (car source) global-table))
+         (symbol (or local-symbol global-symbol)) )
     (let (((cfunc mfunc ctest mtest kfunc) 
-           (if ~symbol 
+           (if ~symbol
                (dhinfo-c (eval (car source)))
-             (list (sprintf "C_%s" :symbol:c-name) "" "" ""
-                   (sprintf "K_%s_R%s" :symbol:c-name 
-                            (dhu-hash :symbol:type) ) ) ) )
+             (if local-symbol
+                 (list :symbol:c-name "" "" "" "")
+               (list (sprintf "C_%s" :symbol:c-name) "" "" ""
+                     (sprintf "K_%s_R%s" :symbol:c-name 
+                              (dhu-hash :symbol:type) )))))
           (args (all ((so (cdr source)) 
                       (tt (cdr :treetype:tn-list)))
                   (dhc-parse-expr-c so tt ()))) )
@@ -3159,6 +3177,7 @@
                                retplace
                                (dhc-type-to-c-decl :treetype:type)
                                cfunc)))
+
         ;; add-c the c function and return retplace
         (dhc-add-c-statements (concat cfunc "(" args ");"))
         retplace ) ) ) ) 

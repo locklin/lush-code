@@ -241,6 +241,21 @@ typedef union
   storage_t    *dh_srg_ptr;
   char         *dh_str_ptr;
   struct CClass_object *dh_obj_ptr;
+
+  // function types: function returning X
+  char          (*dh_func_char)();
+  unsigned char (*dh_func_uchar)();
+  short         (*dh_func_short)();
+  int           (*dh_func_int)();
+  bool          (*dh_func_bool)();
+  float         (*dh_func_float)();
+  double        (*dh_func_double)();
+  gptr		(*dh_func_gptr)();
+  mptr          (*dh_func_mptr)();
+  index_t      *(*dh_func_idx_ptr)();
+  storage_t    *(*dh_func_srg_ptr)();
+  char         *(*dh_func_str_ptr)();
+  struct CClass_object *(*dh_func_obj_ptr)();
 } dharg;
 
 

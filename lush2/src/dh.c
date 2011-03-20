@@ -598,6 +598,53 @@ static at *dhinfo_record(dhrecord *drec)
    }
 }
 
+/* check that two dhrecords match */
+static bool dhinfo_match(dhrecord *rec1, dhrecord *rec2)
+{
+   if (rec1 == rec2)
+      return true;
+   if (!rec1 || !rec2)
+      return false;
+
+   dhrecord *next1 = next_record(rec1);
+   dhrecord *next2 = next_record(rec2);
+   
+   while (rec1 != next1 && rec2 != next2) {
+      if (rec1->op != rec2->op)
+         return false;
+ 
+      switch (rec1->op) {
+
+      case DHT_IDX:
+         if (rec1->ndim != rec2->ndim)
+            return false;
+         if (rec1->access != rec2->access) // we might need to refine this
+            return false;
+         break;
+
+      case DHT_OBJ:
+      {
+         dhclassdoc_t *cdoc1 = rec1->arg;
+         dhclassdoc_t *cdoc2 = rec2->arg;
+         while (cdoc2) {
+            if (strcmp(cdoc1->lispdata.cname, cdoc2->lispdata.cname) != 0)
+               return false;
+            cdoc2 = cdoc2->lispdata.ksuper;
+         }
+         return false;
+      }
+      break;
+      
+      default:
+         break;
+      }
+
+      rec1++;
+      rec2++;
+   }
+   return true;
+}
+
 
 DX(xdhinfo_t)
 {
@@ -882,6 +929,32 @@ static inline void at_to_dharg(at *at_obj, dharg *arg, dhrecord *drec, at *errct
          
       } else
          error(NIL, "invalid argument (string expected)", at_obj);
+      break;
+
+   case DHT_FUNC:
+      if (at_obj && Class(at_obj) == dh_class) {
+
+         cfunction_t *cfunc = Gptr(at_obj);
+         if (CONSP(cfunc->name))
+            check_primitive(cfunc->name, cfunc->info);
+         dhdoc_t *dhdoc = cfunc->info;
+         if (dhdoc) {
+            if (!dhinfo_match(dhdoc->argdata, drec))
+               error(NIL, "invalid argument (wrong function signature)", at_obj);
+
+            // get the function pointer to the C function
+            assert(MODULEP(Car(cfunc->name)));
+            struct module *m = Gptr(Car(cfunc->name));
+            extern void *dynlink_symbol(struct module *, const char *, int, int);
+            void *q = dynlink_symbol(m, dhdoc->lispdata.c_name, 1, 1);
+            ifn (q)
+               error(NIL, "could not find function pointer", at_obj);
+            arg->dh_func_gptr = (gptr (*)())q;
+         } else
+            error(NIL, "internal error: dhdoc unvailable", NIL);
+      } else 
+         error(NIL, "invalid argument (not a DH function)", at_obj);
+
       break;
       
    default:
