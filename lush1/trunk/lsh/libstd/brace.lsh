@@ -22,7 +22,7 @@
 ;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;  $Id: brace.lsh,v 1.19 2007-03-19 12:40:10 leonb Exp $
+;;;;  $Id: brace.lsh,v 1.20 2011-06-27 07:17:29 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Functions and classes to handle brace lists.
@@ -662,7 +662,7 @@
 (de brace-ogre.printf (s) 
   (setq s (regex-subst "%" "%%%%" s))
   (nconc1 gcode `(gprintf (+ x ,px) (+ y ,py) ,s))
-  (incr px (caddr (rect-text 0 0 s)))
+  (incr px (or (caddr (rect-text 0 0 s)) (* (len s) (caddr (rect-text 0 0 "0")))))
   (setq returns 0))
 
 
@@ -833,17 +833,21 @@
 
 ;; print pre-formatted text
 (de brace-ogre.preprint (p)
-  (let ((stop ()))
+  (let ((stop ())(s ()))
+    (brace-ogre.push-font "Courier")
     (while (and p (not stop))
       (let ((x (car p)))
 	(cond
 	 ((member x '(</code> </pre> </CODE> </PRE>)) (setq stop t))
-	 ((stringp x) (brace-ogre.printf x))
-	 ((= x -1) (brace-ogre.cr))
-	 ((= x -2) (brace-ogre.sp 7))
-	 ((and (numberp x) (>= x 1)) (brace-ogre.sp x)))
+	 ((stringp x) (setq s (nconc1 s x)))
+         ((= x -1) (when s (brace-ogre.printf (apply concat s)))
+                   (setq s ()) (brace-ogre.cr))
+	 ((= x -2) (setq s (nconc1 s "        ")))
+	 ((and (numberp x) (>= x 1)) (repeat x (setq s (nconc1 s " ")))) )
 	(setq p (cdr p))))
-    (brace-ogre.parprint p)))
+    (when s (brace-ogre.printf (apply concat s)))
+    (brace-ogre.parprint p)
+    (brace-ogre.pop-font) ) )
 
 ;; print pre-formatted text
 (de brace-ogre.codeprint (p)
