@@ -29,7 +29,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: nlf.c,v 1.2 2005-06-03 04:10:09 leonb Exp $
+ * $Id: nlf.c,v 1.3 2011-06-27 06:22:45 leonb Exp $
  **********************************************************************/
 
 
@@ -235,14 +235,21 @@ DX(xnlf_f_0)
 static flt 
 f_lisp(struct nlf *n, float x)
 {
-  at *call,*result;
-
-  call = cons(new_number(Ftor(x)),NIL);
-  result = apply(n->atf,call);
-  x = rtoF(result->Number);
-  UNLOCK(call);
-  UNLOCK(result);
-  return x;
+  if (EXTERNP(n->atf, &dz_class))
+    {
+      struct dz_cell *dz = n->atf->Object;
+      return rtoF(dz_execute(Ftor(x), dz));
+    }
+  else
+    {
+      at *call,*result;
+      call = cons(new_number(Ftor(x)),NIL);
+      result = apply(n->atf,call);
+      x = rtoF(result->Number);
+      UNLOCK(call);
+      UNLOCK(result);
+      return x;
+    }
 }
 
 DX(xnlf_f_lisp)
