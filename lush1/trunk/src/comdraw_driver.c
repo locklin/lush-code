@@ -588,7 +588,7 @@ static void
 comdraw_close(struct window *linfo)
 {
   struct C_window *info = (struct C_window*)linfo;
-  char command[5];
+  char command[8];
 
   ifn(info->lwin.used)
     return;
@@ -910,8 +910,8 @@ comdraw_setcolor(struct window *linfo,int x)
 {
   struct C_window *info = (struct C_window*)linfo;
   int rr,bb,gg;
-  char hexcolor[7];
-  char command[23];
+  char hexcolor[16];
+  char command[32];
   
   command[0] = 0;
   if (! info->lwin.used)

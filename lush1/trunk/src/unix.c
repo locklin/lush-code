@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.64 2009-10-16 16:07:05 leonb Exp $
+ * $Id: unix.c,v 1.65 2011-10-09 22:48:05 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -186,9 +186,16 @@ cygwin_fmode_binary(FILE *f)
 #endif /* POSIXSIGNAL */
 
 
-/* break_attempt - flag for control-C interrupt */
 
-int break_attempt;
+/* break_attempt: set when ctrl-c has been pressed */
+
+static int break_attempt;
+
+/* async_attempt: set when async trigger is pending */
+
+static int async_attempt;
+
+
 
 
 /* goodsignal -- sets signal using POSIX or BSD when available */
@@ -267,7 +274,8 @@ lastchance(const char *s)
 	  fprintf(stderr,"**** GASP: Trying to recover\n");
 	  fprintf(stderr,"**** GASP: You should save your work immediatly\n\n");
 	  /* Sanitize IO */
-	  break_attempt = 0;      
+	  break_attempt = 0; 
+          async_attempt = 0;
 	  block_async_poll();
 	  context->input_file = stdin;
 	  context->output_file = stdout;
@@ -405,13 +413,14 @@ set_irq(void)
 
 
 /* trigger_mode -- operating system mode used for managing events */
-
 static enum { 
   MODE_UNKNOWN, 
   MODE_FASYNC, MODE_FIOASYNC, MODE_SETSIG, 
   MODE_ITIMER, MODE_ALARM 
 } trigger_mode = MODE_UNKNOWN;
 
+/* trigger_handler -- async event handler */
+static void (*trigger_handler)();
 
 /* trigger_signal -- signal used by the trigger system */
 static int trigger_signal = -1;
@@ -419,20 +428,34 @@ static int trigger_signal = -1;
 /* block_count -- asynchronous trigger blocking count */
 static int block_count = 0;
 
+
+/* check_unix(s): function to test async events and ctrl-c */
+void 
+check_unix(char *s)
+{
+  if (async_attempt && !block_count)
+    {
+      async_attempt = 0;
+      if (trigger_handler)
+        trigger_handler();
+    }
+  if (break_attempt)
+    {
+      user_break(s);
+    }
+}
+
+
 /* trigger_fds -- file descriptor for trigger messages */
 #define MAX_TRIGGER_NFDS 32
 static int trigger_nfds = 0;
 static int trigger_fds[MAX_TRIGGER_NFDS];
 
-/* trigger_handle -- function called when trigger is run */
-static void (*trigger_handler)(void);
-
 /* trigger_irq -- signal handler for trigger */
 static RETSIGTYPE
 trigger_irq(void)
 {
-  if (trigger_handler)
-    (*trigger_handler)();
+  async_attempt = 1;
   if (trigger_signal < 0)
     return;
   /* reset trigger signal */
@@ -1081,6 +1104,7 @@ void
 toplevel_unix(void)
 {
   break_attempt = 0;
+  async_attempt = 0;
 #ifdef RL_READLINE_VERSION
   console_in_eventproc = 0;
   rl_deprep_terminal();

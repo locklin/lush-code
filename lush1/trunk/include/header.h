@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.70 2009-10-16 16:07:04 leonb Exp $
+ * $Id: header.h,v 1.71 2011-10-09 22:48:05 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -97,7 +97,7 @@ typedef int intg;
 
 #ifdef UNIX
 /* interruptions */
-extern TLAPI int break_attempt;
+TLAPI void check_unix(char *s);
 TLAPI void lastchance(const char *s) no_return;
 /* unix hooks */
 void init_unix(void);
