@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.29 2008-11-20 21:58:07 leonb Exp $
+ * $Id: x11_driver.c,v 1.30 2012-02-13 07:18:30 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -194,17 +194,26 @@ search_display_name(void)
 
 
 static int badname = 1;
+static int (*old_handler)(Display*, XErrorEvent*) = 0;
 
 static int
 x11_handler(Display *display, XErrorEvent *myerr)
 {
-  char msg[80];
-  if (badname==0 && myerr->error_code==BadName) {
-    badname = 1;
-  } else {
-    XGetErrorText(display, myerr->error_code, msg, 80);
-    fprintf(stderr,"*** Xlib error %d : %s\n", myerr->error_code, msg);
-  }
+  if (display != xdef.dpy)
+    {
+      if (old_handler)
+        return (*old_handler)(display, myerr);
+    }
+  else if (badname==0 && myerr->error_code==BadName) 
+    {
+      badname = 1;
+    } 
+  else 
+    {
+      char msg[80];
+      XGetErrorText(display, myerr->error_code, msg, 80);
+      fprintf(stderr,"*** Xlib error %d : %s\n", myerr->error_code, msg);
+    }
   return 0;
 }
 
@@ -316,7 +325,7 @@ x11_init(void)
   xdef.ccross = XCreateFontCursor(xdef.dpy, XC_crosshair);
   
   /* Error handler */
-  XSetErrorHandler(x11_handler);
+  old_handler = XSetErrorHandler(x11_handler);
 
   /* Xft */
 #if HAVE_XFT2
