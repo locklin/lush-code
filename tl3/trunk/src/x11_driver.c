@@ -20,7 +20,7 @@
   TL3: LYB YLC 1/88
   X11driver.c
   Graphic driver for X11
-  $Id: x11_driver.c,v 1.2 2008-05-30 14:26:27 leonb Exp $
+  $Id: x11_driver.c,v 1.3 2012-08-09 16:38:37 leonb Exp $
   ********************************************************************** */
 
 #include "config.h"
@@ -1054,7 +1054,7 @@ psfonttoxfont(char *f)
   return name;
 }
 
-static void 
+static char*
 x11_setfont(struct window *linfo, char *f)
 {
   struct X_window *info = (struct X_window*)linfo;
@@ -1093,7 +1093,7 @@ x11_setfont(struct window *linfo, char *f)
       fid = XLoadFont(xdef.dpy,xf);
       XSync(xdef.dpy,False);
       if (badname)
-	error(NIL, "Cannot load font", new_string(f));
+        return 0;
       f = xf;
     }
     badname = 1;
@@ -1107,6 +1107,7 @@ x11_setfont(struct window *linfo, char *f)
   }
   XSetFont(xdef.dpy, info->gc, xfs->fid);
   info->font = xfs;
+  return f;
 }
 
 static void 

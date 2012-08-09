@@ -20,7 +20,7 @@
 	TL3: LYB YLC 1/88
 	graphics.h
 	Device independant graphics definitions
-	$Id: graphics.h,v 1.1.1.1 2002-04-16 17:37:32 leonb Exp $
+	$Id: graphics.h,v 1.2 2012-08-09 16:38:37 leonb Exp $
 ********************************************************************** */
 
 
@@ -140,7 +140,7 @@ struct gdriver {
   void (*close) (wptr);
   int (*xsize) (wptr);
   int (*ysize) (wptr);
-  void (*setfont) (wptr, char *);
+  char* (*setfont) (wptr, char *);
   void (*clear) (wptr);
   void (*draw_line) (wptr, int, int, int, int);
   void (*draw_rect) (wptr, int, int, uint, uint);

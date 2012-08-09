@@ -20,7 +20,7 @@
   TL3: LYB YLC 1/88
   graphics.c
   Device independant graphics functions
-  $Id: graphics.c,v 1.2 2008-05-30 14:26:27 leonb Exp $
+  $Id: graphics.c,v 1.3 2012-08-09 16:38:37 leonb Exp $
   ***********************************************************************/
 
 
@@ -590,6 +590,7 @@ DX(xysize)
 DX(xfont)
 {
   char *s;
+  char *r = 0;
   struct window *win;
   struct context mycontext;
   
@@ -608,16 +609,17 @@ DX(xfont)
 	context_pop();
 	siglongjmp(context->error_jump, -1);
       }
-      (*win->gdriver->setfont) (win, s);
+      r = (*win->gdriver->setfont) (win, s);
       (*win->gdriver->end) (win);
       context_pop();
     } else
       error(NIL, "this driver does not support 'font'", NIL);
-    
-    UNLOCK(win->font);
-    win->font = APOINTER(1);
-    LOCK(win->font);
-  }
+    printf("font %s %s\n", s, (r)?r:"nil");
+    if (!r)
+      return NIL;
+  }    
+  UNLOCK(win->font);
+  win->font = new_string(r);
   LOCK(win->font);
   return win->font;
 }

@@ -20,7 +20,7 @@
 	TL3: LYB YLC 1/88
 	PSdriver.c
 	Graphic driver for X11
-$Id: ps_driver.c,v 1.1.1.1 2002-04-16 17:37:39 leonb Exp $
+$Id: ps_driver.c,v 1.2 2012-08-09 16:38:37 leonb Exp $
 ***********************************************************************/
 
 
@@ -231,7 +231,7 @@ ps_ysize(struct window *linfo)
 
 /* set the font in a window */
 
-static void 
+static char* 
 ps_setfont(struct window *linfo, char *f)
 {
   struct M_window *info = (struct M_window*)linfo;
@@ -252,6 +252,7 @@ ps_setfont(struct window *linfo, char *f)
     s--;
   *s=0;
   fprintf(info->f,"%d /%s SF\n",size,font);
+  return f;
 }
 
 
