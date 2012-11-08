@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: ogre.lsh,v 1.34 2011-01-02 18:14:30 leonb Exp $
+;;; $Id: ogre.lsh,v 1.35 2012-11-08 03:51:54 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -320,6 +320,10 @@
   `ignored )
 (defmethod VisualObject mouse-up(x1 y1 x2 y2)
   `ignored )
+(defmethod VisualObject wheel-down(x y)
+  `ignored )
+(defmethod VisualObject wheel-up(x y)
+  `ignored )
 (defmethod VisualObject arrow-up(x1 y1)
   `ignored )
 (defmethod VisualObject arrow-right(x1 y1)
@@ -359,7 +363,8 @@
     'ignored ) )
 
 (defmethod VisualObject manage-event(event)
-  (let ((type (car event)))
+  (let ((type (car event))
+        (desc ()))
     (cond
       ;; Delete events are ignored if not a windowobject
       ((or (= type 'resize) (= type 'size))
@@ -378,10 +383,20 @@
       ((stringp type)
        (let (((c x y) event))
 	 (==> this propagate-event x y (list 'keypress c x y)) ) )
+      ;; Wheel
+      ((and (setq desc (car (eventinfo))) 
+            (member desc '("Button4" "Button5")))
+       (when (= type 'mouse-down)
+         (let (((c x y) event))
+           (cond 
+            ((= desc "Button4")       
+             (==> this propagate-event x y (list 'wheel-up x y)) ) 
+            ((= desc "Button5")       
+             (==> this propagate-event x y (list 'wheel-down x y)) ) ) ) ) )
       ;; Other events are handled directly
       (t
-	(let (((c x y . rest) event))
-	  (==> this propagate-event x y event) ) ) ) ) )
+       (let (((c x y . rest) event))
+         (==> this propagate-event x y event) ) ) ) ) )
 
 (defmethod VisualObject read-event()
   (let ((ev (checkevent)))
@@ -3261,6 +3276,9 @@
 (defmethod Slider click-for-more-p(x1 y1)
   'dummy )
 
+(defmethod Slider page-step()
+  (or stepvalue 1) )
+
 (defmethod Slider drag(dragdata)
   (let ((olddata data))
     (==> this setdata dragdata)
@@ -3298,7 +3316,7 @@
   (let ((ok t)
 	(event ())
 	(drag data)
-	(step (or stepvalue (div (- maxvalue minvalue) 10))) )
+	(step (or stepvalue 1)) )
     (sendevent x1 y1)
     (while ok
       (while (testevent)
@@ -3322,7 +3340,7 @@
   (let ((ok t)
 	(event ())
 	(drag data)
-	(step (or stepvalue (div (- maxvalue minvalue) 10))) )
+	(step (or stepvalue 1)) )
     (sendevent x1 y1)
     (while ok
       (while (testevent)
@@ -3345,16 +3363,23 @@
 
 ;; EVENTS
 
+(defmethod Slider wheel-up(x1 y1)
+  (when ~disabled
+    (let ((step (==> this page-step)))
+      (==> this setdata (- data step)) 
+      (==> this execute) ) ) )
+
+(defmethod Slider wheel-down(x1 y1)
+  (when ~disabled
+    (let ((step (==> this page-step)))
+      (==> this setdata (+ data step)) 
+      (==> this execute) ) ) )
+
 (defmethod Slider mouse-down(x1 y1)
   (when ~disabled
     (let (((x y w h) rect)
           (name (car (eventinfo))))
       (cond
-       ;; wheel
-       ((= name "Button4")
-        (==> this up-action x1 y1))
-       ((= name "Button5")
-        (==> this down-action x1 y1))
        ;; in the knob
        ((==> this click-in-knob-p x1 y1)
         (==> this drag-action x1 y1) )
@@ -3537,7 +3562,6 @@
 	 (point-in-rect x1 y1 rect) ) ) )
 
 
-
 ;; VSlider REPAINT
 
 (defmethod VSlider compute-geometry()
@@ -3660,6 +3684,10 @@
     (let ((lock (new disablelock this)))
       (when call
 	(call this) ) ) ) )
+
+(defmethod Scrollbar page-step()
+  (let ((step (==> this (Slider . page-step))))
+    (max step knobv) ) )
 
 ;;;;;;;;;;;;
 ;;;; HSCROLLBAR
@@ -4117,6 +4145,11 @@
 		(==> this expose rect) 
 		(when call1 (call1 this)) ) ) ) ) ) ) ) ) )
 
+(defmethod Selector wheel-up(x y)
+  (==> this arrow-up x y) )
+
+(defmethod Selector wheel-down(x y)
+  (==> this arrow-down x y) )
 
 (defmethod Selector arrow-up(x y)
   (when items
@@ -5081,6 +5114,16 @@
     (setq gatherkill ())
     (==> this check) ) )
 
+(defmethod TextPane wheel-up(x y)
+  (when vscroller
+    (let ((l (==> vscroller getdata)))
+      (==> this vscroll (1- l)) ) ) )
+
+(defmethod TextPane wheel-down(x y)
+  (when vscroller
+    (let ((l (==> vscroller getdata)))
+      (==> this vscroll (1+ l)) ) ) )
+
 (defmethod TextPane arrow-left args
   (if (or disabled ~activated)
       'ignored
@@ -5134,7 +5177,6 @@
   (setq cline (min (1- tlines) (+ cline height)))
   (setq cpos (min cpos (len (nth cline data))))
   (==> this check) )
-
 
 (defmethod TextPane backspace args
   (when editable

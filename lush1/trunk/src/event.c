@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: event.c,v 1.22 2009-10-16 16:07:05 leonb Exp $
+ * $Id: event.c,v 1.23 2012-11-08 03:51:55 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -747,6 +747,12 @@ event_to_list(int event, int xd, int yd, int xu, int yu, int *pmods)
     return cons(named("expose"), two_integers(xd,yd));
   if (event == EVENT_GLEXPOSE)
     return cons(named("glexpose"), two_integers(xd,yd));
+  /* events that update evshift and evcontrol */
+  *pmods = 0;
+  if (xu) 
+    *pmods |= 1;  /* shift */
+  if (yu) 
+    *pmods |= 2;  /* ctrl  */
   if (event >= EVENT_ASCII_MIN && event <= EVENT_ASCII_MAX) 
     {
       char keyevent[2];
@@ -754,12 +760,6 @@ event_to_list(int event, int xd, int yd, int xu, int yu, int *pmods)
       keyevent[1] = 0;
       return cons(new_string(keyevent), two_integers(xd,yd));
     }
-  /* events that update evshift and evcontrol */
-  *pmods = 0;
-  if (xu) 
-    *pmods |= 1;  /* shift */
-  if (yu) 
-    *pmods |= 2;  /* ctrl  */
   if (event == EVENT_MOUSE_DOWN)
     return cons(named("mouse-down"), two_integers(xd,yd)); 
   if (event == EVENT_HELP)

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: x11_driver.c,v 1.30 2012-02-13 07:18:30 leonb Exp $
+ * $Id: x11_driver.c,v 1.31 2012-11-08 03:51:55 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -798,13 +798,11 @@ handle_sync_events(void)
                     }
                   break;
                 }
-              if (i>=EVENT_ASCII_MIN && i<=EVENT_ASCII_MAX)
-                ev.xbutton.state = 0;
               if (i!=EVENT_NONE)
 		enqueue_eventdesc(info->lwin.eventhandler,i,
-                                  ev.xbutton.x, ev.xbutton.y,
-                                  ev.xbutton.state & ShiftMask, 
-                                  ev.xbutton.state & ControlMask,
+                                  ev.xkey.x, ev.xkey.y,
+                                  ev.xkey.state & ShiftMask, 
+                                  ev.xkey.state & ControlMask,
                                   desc);
 	    }
 	  break;
