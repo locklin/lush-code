@@ -215,8 +215,10 @@ DX(xmkdir)
 {
    ARG_NUMBER(1);
    errno = 0;
-   if (makedir(ASTRING(1))!=0) 
-      test_file_error(NULL, errno);
+   if (makedir(ASTRING(1))!=0) {
+      if (errno != EEXIST) // we don't care if the directory already existed
+         test_file_error(NULL, errno);
+   }
    return NIL;
 }
 
@@ -240,8 +242,10 @@ DX(xunlink)
 {
    ARG_NUMBER(1);
    errno = 0;
-   if (deletefile(ASTRING(1)))
-      test_file_error(NULL, errno);
+   if (deletefile(ASTRING(1))) {
+      if (errno != ENOENT) // we don't care if the file didn't exist
+         test_file_error(NULL, errno);
+   }
    return NIL;
 }
 
