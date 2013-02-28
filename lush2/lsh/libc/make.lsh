@@ -162,8 +162,12 @@
   (when (not command)
     (setq command dhc-make-command) )
   (setq target (concat-fname objdir target))
-  (setq deps (all ((dep deps)) (concat-fname srcdir dep)))
-  (rules target (list target deps command)) 
+  (setq deps (domapcar ((dep deps))
+               (if (rules (concat-fname objdir dep))
+                   ;; if this dependency is another target, look for it in objdir
+                   (concat-fname objdir dep)
+                 (concat-fname srcdir dep) )))
+  (rules target (list target deps command))
   target )
 
 
@@ -256,14 +260,16 @@
 
 (defmethod LushMake load targets
   (let ((dryrun ()))
-    (when (not targets)
+    (if targets
+        (setq targets (domapcar ((tg targets)) (concat-fname objdir tg)))
       (setq targets (htable-keys rules)) )
     (let ((done (htable)))
       (dolist (target targets)
         (==> this rebuild target done) ) )
-    (let ((ext (concat "." (or (getconf "OBJEXT") "o"))))
+    (let ((oext (str-cat "." (or (getconf "OBJEXT") "o")))
+          (soext (str-cat "." (or (getconf "SOEXT") "so"))) )
       (dolist (obj targets)
-        (if (= (str-right obj (str-len ext)) ext)
+        (if (or (str-endswith obj oext) (str-endswith obj soext))
             (mod-load obj)
           (printf "*** Warning ***: Cannot load target '%s'\n" obj))
         ;; record dependencies with libload.
