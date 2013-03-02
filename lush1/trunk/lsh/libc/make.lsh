@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: make.lsh,v 1.14 2011-06-27 06:22:43 leonb Exp $
+;;; $Id: make.lsh,v 1.15 2013-03-02 22:30:31 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -165,27 +165,33 @@
     (==> this setdirs srcdir) )
   (when (not command)
     (setq command dhc-make-command) )
-  (setq target (concat-fname objdir target))
-  (setq deps (all ((dep deps)) (concat-fname srcdir dep)))
-  (rules target (list target deps command)) 
+  (let ((obj (concat-fname objdir target)))
+    (rules target (list obj deps command)) )
   target )
 
+;; internal: find the path for a dependency
+(defmethod LushMake find(dep)
+  (let ((dir (if (rules dep) objdir srcdir)))
+    (concat-fname dir dep) ) )
 
+;; internal: recursively build a target
 (defmethod LushMake rebuild(target &optional done dryrun)
   (when (not (rules target))
-    (error '==> "Do not know how to make" target) )
+    (error '==> "Do not know how to make" target) ) 
   (when (or (not done) (not (done target)))
     (let (((obj deps cmd) (rules target)))
       (let ((flag t)
-            (objtime (alist-get 'mtime (fileinfo obj))) )
-        (when objtime
-          (setq flag dhc-make-force)
-          (each ((src deps))
-            (let ((srctime (alist-get 'mtime (fileinfo src))))
-              (when (or (rules src) (not srctime))
-                (setq flag (or flag (==> this rebuild src done dryrun))) )
-              (when (< objtime srctime)
-                (setq flag t) ) ) ) )
+            (objtime (alist-get 'mtime (fileinfo obj))) 
+            (srcs (all ((dep deps)) (==> this find dep))) )
+        (when objtime 
+          (setq flag dhc-make-force) )
+        (each ((dep deps)(src srcs))
+          (let* ((srctime (alist-get 'mtime (fileinfo src))) )
+            (when (or (rules dep) (not srctime))
+              (when (==> this rebuild dep done dryrun)
+                (setq flag t) ) )
+            (when (and objtime srctime (< objtime srctime))
+              (setq flag t) ) ) )
         (when done 
           (done target t) )
         (when flag
@@ -204,9 +210,15 @@
 			  " " moreflags ) )
             (vars "SRCDIR" srcdir)
             (vars "OBJDIR" objdir)
-            (vars "SRC" (car deps))
-            (for (i 1 9) (vars (sprintf "SRC%d" i) (nth i deps)))
             (vars "OBJ" obj)
+            (vars "SRC" (car srcs))
+            (for (i 1 9) 
+                 (vars (sprintf "SRC%d" i) (nth i srcs)) )
+            (let ((s ())) 
+              (each ((f srcs)) 
+                (setq s (nconc1 s " ")) 
+                (setq s (nconc1 s f)) )
+              (vars "SOURCES" (apply concat (cdr s))) )
             ;; Execute 
             (setq cmd (dhc-substitute-env cmd vars))
             (printf "%s\n" cmd)
@@ -267,17 +279,20 @@
     (let ((done (htable)))
       (each ((target targets))
         (==> this rebuild target done) ) )
-    (let ((ext (concat "." (or (getconf "OBJEXT") "o"))))
-      (each ((obj targets))
-        (when (= (right obj (len ext)) ext)
-          (mod-load obj) )
-        ;; record dependencies with libload.
-        (let ((mark (lambda(f)
-                      (let ((dep (cadr (rules f))))
-                        (each ((d dep))
-                          (libload-add-dependency d)
-                          (mark d) ) ) ) ))
-          (mark obj) ) ) )
+    (let ((oext (concat "." (or (getconf "OBJEXT") "o")))
+          (soext (concat "." (or (getconf "SOEXT") "so"))) )
+      (each ((target targets))
+        (when (or (= (right target (len oext)) oext)
+                  (= (right target (len soext)) soext) )
+          (mod-load (car (rules target)))
+          ;; record dependencies for libload.
+          (let ((mark (lambda(f done)
+                        (each ((dep (cadr (rules f))))
+                          (if (and (rules dep) (not (done dep)))
+                              (mark dep done)
+                            (libload-add-dependency (==> this find dep))
+                            (done dep t) ) ) )))
+            (mark target (htable)) ) ) ) ) 
     t ) )
 
 
