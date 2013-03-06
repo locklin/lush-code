@@ -46,6 +46,7 @@ static htable_t *lbfgs_params(void)
    /* these control verbosity */
    htable_set(p, NEW_SYMBOL("iprint-1"), NEW_NUMBER(-1));
    htable_set(p, NEW_SYMBOL("iprint-2"), NEW_NUMBER(0));
+   htable_set(p, NEW_SYMBOL("warn"), NEW_NUMBER(1));
 
    /* these control line search behavior */
    htable_set(p, NEW_SYMBOL("ls-gtol"), NEW_NUMBER(lb3_.gtol));
@@ -151,7 +152,10 @@ DX(xlbfgs)
          vargs = new_cons(APOINTER(i), vargs);
    int _errno = lbfgs(x0, APOINTER(2), APOINTER(3), gtol, p, vargs);
    var_set(NEW_SYMBOL("*lbfgs-errno*"), NEW_NUMBER(_errno));
-   if (_errno != 0)
+   double dowarn = 1;
+   if (p && NUMBERP(htable_get(p, NEW_SYMBOL("warn"))))
+      dowarn = Number(htable_get(p, NEW_SYMBOL("warn")));
+   if (_errno!=0 && dowarn)
       fprintf(stderr, "*** Warning: lbfgs failed to converge (see *lbfgs-errno*)\n");
    return x0->backptr;
 }
