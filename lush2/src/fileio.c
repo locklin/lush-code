@@ -252,11 +252,19 @@ DX(xunlink)
 
 DX(xrename)
 {
-   ARG_NUMBER(2);
+   bool ignore_enoent = false;
+   if (arg_number == 3) {
+      ignore_enoent = APOINTER(3) != NIL;
+   } else {
+      ARG_NUMBER(2);
+   }
    errno = 0;
-   if (rename(ASTRING(1),ASTRING(2))<0)
-      test_file_error(NULL, errno);
-   return NIL;
+   if (rename(ASTRING(1),ASTRING(2))<0) {
+      if (errno != ENOENT || !ignore_enoent)
+         test_file_error(NULL, errno);
+      return NIL;
+   }
+   return t();
 }
 
 
