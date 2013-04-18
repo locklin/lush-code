@@ -58,8 +58,8 @@ double cg_value_adaptor(double *x, int n)
       return NAN;
          
    } else {
-      if (n != nx)
-         error(NIL, "vector of different size expected", NEW_NUMBER(n));
+      if (n > nx)
+         error(NIL, "vector of different size expected in value adaptor", NEW_NUMBER(n));
       st->data = x;
       return Number(listeval(Car(call), call));
    }
@@ -102,8 +102,8 @@ void cg_grad_adaptor(double *g, double *x, int n)
                                new_cons(NEW_INDEX(stx, IND_SHAPE(ind)),
                                         vargs)));
    } else {
-      if (n != nx)
-         error(NIL, "vector of different size expected", NEW_NUMBER(n));
+      if (n > nx)
+         error(NIL, "vector of different size expected in grad adaptor", NEW_NUMBER(n));
       stx->data = x;
       stg->data = g;
       listeval(Car(call), call);
