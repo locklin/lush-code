@@ -3138,6 +3138,8 @@ index_t *array_take2(index_t *ind, index_t *ss)
       GenericTake(CHAR, char);
       GenericTake(UCHAR, unsigned char);
       GenericTake(GPTR, gptr);
+      GenericTake(MPTR, mptr);
+      GenericTake(AT, at *);
 
 #undef GenericTake
       
@@ -3226,6 +3228,8 @@ index_t *array_take3(index_t *ind, int d, index_t *ss)
       GenericTake(CHAR, char);
       GenericTake(UCHAR, unsigned char);
       GenericTake(GPTR, gptr);
+      GenericTake(MPTR, mptr);
+      GenericTake(AT, at *);
 
 #undef GenericTake
       
@@ -3504,7 +3508,7 @@ static int ebloop_args(at *p, at **syms, at **iats,
 
 DY(yeloop)
 {
-   at *ans, *last_index;
+   at *last_index;
    int d, n;
    index_t *ind;
    
@@ -3524,7 +3528,7 @@ DY(yeloop)
 
    /* loop */
    for (int j=0; j<d; j++) {
-      ans = progn(Cdr(ARG_LIST));
+      (void) progn(Cdr(ARG_LIST));
       for (int i=0; i<n; i++)
          if (INDEXP(iats[i])) {
             /* check not deleted! */
@@ -3564,9 +3568,8 @@ DY(ybloop)
       SYMBOL_PUSH(syms[i], iats[i]);
    }
    
-   at *ans = NIL;			/* loop */
    for (int j=0; j<d; j++) {
-      ans = progn(Cdr(ARG_LIST));
+      (void) progn(Cdr(ARG_LIST));
       for (int i=0; i<n; i++)
          if (INDEXP(iats[i])) {
             /* check not deleted! */
