@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: dump.c,v 1.8 2009-10-16 16:07:05 leonb Exp $
+ * $Id: dump.c,v 1.9 2013-05-07 11:46:39 leonb Exp $
  **********************************************************************/
 
 
@@ -206,6 +206,7 @@ undump(const char *s)
   at *atf;
   int magic;
   int version;
+  size_t rd;
 
   atf = OPEN_READ(s,"dump");
   f = atf->Object;
@@ -218,8 +219,8 @@ undump(const char *s)
     error(NIL,"Dump file format version is too high",NIL);
 
   /* The macro character map */
-  fread(char_map,1,256,f);
-  if (feof(f) || ferror(f))
+  rd = fread(char_map,1,256,f);
+  if (feof(f) || ferror(f) || rd == (size_t)-1)
     error(NIL,"Corrupted dump file (1)",NIL);
 
   /* The executable list */

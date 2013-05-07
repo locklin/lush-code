@@ -337,6 +337,7 @@ dnl -------------------------------------------------------
 
 AC_DEFUN([AC_PATH_XFT], [
   AC_REQUIRE([AC_PROG_PKGCONFIG])
+  AC_REQUIRE([AC_PATH_FONTCONFIG])
   AC_CACHE_CHECK(for library Xft, ac_cv_cc_xft, [
     ac_cv_cc_xft=no
     if test -x "$PKGCONFIG" && $PKGCONFIG --exists xft ; then
@@ -362,6 +363,47 @@ AC_DEFUN([AC_PATH_XFT], [
   ])
   if test x$ac_cv_cc_xft = xyes ; then
     AC_DEFINE(HAVE_XFT,1, [Define to 1 if you have the "Xft" library.])
+    ifelse([$1],,:,[$1])
+  else 
+    ifelse([$2],,:,[$2])
+  fi
+])
+
+
+dnl -------------------------------------------------------
+dnl @synopsis AC_PATH_FONTCONFIG([ACTION-IF-FOUND[, ACTION-IF-NOT-FOUND]])
+dnl Checks for existence of library Fontconfig.
+dnl Sets variable HAVE_FONTCONFIG when present.
+dnl Update x_libraries and x_cflags to handle Fontconfig.
+dnl -------------------------------------------------------
+
+AC_DEFUN([AC_PATH_FONTCONFIG], [
+  AC_REQUIRE([AC_PROG_PKGCONFIG])
+  AC_CACHE_CHECK(for library fontconfig, ac_cv_cc_fontconfig, [
+    ac_cv_cc_fontconfig=no
+    if test -x "$PKGCONFIG" && $PKGCONFIG --exists fontconfig ; then
+      ac_cv_cc_fontconfig=yes
+      cflags="`$PKGCONFIG --cflags fontconfig`"
+      for cflag in $cflags ; do 
+        AC_APPEND_OPTION(X_CFLAGS, $cflag)
+      done
+      libs="`$PKGCONFIG --libs fontconfig` $X_LIBS"
+      X_LIBS=
+      for lib in $libs ; do
+        case $lib in
+          -L*) AC_APPEND_OPTION(X_LIBS, $lib) ;;
+        esac
+      done
+      for lib in $libs ; do
+        case $lib in
+          -L*)  ;;
+          *) AC_APPEND_OPTION(X_LIBS, $lib) ;;
+        esac
+      done
+    fi
+  ])
+  if test x$ac_cv_cc_fontconfig = xyes ; then
+    AC_DEFINE(HAVE_FONTCONFIG,1, [Define to 1 if you have the "fontconfig" library.])
     ifelse([$1],,:,[$1])
   else 
     ifelse([$2],,:,[$2])

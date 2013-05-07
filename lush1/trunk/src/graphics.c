@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: graphics.c,v 1.17 2007-02-06 19:36:46 leonb Exp $
+ * $Id: graphics.c,v 1.18 2013-05-07 11:46:39 leonb Exp $
  **********************************************************************/
 
 
@@ -1255,8 +1255,7 @@ color_draw_matrix(int x, int y, at *p,
     struct index *ind;
     struct idx idx;
     int error_flag;
-    struct window *win;
-
+    
     if (!indexp(p))
         error(NIL, "not an index", p);
     ind = p->Object;
@@ -1269,7 +1268,7 @@ color_draw_matrix(int x, int y, at *p,
     if(error_flag)
         switch(error_flag) {
         case 1:
-            win = current_window(); /* will be an error */
+            current_window(); /* will be an error */
         case 2:
             error(NIL, "Illegal scaling factor", NIL);
         case 3:
@@ -1602,7 +1601,6 @@ rgb_draw_matrix(int x, int y, at *p, int sx, int sy)
     struct index *ind;
     struct idx idx;
     int error_flag;
-    struct window *win;
 
     if (!indexp(p))
         error(NIL, "not an index", p);
@@ -1616,7 +1614,7 @@ rgb_draw_matrix(int x, int y, at *p, int sx, int sy)
     if(error_flag)
         switch(error_flag) {
         case 1:
-            win = current_window(); /* will be an error */
+            current_window(); /* will be an error */
         case 2:
             error(NIL,"Graphic driver does not support pixel-map",NIL);
         case 3:
@@ -1744,7 +1742,6 @@ rgb_grab_matrix(int x, int y, at *p)
   struct index *ind;
   struct idx idx;
   int error_flag;
-  struct window *win;
   
   if (!indexp(p))
     error(NIL, "not an index", p);
@@ -1755,7 +1752,7 @@ rgb_grab_matrix(int x, int y, at *p)
   if(error_flag)
     switch(error_flag) {
     case 1:
-      win = current_window(); /* will be an error */
+      current_window(); /* will be an error */
     case 2:
       error(NIL,"Graphic driver does not support get-image",NIL);
     case 21:
