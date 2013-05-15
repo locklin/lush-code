@@ -52,6 +52,7 @@ static htable_t *lbfgs_params(void)
    htable_set(p, NEW_SYMBOL("ls-gtol"), NEW_NUMBER(lb3_.gtol));
    htable_set(p, NEW_SYMBOL("ls-stpmin"), NEW_NUMBER(lb3_.stpmin));
    htable_set(p, NEW_SYMBOL("ls-stpmax"), NEW_NUMBER(lb3_.stpmax));
+   htable_set(p, NEW_SYMBOL("ls-maxfev"), NEW_NUMBER(20)); // only used by mcsrch
 
    /* LBFGS parameters */
    htable_set(p, NEW_SYMBOL("lbfgs-m"), NEW_NUMBER(7));
@@ -78,7 +79,7 @@ static int lbfgs(index_t *x0, at *f, at *g, double gtol, htable_t *p, at *vargs)
    extern void lbfgs_(int *n, int *m, double *x, double *fval, double *gval, \
                       int *diagco, double *diag, int iprint[2], double *gtol, \
                       double *xtol, double *w, int *iflag);
-
+                        
    ifn (IND_STTYPE(x0) == ST_DOUBLE)
       error(NIL, "not an array of doubles", x0->backptr);
    ifn (Class(f)->listeval)
@@ -160,11 +161,122 @@ DX(xlbfgs)
    return x0->backptr;
 }
 
+/* Interface to the line search routine MCSRCH.     */
+/* The first four arguments get updated in-place,   */
+/* the return value is an error code (see lbfgs.f). */
+static int mcsrch(index_t *x0, index_t *fval, index_t *gval, index_t *stp, int *nfe, \
+                  index_t *sd, at *f, at *g, htable_t *p, at *vargs)
+{
+   /* argument checking and setup */
+   extern void mcsrch_(int *n, double *x, double *fx, double *gx, double *s, \
+                       double *stp, double *ftol, double *xtol, int *maxfev, \
+                       int *info, int *nfev, double *wa);
+
+   ifn (IND_STTYPE(x0) == ST_DOUBLE)
+      error(NIL, "x not an array of doubles", x0->backptr);
+   ifn (index_contiguousp(x0))
+      error(NIL, "x not a contiguous array", x0->backptr);
+   ifn (IND_STTYPE(fval) == ST_DOUBLE)
+      error(NIL, "fval not an array of doubles", fval->backptr);
+   ifn (IND_STTYPE(gval) == ST_DOUBLE)
+      error(NIL, "gval not an array of doubles", gval->backptr);
+   ifn (index_contiguousp(gval))
+      error(NIL, "gval not a contiguous array", gval->backptr);
+   ifn (IND_STTYPE(stp) == ST_DOUBLE)
+      error(NIL, "stp not an array of doubles", stp->backptr);
+   ifn (shape_equalp(IND_SHAPE(x0), IND_SHAPE(gval)))
+      error(NIL, "shape of x and gval don't match", NIL);
+   ifn (shape_nelems(IND_SHAPE(fval)))
+      error(NIL, "fval not a scalar", fval->backptr);
+   ifn (shape_nelems(IND_SHAPE(stp)))
+      error(NIL, "stp not a scalar", stp->backptr);
+   ifn (IND_STTYPE(sd) == ST_DOUBLE)
+      error(NIL, "sd not an array of double", sd->backptr);
+   ifn (index_nelems(x0) == index_nelems(sd))
+      error(NIL, "number of elements of x and sd don't match", NIL);
+   ifn (index_contiguousp(sd))
+      error(NIL, "sd not a contiguous array", sd->backptr);
+   ifn (Class(f)->listeval)
+      error(NIL, "not a function", f);
+   ifn (Class(f)->listeval)
+      error(NIL, "not a function", g);
+
+   int n = index_nelems(x0);
+   ifn (n>0)
+      error(NIL, "x empty", x0->backptr);
+
+   double *x = IND_ST(x0)->data;
+   double *fx = IND_ST(fval)->data;
+   double *gx = IND_ST(gval)->data;
+   double *st = IND_ST(stp)->data;
+   double *s = IND_ST(sd)->data;
+
+   at *(*listeval_f)(at *, at *) = Class(f)->listeval;
+   at *(*listeval_g)(at *, at *) = Class(g)->listeval;
+   at *callf = new_cons(f, new_cons(x0->backptr, vargs));
+   at *callg = new_cons(g, new_cons(gval->backptr, new_cons(x0->backptr, vargs)));
+
+   htable_t *params = lbfgs_params();
+   if (p) htable_update(params, p);
+   lb3_.gtol = Number(htable_get(params, NEW_SYMBOL("ls-gtol")));
+   lb3_.stpmin = Number(htable_get(params, NEW_SYMBOL("ls-stpmin")));
+   lb3_.stpmax = Number(htable_get(params, NEW_SYMBOL("ls-stpmax")));
+   int maxfev = Number(htable_get(params, NEW_SYMBOL("ls-maxfev")));
+
+   double *wa = mm_blob(n*sizeof(double));
+   double ftol = 1e-4;
+   double xtol = eps(1);
+
+   /* reverse communication loop */
+   int info = 0;
+   while (mcsrch_(&n, x, fx, gx, s, st, &ftol, &xtol, &maxfev, &info, nfe, wa), info==-1) {
+      *fx = Number(listeval_f(Car(callf), callf));
+      listeval_g(Car(callg), callg);
+      if (break_attempt)
+         break;
+   };
+   if (info == -1) {
+      assert(break_attempt);
+      info = 3;
+   }
+   
+   return info;
+}
+
+DX(xmcsrch)
+{
+   if (arg_number < 7)
+      ARG_NUMBER(7);
+
+   htable_t *p = NULL;
+   if (arg_number>7 && HTABLEP(APOINTER(8)))
+      p = (htable_t *)Mptr(APOINTER(8));
+   
+   at *vargs = NIL;
+   for (int i=arg_number; i>8; i--)
+      vargs = new_cons(APOINTER(i), vargs);
+   
+   int nfe = 0;
+   int _errno = mcsrch(AINDEX(1), AINDEX(2), AINDEX(3), AINDEX(4), &nfe,
+                       AINDEX(5), APOINTER(6), APOINTER(7), p, vargs);
+   var_set(NEW_SYMBOL("*mcsrch-errno*"), NEW_NUMBER(_errno));
+
+#if 0
+   double dowarn = 1;
+   if (p && NUMBERP(htable_get(p, NEW_SYMBOL("warn"))))
+      dowarn = Number(htable_get(p, NEW_SYMBOL("warn")));
+   if (_errno!=1 && dowarn)
+      fprintf(stderr, "*** Warning: lbfgs failed to converge (see *lbfgs-errno*)\n");
+#endif
+
+   return NEW_NUMBER(nfe);
+}
 
 void init_lbfgs_interface()
 {
    dx_define("lbfgs-params", xlbfgs_params);
    dx_define("lbfgs", xlbfgs);
+   dx_define("mcsrch", xmcsrch);
 }
 
 /* -------------------------------------------------------------
