@@ -72,7 +72,7 @@ DX(xlbfgs_params)
 
 
 /* interface calling into the fortran routine */
-static int lbfgs(index_t *x0, at *f, at *g, double gtol, htable_t *p, at *vargs)
+static int lbfgs(index_t *x0, at *f, at *g, at *fdiag, double gtol, htable_t *p, at *vargs)
 {
    /* argument checking and setup */
 
@@ -80,20 +80,31 @@ static int lbfgs(index_t *x0, at *f, at *g, double gtol, htable_t *p, at *vargs)
                       int *diagco, double *diag, int iprint[2], double *gtol, \
                       double *xtol, double *w, int *iflag);
                         
+   int diagco = false;
+
    ifn (IND_STTYPE(x0) == ST_DOUBLE)
       error(NIL, "not an array of doubles", x0->backptr);
    ifn (Class(f)->listeval)
       error(NIL, "not a function", f);
    ifn (Class(f)->listeval)
       error(NIL, "not a function", g);
+   if (fdiag) {
+      ifn (Class(fdiag)->listeval)
+         error(NIL, "not a function", fdiag);
+      else
+         diagco = true;
+   }
    ifn (gtol > 0)
       error(NIL, "threshold value not positive", NEW_NUMBER(gtol));
    
    at *gx = copy_array(x0)->backptr;
+   at *dx = copy_array(x0)->backptr;
    at *(*listeval_f)(at *, at *) = Class(f)->listeval;
    at *(*listeval_g)(at *, at *) = Class(g)->listeval;
+   at *(*listeval_d)(at *, at *) = diagco ? Class(fdiag)->listeval : listeval_g;
    at *callf = new_cons(f, new_cons(x0->backptr, vargs));
    at *callg = new_cons(g, new_cons(gx, new_cons(x0->backptr, vargs)));
+   at *calld = diagco ? new_cons(fdiag, new_cons(dx, new_cons(x0->backptr, vargs))) : NIL;
 
    htable_t *params = lbfgs_params();
    if (p) htable_update(params, p);
@@ -112,9 +123,8 @@ static int lbfgs(index_t *x0, at *f, at *g, double gtol, htable_t *p, at *vargs)
    double *x = IND_ST(x0)->data;
    double  fval;
    double *gval = IND_ST(Mptr(gx))->data;
-   int diagco = false;
-   double *diag = mm_blob(n*sizeof(double));
    double *w = mm_blob((n*(m+m+1)+m+m)*sizeof(double));
+   double *diag = IND_ST(Mptr(dx))->data;
    double xtol = eps(1); /* machine precision */
    int iflag = 0;
 
@@ -123,14 +133,22 @@ static int lbfgs(index_t *x0, at *f, at *g, double gtol, htable_t *p, at *vargs)
    ifn (m>0)
       error(NIL, "m-parameter must be positive", NEW_NUMBER(m));
 
-   int iter = 0;
    /* reverse communication loop */
+   int iter = 1;
+   fval = Number(listeval_f(Car(callf), callf));
+   listeval_g(Car(callg), callg);
+   if (diagco)
+      listeval_d(Car(calld), calld);
+
    do {
-      iter++;
-      fval = Number(listeval_f(Car(callf), callf));
-      listeval_g(Car(callg), callg);
       lbfgs_(&n, &m, x, &fval, gval, &diagco, diag, iprint, &gtol, &xtol, w, &iflag);
-      assert(iflag<2);
+      if (iflag == 1) {
+         fval = Number(listeval_f(Car(callf), callf)); 
+         listeval_g(Car(callg), callg);
+         iter++;
+      } else if (iflag == 2) {
+         listeval_d(Car(calld), calld);
+      }
    } while ((iflag > 0) && (iter < maxiter) && !break_attempt);
 
    if (iflag > 0 || break_attempt)
@@ -150,8 +168,31 @@ DX(xlbfgs)
    if (arg_number>4 && HTABLEP(APOINTER(5)))
       p = (htable_t *)Mptr(APOINTER(5));
    for (int i=arg_number; i>5; i--)
-         vargs = new_cons(APOINTER(i), vargs);
-   int _errno = lbfgs(x0, APOINTER(2), APOINTER(3), gtol, p, vargs);
+      vargs = new_cons(APOINTER(i), vargs);
+   int _errno = lbfgs(x0, APOINTER(2), APOINTER(3), NIL, gtol, p, vargs);
+   var_set(NEW_SYMBOL("*lbfgs-errno*"), NEW_NUMBER(_errno));
+   double dowarn = 1;
+   if (p && NUMBERP(htable_get(p, NEW_SYMBOL("warn"))))
+      dowarn = Number(htable_get(p, NEW_SYMBOL("warn")));
+   if (_errno!=0 && dowarn)
+      fprintf(stderr, "*** Warning: lbfgs failed to converge (see *lbfgs-errno*)\n");
+   return x0->backptr;
+}
+
+DX(xlbfgsS)
+{
+   if (arg_number < 5)
+      ARG_NUMBER(5);
+
+   index_t *x0 = copy_array(AINDEX(1));
+   double gtol = ADOUBLE(5);
+   htable_t *p = NULL;
+   at *vargs = NIL;
+   if (arg_number>5 && HTABLEP(APOINTER(6)))
+      p = (htable_t *)Mptr(APOINTER(6));
+   for (int i=arg_number; i>6; i--)
+      vargs = new_cons(APOINTER(i), vargs);
+   int _errno = lbfgs(x0, APOINTER(2), APOINTER(3), APOINTER(4), gtol, p, vargs);
    var_set(NEW_SYMBOL("*lbfgs-errno*"), NEW_NUMBER(_errno));
    double dowarn = 1;
    if (p && NUMBERP(htable_get(p, NEW_SYMBOL("warn"))))
@@ -276,6 +317,7 @@ void init_lbfgs_interface()
 {
    dx_define("lbfgs-params", xlbfgs_params);
    dx_define("lbfgs", xlbfgs);
+   dx_define("lbfgs*", xlbfgsS);
    dx_define("mcsrch", xmcsrch);
 }
 
