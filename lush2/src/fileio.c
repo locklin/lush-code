@@ -102,7 +102,9 @@ const char *cwd(const char *s)
          test_file_error(NULL, errno);
    }
 #  ifdef HAVE_GETCWD
-   assert(getcwd(string_buffer,STRING_BUFFER));
+   if (getcwd(string_buffer,STRING_BUFFER) == 0) {
+      test_file_error(NULL, errno);
+   }
    return mm_strdup(string_buffer);
 #  else
    assert(getwd(string_buffer));

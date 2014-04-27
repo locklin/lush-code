@@ -130,6 +130,11 @@
 # undef RL_READLINE_VERSION    /* not a readline we can work with (MacOS ?) */
 #endif
 
+#define HAVE_GPERFTOOLS_PROFILER_H 1
+#ifdef HAVE_GPERFTOOLS_PROFILER_H
+# include "google/profiler.h"
+#endif
+
 typedef RETSIGTYPE (*SIGHANDLERTYPE)();
 
 
@@ -1155,6 +1160,21 @@ DY(ycputime)
    return NEW_NUMBER((newtime-oldtime) / (double) ticks);
 }
 
+#ifdef HAVE_GPERFTOOLS_PROFILER_H
+DY(ycpuprofile)
+{
+   ifn (CONSP(ARG_LIST) && STRINGP(Car(ARG_LIST)))
+      RAISEFX("syntax error (expected file name)", NIL);
+   const char *filename = String(Car(ARG_LIST));
+
+   at *body = Cdr(ARG_LIST);
+   ProfilerStart(filename);
+   at *res = progn(body);
+   ProfilerStop();
+
+   return res;
+}
+#endif
 
 DX(xtime)
 {
@@ -1332,6 +1352,14 @@ DX(xgetenv)
 {
    ARG_NUMBER(1);
    return make_string(getenv(ASTRING(1)));
+}
+
+DX(xsetenv)
+{
+   ARG_NUMBER(2);
+   const char *k = ASTRING(1);
+   const char *v = ASTRING(2);
+   return NEW_NUMBER(unix_setenv(k, v));
 }
 
 
@@ -1913,11 +1941,15 @@ void init_unix(void)
    dy_define("bground", ybground);
    dy_define("realtime", yrealtime);
    dy_define("cputime", ycputime);
+#ifdef HAVE_GPERFTOOLS_PROFILER_H
+   dy_define("cpuprofile", ycpuprofile);
+#endif
    dx_define("time", xtime);
    dx_define("ctime", xctime);
    dx_define("localtime", xlocaltime);
    dx_define("beep", xbeep);
    dx_define("getenv", xgetenv);
+   dx_define("setenv", xsetenv);
    dx_define("getconf", xgetconf);
    dx_define("filteropen", xfilteropen);
    dx_define("filteropenpty", xfilteropenpty);
