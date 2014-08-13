@@ -24,7 +24,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; $Id: lush.el,v 1.16 2009-12-13 21:59:55 ysulsky Exp $
+;;; $Id: lush.el,v 1.17 2014-08-13 14:58:59 leonb Exp $
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; this file contains useful definitions for emacs
@@ -276,8 +276,6 @@ the most recently enclosed macro or function."
    '(1 font-lock-keyword-face)
    '(3 font-lock-type-face nil t)
    '(4 font-lock-type-face nil t) )
-  (list
-   "\\<:\\sw\\sw+\\>" 0 (internal-find-face 'default) t t)
 ) )
 
 ;; Compare to comint-redirect-results-list - less processing required
