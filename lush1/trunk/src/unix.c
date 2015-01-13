@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.65 2011-10-09 22:48:05 leonb Exp $
+ * $Id: unix.c,v 1.66 2015-01-13 19:59:47 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -1857,15 +1857,11 @@ DX(xsocketopen)
 DX(xsocketaccept)
 {
 #ifdef HAVE_GETHOSTBYNAME
-#ifndef MAXHOSTNAMELEN
-#define MAXHOSTNAMELEN 255
-#endif
   at *f1, *f2;
   int sock1, sock2;
   char hostname[MAXHOSTNAMELEN+1];
   int portnumber;
   struct sockaddr_in server;
-  struct hostent *hp;
   FILE *ff1, *ff2;
   
   ALL_ARGS_EVAL;
@@ -1876,14 +1872,11 @@ DX(xsocketaccept)
       ASYMBOL(3);
     }
   portnumber = AINTEGER(1);
-  gethostname(hostname, MAXHOSTNAMELEN);
-  if (! (hp = gethostbyname(hostname)))
-    test_file_error(NULL);
   sock1 = socket( AF_INET, SOCK_STREAM, 0);
   if (sock1<0)
     test_file_error(NULL);
   server.sin_family = AF_INET;
-  memcpy(&server.sin_addr, hp->h_addr, hp->h_length);
+  memset(&server.sin_addr, 0, sizeof(server.sin_addr));
   server.sin_port = htons(portnumber);
   if ((bind(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0) ||
       (listen(sock1, 1) < 0) )
