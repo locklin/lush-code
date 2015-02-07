@@ -20,7 +20,7 @@
   TL3: (C) LYB YLC 1988
   header.h
   This file contains general lisp structure definitions
-  $Id: header.h,v 1.2 2005-11-14 19:00:22 leonb Exp $
+  $Id: header.h,v 1.3 2015-02-07 04:53:08 leonb Exp $
 ********************************************************************** */
 
 #ifndef HEADER_H
@@ -469,7 +469,7 @@ struct string {
 
 #define SADD(str)       (((struct string *)(str))->start)
 
-TLAPI at *new_string(char *s);
+TLAPI at *new_string(const char *s);
 TLAPI at *new_safe_string(char *s);
 TLAPI at *new_string_bylen(int n);
 TLAPI at *str_val(char *s);
@@ -489,6 +489,20 @@ extern TLAPI char null_string[];
 extern TLAPI char digit_string[];
 extern TLAPI char special_string[];
 extern TLAPI char aspect_string[];
+
+struct large_string {
+  char *p;
+  char buffer[1024];
+  at *backup;
+  at **where;
+};
+
+TLAPI void large_string_init(struct large_string *ls);
+TLAPI void large_string_add(struct large_string *ls, char *s, int len);
+TLAPI at * large_string_collect(struct large_string *ls);
+
+TLAPI at* str_mb_to_utf8(const char *s);
+TLAPI at* str_utf8_to_mb(const char *s);
 
 
 /* FUNCTION.H -------------------------------------------------- */

@@ -23,10 +23,18 @@
   string creation -->	NEW_STRING  NEW_SAFE_STRING
   string manipulation --> LEFT$ RIGHT$ MID$ CONCAT$ VAL$ STR$
   string test -->		STRINGP
-  $Id: string.c,v 1.2 2008-05-30 14:26:27 leonb Exp $
+  $Id: string.c,v 1.3 2015-02-07 04:53:09 leonb Exp $
 ********************************************************************** */
 
 #include "header.h"
+
+#if HAVE_LANGINFO_H
+# include <langinfo.h>
+#endif
+#if HAVE_ICONV_H
+# include <iconv.h>
+# include <errno.h>
+#endif
 
 struct alloc_root alloc_string = {
   NULL,
@@ -103,7 +111,7 @@ new_string_bylen(int n)
  * create a new AT and return it.
  */
 at *
-new_string(char *s)
+new_string(const char *s)
 {
   register struct string *st;
   register at *q;
@@ -216,6 +224,160 @@ class string_class =
   string_compare,
   string_hash
 };
+
+
+
+/* helpers to construct large strings -----------------	 */
+
+void
+large_string_init(struct large_string *ls)
+{
+  ls->backup = NIL;
+  ls->where = &ls->backup;
+  ls->p = ls->buffer;
+}
+
+void
+large_string_add(struct large_string *ls, char *s, int len)
+{
+  if (len < 0)
+    len = strlen(s);
+  if (ls->p > ls->buffer)
+    if (ls->p + len > ls->buffer + sizeof(ls->buffer) - 1)
+      {
+        *ls->p = 0;
+        *ls->where = cons(new_string(ls->buffer), NIL);
+        ls->where = &((*ls->where)->Cdr);
+        ls->p = ls->buffer;
+      }
+  if (len > sizeof(ls->buffer) - 1)
+    {
+      at *p = new_string_bylen(len);
+      memcpy(SADD(p->Object), s, len);
+      *ls->where = cons(p, NIL);
+      ls->where = &((*ls->where)->Cdr);
+      ls->p = ls->buffer;
+    }
+  else 
+    {
+      memcpy(ls->p, s, len);
+      ls->p += len;
+    }
+}
+
+at *
+large_string_collect(struct large_string *ls)
+{
+  char *r;
+  at *p, *q;
+  int len;
+  *ls->p = 0;
+  len = strlen(ls->buffer);
+  for (p = ls->backup; p; p = p->Cdr)
+    len += strlen(SADD(p->Car->Object));
+  q = new_string_bylen(len);
+  r = SADD(q->Object);
+  for (p = ls->backup; p; p = p->Cdr) 
+    {
+      strcpy(r, SADD(p->Car->Object));
+      r += strlen(r);
+    }
+  strcpy(r, ls->buffer);
+  UNLOCK(ls->backup);
+  ls->backup = NIL;
+  ls->where = &ls->backup;
+  ls->p = ls->buffer;
+  return q;
+}
+
+
+/* multibyte strings ---------------------------------- */
+
+#if HAVE_ICONV
+static at *
+recode(const char *s, const char *fromcode, const char *tocode)
+{
+  size_t ilen, olen;
+  char *obuf, *ibuf;
+  struct large_string ls;
+  char buffer[512];
+  at *ans = NIL;
+
+  iconv_t conv = iconv_open(tocode, fromcode);
+  if (conv)
+    {
+      ibuf = (char*)s;
+      ilen = strlen(s);
+      large_string_init(&ls);
+      for(;;)
+        {
+          obuf = buffer;
+          olen = sizeof(buffer);
+          iconv(conv, &ibuf, &ilen, &obuf, &olen);
+          if (obuf > buffer)
+            large_string_add(&ls, buffer, obuf-buffer);
+          if (ilen <= 0 || errno != E2BIG)
+            break;
+        }
+      iconv_close(conv);
+      ans = large_string_collect(&ls);
+      if (ilen <= 0)
+        return ans;
+    }
+  UNLOCK(ans);
+  return NIL;
+}
+#endif
+
+at* 
+str_mb_to_utf8(const char *s)
+{
+  /* best effort conversion from locale encoding to utf8 */
+#if HAVE_ICONV
+  at *ans;
+# if HAVE_NL_LANGINFO
+  if ((ans = recode(s, nl_langinfo(CODESET), "UTF-8")))
+    return ans;
+# endif
+  if ((ans = recode(s, "char", "UTF-8")))
+    return ans;
+  if ((ans = recode(s, "", "UTF-8")))
+    return ans;
+#endif
+  return new_string(s);
+}
+
+at* 
+str_utf8_to_mb(const char *s)
+{
+  /* best effort conversion from locale encoding from utf8 */
+#if HAVE_ICONV
+  at *ans;
+# if HAVE_NL_LANGINFO
+  if ((ans = recode(s, "UTF-8", nl_langinfo(CODESET))))
+    return ans;
+# endif
+  if ((ans = recode(s, "UTF-8", "char")))
+    return ans;
+  if ((ans = recode(s, "UTF-8", "")))
+    return ans;
+#endif
+  return new_string(s);
+}
+
+DX(xstr_locale_to_utf8)
+{
+  ARG_EVAL(1);
+  ASTRING(1);
+  return str_mb_to_utf8(SADD(APOINTER(1)->Object));
+}
+
+DX(xstr_utf8_to_locale)
+{
+  ARG_EVAL(1);
+  ASTRING(1);
+  return str_utf8_to_mb(SADD(APOINTER(1)->Object));
+}
 
 
 /* operations on strings ------------------------------	 */
@@ -1604,6 +1766,8 @@ init_string(void)
   dx_define("asc", xstr_asc);
   dx_define("chr", xstr_chr);
   dx_define("isprint", xisprint);
+  dx_define("locale-to-utf8", xstr_locale_to_utf8);
+  dx_define("utf8-to-locale", xstr_utf8_to_locale);
   dx_define("stringp", xstringp);
   dx_define("regex_match", xregex_match);
   dx_define("regex_extract", xregex_extract);
