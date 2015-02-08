@@ -20,13 +20,17 @@
         TL3:    L.Y. Bottou   --   Y. LeCun
         define.h
         General Use definitions
-	$Id: define.h,v 1.1.1.1 2002-04-16 17:37:32 leonb Exp $
+	$Id: define.h,v 1.2 2015-02-08 02:00:16 leonb Exp $
 ********************************************************************** */
 
 #ifndef DEFINE_H
 #define DEFINE_H
 
 /* --------- GENERAL PURPOSE DEFINITIONS ---------- */
+
+#if HAVE_SYS_TYPES_H 
+# include <sys/types.h>
+#endif
 
 #include <setjmp.h>
 #include <stdlib.h>
@@ -174,16 +178,61 @@
 #define NEED_TOLOWER 1
 #endif
 
+#ifdef HAVE_WCHAR_H
+# include <wchar.h>
+# include <limits.h>
+# ifdef HAVE_WCTYPE_H
+#  include <wctype.h>
+# endif
+# ifndef HAVE_WINT_T
+#  define wint_t int
+# endif
+# ifndef HAVE_MBSTATE_T
+#  define mbstate_t int
+# endif
+# ifndef HAVE_MBRTOWC
+#  define mbrtowc(p,s,n,ps) mbtowc(p,s,n)
+# endif
+# ifndef HAVE_WCRTOMB
+#  define wcrtomb(s,w,ps) wctomb(s,w)
+# endif
+# ifndef HAVE_MBRLEN
+#  define mbrlen(s,n,ps) mblen(s,n)
+# endif
+#endif
+#ifdef HAVE_WCHAR_H
+# include <wchar.h>
+# include <limits.h>
+# ifdef HAVE_WCTYPE_H
+#  include <wctype.h>
+# endif
+# ifndef HAVE_WINT_T
+#  define wint_t int
+# endif
+# ifndef HAVE_MBSTATE_T
+#  define mbstate_t int
+# endif
+# ifndef HAVE_MBRTOWC
+#  define mbrtowc(p,s,n,ps) mbtowc(p,s,n)
+# endif
+# ifndef HAVE_WCRTOMB
+#  define wcrtomb(s,w,ps) wctomb(s,w)
+# endif
+# ifndef HAVE_MBRLEN
+#  define mbrlen(s,n,ps) mblen(s,n)
+# endif
+#endif
+
 #ifndef HAVE_SIGSETJMP
-#ifndef sigsetjmp
-#ifndef siglongjmp
-#ifndef sigjmp_buf
-#define sigjmp_buf jmp_buf
-#define sigsetjmp(env, arg) setjmp(env)
-#define siglongjmp(env, arg) longjmp(env,arg)
-#endif
-#endif
-#endif
+# ifndef sigsetjmp
+#  ifndef siglongjmp
+#   ifndef sigjmp_buf
+#    define sigjmp_buf jmp_buf
+#    define sigsetjmp(env, arg) setjmp(env)
+#    define siglongjmp(env, arg) longjmp(env,arg)
+#   endif
+#  endif
+# endif
 #endif
 
 /* --------- LISP CONSTANTS --------- */

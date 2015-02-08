@@ -22,14 +22,27 @@
   
   main routine & initialization
   
-  $Id: main.c,v 1.1.1.1 2002-04-16 17:37:38 leonb Exp $
+  $Id: main.c,v 1.2 2015-02-08 02:00:16 leonb Exp $
   ***********************************************************************/
 
 #include "header.h"
 
+#if HAVE_LOCALE_H
+# include <locale.h>
+#endif
+
 TLAPI int
 main(int argc, char **argv)
 {
+  /* Setup locale */
+#if HAVE_SETLOCALE 
+# ifdef LC_ALL
+  setlocale(LC_ALL,"");
+# endif
+# ifdef LC_NUMERIC
+  setlocale(LC_NUMERIC,"C");
+# endif
+#endif
   FMODE_TEXT(stderr);
   fprintf(stderr,"TL3 version 1.7" 
 #ifdef __DATE__
