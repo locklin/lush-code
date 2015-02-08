@@ -19,7 +19,7 @@
 /***********************************************************************
   TL3: (C) LYB YLC 1988
   toplevel.c
-  $Id: toplevel.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
+  $Id: toplevel.c,v 1.3 2015-02-08 02:31:18 leonb Exp $
 ********************************************************************** */
 
 #include "header.h"
@@ -429,6 +429,13 @@ context_pop(void)
 
 static int discard_flag;
 static int exit_flag = 0;
+
+void
+set_toplevel_exit_flag(void)
+{
+  exit_flag = 1;
+}
+
 
 void 
 toplevel(char *in, char *out, char *new_prompt)

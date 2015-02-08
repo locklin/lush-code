@@ -20,7 +20,7 @@
   TL3: (C) LYB YLC 1988
   matrix.c
   - array and matrix class definition
-  $Id: fmatops.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
+  $Id: fmatops.c,v 1.3 2015-02-08 02:31:18 leonb Exp $
 ********************************************************************** */
 
 #include "header.h"
@@ -2279,7 +2279,7 @@ mindex_compute (at *m0, at *ans)
 {
   int n = 0;
   int m = 1;
-  struct array *mm0, *mmans, *va;
+  struct array *mm0, *va;
 
   long i;
   int mod;
@@ -2287,7 +2287,7 @@ mindex_compute (at *m0, at *ans)
   float *f2;
 
   mm0 = check_matrix (m0, &n, &m);
-  mmans = answer_imatrix (&ans, mm0->dim, &m);
+  answer_imatrix (&ans, mm0->dim, &m);
   buffer_check(&m_buffer,&m_buffer_size, sizeof(flt) * n);
 
   /* copy m0 to buffer.

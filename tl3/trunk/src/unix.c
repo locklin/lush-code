@@ -20,7 +20,7 @@
    TL3:   (C) YLC LYB 1988
    mdep_unix.c
    machine dependant code
-   $Id: unix.c,v 1.1.1.1 2002-04-16 17:37:39 leonb Exp $
+   $Id: unix.c,v 1.2 2015-02-08 02:31:18 leonb Exp $
 
    INIT_MACHINE         general initializations
    CHECK_MACHINE        called by EVAL
@@ -76,6 +76,22 @@
 #endif
 #ifdef HAVE_SYS_TTOLD_H
 #include <sys/ttold.h>
+#endif
+#ifdef HAVE_READLINE_READLINE_H
+# ifdef HAVE_CONFIG_H
+#  define HAVE_TLCONF_H HAVE_CONFIG_H
+#  undef HAVE_CONFIG_H
+# endif
+# include <readline/readline.h>
+# ifdef HAVE_READLINE_HISTORY_H
+#  include <readline/history.h>
+# endif
+# ifdef HAVE_TLCONF_H
+#  define HAVE_CONFIG_H HAVE_LUSHCONF_H 
+# endif
+# ifndef RL_READLINE_VERSION
+#  define RL_READLINE_VERSION 0  /* non-gnu */
+# endif
 #endif
 
 /* TLISP header files */
@@ -671,6 +687,272 @@ set_trigger(int fd, void (*trigger)(int), void (*process)(void))
 
 /* console_getline -- gets a line on the console (and process events) */
 
+static void *unused;
+
+#ifdef RL_READLINE_VERSION
+
+static int console_in_eventproc = 0;
+
+static void
+console_wait_for_char(int prep)
+{
+  int ok = 0;
+  fflush(stdout);
+  console_in_eventproc = 1;
+  if (trigger_process)
+    (*trigger_process)();
+  while (!ok)
+    {
+      block_async_trigger();
+      ok = wait_trigger_or_input();
+      unblock_async_trigger();
+      if (trigger_process)
+	(*trigger_process)();
+    }      
+  if (prep) 
+    rl_prep_terminal(1);
+  console_in_eventproc = 0;
+}
+
+static int
+console_getc(FILE *f)
+{
+  if (f != stdin)
+    return rl_getc(f);
+  console_wait_for_char(TRUE);
+  if (break_attempt)
+    return EOF;
+  return rl_getc(f);
+}
+
+static char *
+symbol_generator(const char *text, int state)
+{
+  int i;
+  static int hni;
+  static struct hash_name *hn;
+  if (!text || !text[0])
+    return NULL;
+  if (! state) 
+    {
+      hni = 0;
+      hn = 0;
+    }
+  while (hni < HASHTABLESIZE) 
+    {
+      struct hash_name *h;
+      const unsigned char *a;
+      unsigned char *b;
+      /* move to next */
+      if (! hn) 
+        {
+          hn = names[hni];
+          hni++;
+          continue;
+        }
+      h = hn;
+      hn = hn->next;
+      /* compare symbol names */
+      if (text[0]=='|' || tolower(text[0])==h->name[0])
+        {
+          a = (const unsigned char*) text;
+          b = (unsigned char*) pname(h->named);
+          i = 0;
+          while (a[i])
+            {
+              unsigned char ac = a[i];
+              unsigned char bc = b[i];
+              if (text[0] != '|') 
+                ac = tolower(ac);
+              if (text[0] != '|' && ac=='_')
+                ac = '-';
+              if (ac != bc) 
+                break;
+              i++;
+            }
+          if (! a[i])
+            return strdup((const char*) b);
+        }
+    }
+  return 0;
+}
+
+
+#if RL_READLINE_VERSION > 0x400
+
+static char **
+console_complete(const char *text, int start, int end)
+{
+  int i;
+  int state = 0;
+  int lasti = -1;
+  /* Where are we? */
+  for (i=0; i<start; i++)
+    {
+      char c = rl_line_buffer[i];
+      if (! strchr(rl_basic_word_break_characters, c))
+        lasti = i;
+      switch(state) {
+      case 0:    
+        if (c==';' || c=='|' || c=='"')
+          state = c; 
+        break;
+      case '\\': 
+        state = '"'; 
+        break;
+      case '"':  
+        if (c=='\\') 
+          state = '\\';
+      case '|':  
+        if (c==state) 
+          state = 0;
+      case ';':  
+        if ( c=='\n' || c=='\r') 
+          state = 0; 
+        break;
+      }
+    }
+  /* Filename completion */
+  if (state == '"' && start>0 && rl_line_buffer[start-1]=='"')
+    return NULL; /* first word of a string */
+  if (state == 0 && lasti>=0 && rl_line_buffer[lasti]==(0x1f&'L'))
+    return NULL; /* after ctrl-L */
+  if (state == 0 && lasti>=1 && 
+      rl_line_buffer[lasti-1]=='^' && rl_line_buffer[lasti]=='L')
+    return NULL; /* after ^L */
+  /* Symbol completion */
+  if ((state==0 || state=='|') && end>start)
+    return rl_completion_matches(text, symbol_generator);
+  /* No completion */
+  rl_attempted_completion_over = 1;
+  return 0;
+}
+
+#endif
+
+static void
+console_init(void)
+{
+  /* quotes etc. */
+  static const char *special_prefixes = "|";
+  static const char *quote_characters = "\"";
+  static const char *word_break_characters = 
+    " ()#^\"|;"   /* syntactic separators */
+    "~'`,@[]{}:"  /* common macro characters */
+    "\001\002\003\004\005\006\007"
+    "\010\011\012\013\014\015\016\017"
+    "\020\021\022\023\024\025\026\027"
+    "\030\031\032\033\034\035\036\037";
+  /* callbacks */
+  rl_getc_function = console_getc;
+  /* completion */
+#if RL_READLINE_VERSION > 0x400
+  rl_special_prefixes = special_prefixes;
+  rl_basic_quote_characters = quote_characters;
+  rl_basic_word_break_characters = word_break_characters;
+  rl_attempted_completion_function = console_complete;
+#else
+  rl_special_prefixes = special_prefixes;
+  rl_completer_quote_characters = quote_characters;
+  rl_completer_word_break_characters = word_break_characters;
+  rl_completion_entry_function = symbol_generator;
+#endif
+  /* matching parenthesis */
+#if RL_READLINE_VERSION > 0x402
+  rl_set_paren_blink_timeout(250000);
+#endif
+#if RL_READLINE_VERSION > 0x401
+  rl_bind_key (')', rl_insert_close);
+  rl_bind_key (']', rl_insert_close);
+  rl_bind_key ('}', rl_insert_close);
+#endif 
+  /* comments */
+#if RL_READLINE_VERSION > 0x400
+  rl_variable_bind("comment-begin",";;; ");
+#endif  
+}
+
+void
+console_getline(char *prompt, char *buf, int size)
+{
+  char *s, *line;
+  buf[0] = 0;
+  /* Problem: Recursive calls to readline happen when an 
+     event handler attempts to read something on the tty.
+     Solution: Revert to non-readline non-event operation. */
+  if (console_in_eventproc)
+    {
+      rl_deprep_terminal();
+      fputs(prompt,stdout);
+      fflush(stdout);
+      if (!break_attempt)
+        if (!feof(stdin))
+          unused = fgets(buf,size-2,stdin);
+      return;
+    }
+  /* Problem: Readline erases previous output on the same line.
+     Solution: Revert to non-readline operation. */
+  if (context->output_tab > 0)
+    {
+      rl_deprep_terminal();
+      fputs(prompt, stdout);
+      fflush(stdout);
+      console_wait_for_char(FALSE);
+      if (context->output_tab > 0)
+        {
+          if (!break_attempt)
+            if (!feof(stdin))
+              unused = fgets(buf,size-2,stdin);
+          return;
+        }
+    }
+  /* Call readline */
+  line = readline(prompt);
+  if (line)
+    {
+      /* Hack to allow very long lines */
+      if (buf == line_buffer)
+        {
+          int l = strlen(line) + 4;
+          if (l < LINE_BUFFER)
+            l = LINE_BUFFER;
+          if ((s = malloc(l)))
+            {
+              free(line_buffer);
+              line_pos = line_buffer = buf = s;
+              size = l-2;
+            }
+        }
+      /* End of hack */
+      strncpy(buf, line, size);
+      buf[size-1] = 0;
+      buf[size-2] = 0;
+      strcat(buf,"\n");
+      s = line;
+      while (*s==' ' || *s=='\t')
+        s += 1;
+      if (*s)
+        add_history(line);
+      free(line);
+    }
+  else
+    {
+      /* Got a ctrl+d */
+      extern void set_toplevel_exit_flag(void);
+      set_toplevel_exit_flag();
+      print_string("\n");
+      buf[0] = (char)EOF;
+      buf[1] = 0;
+    }
+}
+
+#else /* !RL_READLINE_VERSION */
+
+static void
+console_init(void)
+{
+}
+
 void
 console_getline(char *prompt, char *buf, int size)
 {
@@ -691,10 +973,10 @@ console_getline(char *prompt, char *buf, int size)
     return;
   if (feof(stdin))
     return;
-  fgets(buf,size-2,stdin);
+  unused = fgets(buf,size-2,stdin);
 }
 
-
+#endif
 
 
 
@@ -1139,6 +1421,7 @@ void
 init_unix(void)
 {
   set_irq();
+  console_init();
   Fseed(time(NULL));
   dx_define("getpid", xgetpid);
   dx_define("getuid", xgetuid);

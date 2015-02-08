@@ -19,7 +19,7 @@
 /***********************************************************************
   TL3: (C) LYB YLC 1988
   dump.c
-  $Id: dump.c,v 1.1.1.1 2002-04-16 17:37:38 leonb Exp $
+  $Id: dump.c,v 1.2 2015-02-08 02:31:18 leonb Exp $
 
 ********************************************************************** */
 
@@ -169,6 +169,7 @@ undump(char *s)
   at *atf;
   int magic;
   int version;
+  int rd;
 
   atf = OPEN_READ(s,"dump");
   f = atf->Object;
@@ -181,8 +182,8 @@ undump(char *s)
     error(NIL,"Dump file format version is too high",NIL);
 
   /* The macro character map */
-  fread(char_map,1,256,f);
-  if (feof(f) || ferror(f))
+  rd = fread(char_map,1,256,f);
+  if (feof(f) || ferror(f) || rd == (size_t)-1)
     error(NIL,"Corrupted dump file (1)",NIL);
 
   /* The executable list */

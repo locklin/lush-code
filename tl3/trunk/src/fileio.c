@@ -20,7 +20,7 @@
 	TL3: (C) LYB YLC 1988
 	fileio.c
         WARNING: OLD (PRE-ARNO) SLIGHTLY EDITED
-        $Id: fileio.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
+        $Id: fileio.c,v 1.3 2015-02-08 02:31:18 leonb Exp $
 ********************************************************************** */
 
 #include <errno.h>
@@ -313,7 +313,8 @@ lockfile(char *filename)
 {
   int fd;
   time_t tl;
-
+  int ret = 1;
+  
 #ifdef WIN32
   fd = _open(filename, _O_RDWR|_O_CREAT|_O_EXCL, 0644);
 #else
@@ -353,9 +354,11 @@ lockfile(char *filename)
 	    user, computer, time(&tl));
   }
 #endif
-  write(fd, string_buffer, strlen(string_buffer));
-  close(fd);
-  return 1;
+  if (write(fd, string_buffer, strlen(string_buffer)) < 0)
+    ret = 0;
+  if (close(fd) < 0)
+    ret = 0;
+  return ret;
 }
 
 DX(xlockfile)

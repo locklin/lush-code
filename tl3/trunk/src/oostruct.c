@@ -20,7 +20,7 @@
   TL3: (C) LYB YLC 1988
   oostruct.c
   - object oriented structures
-  $Id: oostruct.c,v 1.2 2005-11-14 19:00:24 leonb Exp $
+  $Id: oostruct.c,v 1.3 2015-02-08 02:31:18 leonb Exp $
 ********************************************************************** */
 
 #include "header.h"
@@ -1053,15 +1053,11 @@ static void
 send_delete(at *p)
 {
   register class *cl;
-  register struct oostruct *s;
   register at *f;
 
   ifn (p && (p->flags & X_OOSTRUCT) )
     return;
-
   cl = p->Class;
-  s = p->Object;
-
   while (cl) {
     if ((f = getmethod(cl,at_destroy))) {
       f = letslot(p,f,NIL,cl->slotssofar);
