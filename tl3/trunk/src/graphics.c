@@ -20,7 +20,7 @@
   TL3: LYB YLC 1/88
   graphics.c
   Device independant graphics functions
-  $Id: graphics.c,v 1.4 2015-02-07 04:53:09 leonb Exp $
+  $Id: graphics.c,v 1.5 2015-02-08 03:46:27 leonb Exp $
   ***********************************************************************/
 
 
@@ -616,9 +616,11 @@ DX(xfont)
       error(NIL, "this driver does not support 'font'", NIL);
     if (!r)
       return NIL;
-  }    
-  UNLOCK(win->font);
-  win->font = new_string(r);
+  }
+  if (r) {
+    UNLOCK(win->font);
+    win->font = new_string(r);
+  }
   LOCK(win->font);
   return win->font;
 }
