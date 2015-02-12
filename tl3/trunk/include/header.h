@@ -20,7 +20,7 @@
   TL3: (C) LYB YLC 1988
   header.h
   This file contains general lisp structure definitions
-  $Id: header.h,v 1.3 2015-02-07 04:53:08 leonb Exp $
+  $Id: header.h,v 1.4 2015-02-12 22:38:31 leonb Exp $
 ********************************************************************** */
 
 #ifndef HEADER_H
@@ -502,6 +502,7 @@ TLAPI void large_string_add(struct large_string *ls, char *s, int len);
 TLAPI at * large_string_collect(struct large_string *ls);
 
 TLAPI at* str_mb_to_utf8(const char *s);
+TLAPI at* str_utf8_to_mb_ext(const char *s, int nofail);
 TLAPI at* str_utf8_to_mb(const char *s);
 
 

@@ -30,7 +30,7 @@
 
 - macro chars   DMC
 
-$Id: io.c,v 1.2 2015-02-08 02:00:16 leonb Exp $
+$Id: io.c,v 1.3 2015-02-12 22:38:31 leonb Exp $
 ********************************************************************** */
 
 #include "header.h"
@@ -646,7 +646,7 @@ DX(xread)
 }
 
 static at *
-rl_utf8(long h)
+rl_utf8(long h, int nofail)
 {
   char ub[8];
   char *u = ub;
@@ -675,7 +675,7 @@ rl_utf8(long h)
       *u++ = (unsigned char)h;
     }
   *u++ = 0;
-  return str_utf8_to_mb(ub);
+  return str_utf8_to_mb_ext(ub,nofail);
 }
 
 static at *
@@ -710,21 +710,43 @@ rl_string(register char *s)
 	  goto err_string;
 	*d++ = h;
 
-      } else if (*s == '^' && s[1]) {	/* control */
-	*d++ = (s[1]) & (0x1f);
-	s += 2;
-	
-      } else if (*s == '+' && s[1]) {	/* high bit */
-#if HAVE_ICONV
-        at *m = rl_utf8(s[1] | 0x80);
+      } else if (*s == 'u' || *s == 'U') { /* unicode */
+	unsigned long h = 0;
+        int c = ((*s == 'u') ? 4 : 6);
+        at *m;
+	s++;
+	for (; c > 0; c--) {
+	  ind = strchr(digit_string, tolower((unsigned char)*s));
+	  if (*s && ind) {
+	    h *= 16;
+	    h += (ind - digit_string);
+	    s++;
+	  } else
+	    break;
+	}
+        m = rl_utf8(h, 1);
         if (! EXTERNP(m, &string_class))
 	  goto err_string;
         strcpy(d, SADD(m->Object));
         d += strlen(d);
         UNLOCK(m);
-#else
-        *d++ = (s[1]) | 0x80;
-#endif
+
+      } else if (*s == '^' && s[1]) {	/* control */
+	*d++ = (s[1]) & (0x1f);
+	s += 2;
+	
+      } else if (*s == '+' && s[1]) {	/* high bit */
+        at *m = rl_utf8(s[1] | 0x80, 0);
+        if (EXTERNP(m, &string_class))
+          {
+            strcpy(d, SADD(m->Object));
+            d += strlen(d);
+            UNLOCK(m);
+          }
+        else
+          {
+            *d++ = (s[1]) | 0x80;
+          }
 	s += 2;
 	
       } else if (*s == '\n') {	/* end of line */
