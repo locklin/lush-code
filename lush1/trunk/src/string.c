@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: string.c,v 1.46 2008-12-03 01:03:38 leonb Exp $
+ * $Id: string.c,v 1.47 2015-02-12 22:39:29 leonb Exp $
  **********************************************************************/
 
 #include "header.h"
@@ -420,7 +420,7 @@ str_mb_to_utf8(const char *s)
 }
 
 at* 
-str_utf8_to_mb(const char *s)
+str_utf8_to_mb_ext(const char *s, int nofail)
 {
   /* best effort conversion from locale encoding from utf8 */
 #if HAVE_ICONV
@@ -434,7 +434,13 @@ str_utf8_to_mb(const char *s)
   if ((ans = recode(s, "UTF-8", "")))
     return ans;
 #endif
-  return new_string(s);
+  return (nofail) ? new_string(s) : NIL;
+}
+
+at* 
+str_utf8_to_mb(const char *s)
+{
+  return str_utf8_to_mb_ext(s, 1);
 }
 
 DX(xstr_locale_to_utf8)

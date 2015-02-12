@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: header.h,v 1.71 2011-10-09 22:48:05 leonb Exp $
+ * $Id: header.h,v 1.72 2015-02-12 22:39:29 leonb Exp $
  **********************************************************************/
 
 #ifndef HEADER_H
@@ -564,6 +564,7 @@ LUSHAPI void large_string_add(struct large_string *ls, char *s, int len);
 LUSHAPI at * large_string_collect(struct large_string *ls);
 
 LUSHAPI at* str_mb_to_utf8(const char *s);
+LUSHAPI at* str_utf8_to_mb_ext(const char *s, int nofail);
 LUSHAPI at* str_utf8_to_mb(const char *s);
 
 

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: io.c,v 1.28 2015-02-12 22:12:02 leonb Exp $
+ * $Id: io.c,v 1.29 2015-02-12 22:39:29 leonb Exp $
  **********************************************************************/
 
 /***********************************************************************
@@ -709,7 +709,7 @@ errw2:
  */
 
 static at *
-rl_utf8(long h)
+rl_utf8(long h, int nofail)
 {
   char ub[8];
   char *u = ub;
@@ -738,7 +738,7 @@ rl_utf8(long h)
       *u++ = (unsigned char)h;
     }
   *u++ = 0;
-  return str_utf8_to_mb(ub);
+  return str_utf8_to_mb_ext(ub, nofail);
 }
 
 
@@ -788,7 +788,7 @@ rl_string(register char *s)
 	  } else
 	    break;
 	}
-        m = rl_utf8(h);
+        m = rl_utf8(h, 1);
         if (! EXTERNP(m, &string_class))
 	  goto err_string;
         strcpy(d, SADD(m->Object));
@@ -800,17 +800,18 @@ rl_string(register char *s)
 	s += 2;
 
       } else if (*s == '+' && s[1]) {	/* high bit latin1 */
-#if HAVE_ICONV
-        at *m = rl_utf8(s[1] | 0x80);
-        if (! EXTERNP(m, &string_class))
-	  goto err_string;
-        strcpy(d, SADD(m->Object));
-        d += strlen(d);
-        UNLOCK(m);
-#else
-        *d++ = (s[1]) | 0x80;
-#endif
-	s += 2;
+        at *m = rl_utf8(s[1] | 0x80, 0);
+        if (EXTERNP(m, &string_class))
+          {
+            strcpy(d, SADD(m->Object));
+            d += strlen(d);
+            UNLOCK(m);
+          }
+        else
+          {
+            *d++ = (s[1]) | 0x80;
+          }
+        s += 2;
 
       } else if (*s == '\n') {	/* end of line */
 	s++;
