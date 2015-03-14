@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.66 2015-01-13 19:59:47 leonb Exp $
+ * $Id: unix.c,v 1.67 2015-03-14 01:19:09 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -840,12 +840,21 @@ console_wait_for_char(int prep)
 static int
 console_getc(FILE *f)
 {
+#if HAVE_RL_GETC  
   if (f != stdin)
     return rl_getc(f);
   console_wait_for_char(TRUE);
   if (break_attempt)
     return EOF;
   return rl_getc(f);
+#else
+  if (f && f != stdin)
+    return getc(f);
+  console_wait_for_char(TRUE);
+  if (break_attempt)
+    return EOF;
+  return getc(stdin);
+#endif
 }
 
 static char *
@@ -901,7 +910,7 @@ symbol_generator(const char *text, int state)
 }
 
 
-#if RL_READLINE_VERSION > 0x400
+#if RL_READLINE_VERSION > 0x402
 
 static char **
 console_complete(const char *text, int start, int end)
@@ -969,28 +978,23 @@ console_init(void)
   /* callbacks */
   rl_getc_function = console_getc;
   /* completion */
-#if RL_READLINE_VERSION > 0x400
+#if RL_READLINE_VERSION > 0x402
   rl_special_prefixes = special_prefixes;
   rl_basic_quote_characters = quote_characters;
   rl_basic_word_break_characters = word_break_characters;
   rl_attempted_completion_function = console_complete;
 #else
-  rl_special_prefixes = special_prefixes;
-  rl_completer_quote_characters = quote_characters;
-  rl_completer_word_break_characters = word_break_characters;
-  rl_completion_entry_function = symbol_generator;
+  rl_special_prefixes = (char*)special_prefixes;
+  rl_completer_quote_characters = (char*)quote_characters;
+  rl_completer_word_break_characters = (char*)word_break_characters;
+  rl_completion_entry_function = (void*)symbol_generator;
 #endif
   /* matching parenthesis */
 #if RL_READLINE_VERSION > 0x402
   rl_set_paren_blink_timeout(250000);
-#endif
-#if RL_READLINE_VERSION > 0x401
   rl_bind_key (')', rl_insert_close);
   rl_bind_key (']', rl_insert_close);
   rl_bind_key ('}', rl_insert_close);
-#endif 
-  /* comments */
-#if RL_READLINE_VERSION > 0x400
   rl_variable_bind("comment-begin",";;; ");
 #endif  
 }
@@ -1859,7 +1863,6 @@ DX(xsocketaccept)
 #ifdef HAVE_GETHOSTBYNAME
   at *f1, *f2;
   int sock1, sock2;
-  char hostname[MAXHOSTNAMELEN+1];
   int portnumber;
   struct sockaddr_in server;
   FILE *ff1, *ff2;

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: lisp_c.c,v 1.38 2009-10-16 16:07:05 leonb Exp $
+ * $Id: lisp_c.c,v 1.39 2015-03-14 01:19:09 leonb Exp $
  **********************************************************************/
 
 
@@ -2929,23 +2929,25 @@ DX(xto_gptr)
   else if (EXTERNP(p, &dh_class))
     {
       struct cfunction *cfunc;
-      dhdoc_t *dhdoc;
       cfunc = p->Object;
       if (CONSP(cfunc->name))
         check_primitive(cfunc->name, cfunc->info);
-      void *funcall = 0;
+      {
+	void *funcall = 0;
 #if HAVE_LIBBFD
-      extern void *dld_get_func(const char *);         /* defined in DLDBFD.C */
-      if ((dhdoc = (dhdoc_t*)(cfunc->info)) && dhdoc->lispdata.c_name)
-        funcall = dld_get_func(dhdoc->lispdata.c_name);
+	dhdoc_t *dhdoc;
+	extern void *dld_get_func(const char *);         /* defined in DLDBFD.C */
+	if ((dhdoc = (dhdoc_t*)(cfunc->info)) && dhdoc->lispdata.c_name)
+	  funcall = dld_get_func(dhdoc->lispdata.c_name);
 #endif
 #if HAVE_NSBUNDLE
-      extern void *nsbundle_lookup(const char *, int); /* defined in MODULE.C */
-      if ((dhdoc = (dhdoc_t*)(cfunc->info)) && dhdoc->lispdata.c_name)
-        funcall = nsbundle_lookup(dhdoc->lispdata.c_name, 0);
+	extern void *nsbundle_lookup(const char *, int); /* defined in MODULE.C */
+	if ((dhdoc = (dhdoc_t*)(cfunc->info)) && dhdoc->lispdata.c_name)
+	  funcall = nsbundle_lookup(dhdoc->lispdata.c_name, 0);
 #endif
-      if (funcall)
-        return NEW_GPTR(funcall);
+	if (funcall)
+	  return NEW_GPTR(funcall);
+      }
     }
   error(NIL,"Cannot make a compiled version of this lisp object",p);
 }

@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.80 2009-10-16 16:07:05 leonb Exp $
+ * $Id: module.c,v 1.81 2015-03-14 01:19:09 leonb Exp $
  **********************************************************************/
 
 
@@ -85,15 +85,48 @@
 
 /* Begin Mac OS X specific code */
 
+typedef struct strarray_s {
+  int count;
+  int alloc;
+  const char **d;
+} strarray_t;
+
+static void
+strarray_append(strarray_t *a, const char *s)
+{
+  if (a->alloc == 0) {
+    a->alloc = 10;
+    a->d = (const char **)malloc(a->alloc * sizeof(const char*));
+  } else if (a->count >= a->alloc) {
+    a->alloc += a->alloc;
+    a->d = (const char **)realloc(a->d, a->alloc * sizeof(const char*));
+  }
+  a->d[a->count] = strdup(s);
+  a->count += 1;
+}
+
+static void
+strarray_free(strarray_t *a)
+{
+  int i;
+  for (i=0; i<a->count; i++)
+    if (a->d[i])
+      free((gptr)(a->d[i]));
+  if (a->d)
+    free((gptr)(a->d));
+  a->count = a->alloc = 0;
+  a->d = NULL;
+}
+
 typedef struct nsbundle_s {
   char *name;
   struct nsbundle_s *prev;
   struct nsbundle_s *next;
-  NSObjectFileImage nsimage;
-  NSModule nsmodule;
+  void *dlmodule;
+  strarray_t symdef;
+  strarray_t symref;
   int executable;
   int loadrank;
-  int recurse;
 } nsbundle_t;
 
 static const char *nsbundle_error;
@@ -156,14 +189,15 @@ nsbundle_hset(const char *sname, nsbundle_t *mark)
   p->def = mark;
 }
 
+
+
 static int
 nsbundle_symmark(nsbundle_t *bundle, nsbundle_t *mark)
 {
-  NSObjectFileImage nsimg = bundle->nsimage;
-  int ns = NSSymbolDefinitionCountInObjectFileImage(nsimg);
+  int ns = bundle->symdef.count;
   while (--ns >= 0)
     {
-      const char *sname = NSSymbolDefinitionNameInObjectFileImage(nsimg, ns);
+      const char *sname = bundle->symdef.d[ns];
       nsbundle_t *old = nsbundle_hget(sname);
       if (old && mark && old!=mark)
 	{
@@ -179,25 +213,27 @@ nsbundle_symmark(nsbundle_t *bundle, nsbundle_t *mark)
 }
 
 static int
+dltest(const char *sname)
+{
+  if (sname[0]=='_')
+    if (dlsym(RTLD_DEFAULT, sname+1))
+      return 1;
+  if (!strcmp(sname,"dyld_stub_binder"))
+    return 1;
+  return 0;
+}
+
+static int
 nsbundle_exec(nsbundle_t *bundle)
 {
-  NSObjectFileImage nsimg = bundle->nsimage;
-  int changed = 0;
   int savedexecutable = bundle->executable;
-  if (bundle->recurse)
+  if (bundle->executable >= 0)
     {
-      nsbundle_error = 
-        "MacOS X loader no longer handles circular dependencies in object files.\n"
-        "*** Use 'ld -r' to collect these object files into a single image\n***";
-      bundle->executable = -1;
-    }
-  else if (bundle->nsimage && bundle->executable>=0)
-    {
-      bundle->recurse = 1;
-      int ns = NSSymbolReferenceCountInObjectFileImage(nsimg);
+      int bx = 0;
+      int ns = bundle->symref.count;
       while (--ns>=0)
 	{
-	  const char *sname = NSSymbolReferenceNameInObjectFileImage(nsimg, ns, NULL);
+	  const char *sname = bundle->symref.d[ns];
 	  nsbundle_t *def = nsbundle_hget(sname);
 	  if (def == &nsbundle_head) 
             {
@@ -205,19 +241,20 @@ nsbundle_exec(nsbundle_t *bundle)
             }
           else if (def && def != bundle)
             {
-              if (nsbundle_exec(def))
-                savedexecutable = -2;
-              if (def->executable < 0)
+	      if (def->executable == 0)
+		return 0;
+              else if (def->executable < 0)
                 bundle->executable = def->executable;
-              else if (def->executable >= bundle->executable)
-                bundle->executable = 1 + def->executable;
-            }
-          else if (!def && !NSIsSymbolNameDefined(sname))
+	      else if (def->executable > bx)
+		bx = def->executable;
+	    }
+          else if (!def && !dltest(sname))
             bundle->executable = -1;
 	  if (bundle->executable < 0)
 	    break;
 	}
-      bundle->recurse = 0;
+      if (bundle->executable >= 0)
+	bundle->executable = bx + 1;
     }
   return bundle->executable != savedexecutable;
 }
@@ -226,15 +263,15 @@ static int
 nsbundle_exec_all_but(nsbundle_t *but)
 {
   int again = 1;
+  int recurse = 0;
   nsbundle_t *bundle;
   nsbundle_error = 0;
   for (bundle = nsbundle_head.next; 
        bundle != &nsbundle_head; 
        bundle=bundle->next)
     {
-      bundle->recurse = 0;
       bundle->executable = -1;
-      if (bundle!=but && bundle->nsimage)
+      if (bundle != but)
         bundle->executable = 0;
     }
   while (again)
@@ -246,6 +283,16 @@ nsbundle_exec_all_but(nsbundle_t *but)
         if (nsbundle_exec(bundle))
           again = 1;
     }
+  if (! nsbundle_error)
+    for (bundle = nsbundle_head.next; 
+	 bundle != &nsbundle_head; 
+	 bundle=bundle->next)
+      if (bundle->executable == 0)
+	recurse = 1;
+  if (recurse)
+    nsbundle_error = 
+      "MacOS X loader no longer handles circular dependencies in object files.\n"
+      "*** Use 'ld -r' to collect these object files into a single image\n***";
   if (nsbundle_error)
     return -1;
   return 0;
@@ -266,15 +313,15 @@ nsbundle_update(void)
            bundle != &nsbundle_head; 
            bundle=bundle->next)
         {
-          if (bundle->nsmodule && bundle->executable<0)
-            if (!target || bundle->loadrank>target->loadrank)
+          if (bundle->dlmodule && bundle->executable <= 0)
+            if (!target || bundle->loadrank > target->loadrank)
               target = bundle;
         }
-      if (target)
+      if (target && target->dlmodule)
         {
           again = 1;
-          NSUnLinkModule(target->nsmodule, NSUNLINKMODULE_OPTION_NONE);
-          target->nsmodule = 0;
+	  dlclose(target->dlmodule);
+	  target->dlmodule = 0;
         }
     }
   /* attempt to load */
@@ -287,16 +334,14 @@ nsbundle_update(void)
            bundle != &nsbundle_head; 
            bundle=bundle->next)
         {
-          if (bundle->executable>=0 && !bundle->nsmodule)
+          if (bundle->executable>0 && !bundle->dlmodule)
             if (!target || bundle->executable < target->executable)
               target = bundle;
         }
       if (target)
         {
           again = 1;
-          target->nsmodule = 
-            NSLinkModule(target->nsimage, target->name, 
-                         NSLINKMODULE_OPTION_BINDNOW);
+          target->dlmodule = dlopen(target->name, RTLD_GLOBAL|RTLD_NOW);
           target->loadrank = target->executable;
         }
     }
@@ -313,16 +358,43 @@ nsbundle_unload(nsbundle_t *bundle)
     bundle->prev->next = bundle->next;
   if (bundle->next)
     bundle->next->prev = bundle->prev;
-  if (bundle->nsimage)
-    nsbundle_symmark(bundle, NULL);
-  if (bundle->nsimage)
-    NSDestroyObjectFileImage(bundle->nsimage);
+  nsbundle_symmark(bundle, NULL);
+  strarray_free(&bundle->symdef);
+  strarray_free(&bundle->symref);
   if (bundle->name)
     remove(bundle->name);
   if (bundle->name)
     free(bundle->name);
   memset(bundle, 0, sizeof(nsbundle_t));
   return 0;
+}
+
+static int
+parse_nm_output(nsbundle_t *bundle, char *cmd)
+{
+  FILE *f = popen(cmd, "rb");
+  if (f)
+    {
+      char buffer[512], symbol[512];
+      while(fgets(buffer, sizeof(buffer), f))
+	{
+	  int c;
+	  char t;
+	  void *p;
+	  if (isxdigit((unsigned char)buffer[0])) {
+	    if (sscanf(buffer,"%p %c %s", (void**)&p, &t, symbol) == 3)
+	      strarray_append(&bundle->symdef, symbol);
+	  } else {
+	    if (sscanf(buffer," %c %s", &t, symbol) == 2)
+	      strarray_append(&bundle->symref, symbol);
+	  }
+	  c = getc(f);
+	  while (c != '\n' && c != EOF)
+	    c = getc(f);
+	}
+      return pclose(f);
+    }
+  return -1;
 }
 
 static int 
@@ -338,25 +410,17 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
   nsbundle_error = "out of memory";
   if ((cmd = malloc(fnamelen + 256)) && (bundle->name = malloc(256)))
     {
-#if DEBUGNAMES
-      strcpy(bundle->name, fname);
-      strcat(bundle->name, ".bundle");
-#else
       strcpy(bundle->name, tmpname("/tmp","bundle"));
-#endif
-      sprintf(cmd, 
-	      "cc -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"", 
+      sprintf(cmd, "cc -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"", 
 	      fname, bundle->name);
       nsbundle_error = "Cannot create bundle from object file";
       if (system(cmd) == 0)
 	{
-	  NSObjectFileImageReturnCode ret;
-	  nsbundle_error = "Cannot load bundle";
-	  ret = NSCreateObjectFileImageFromFile(bundle->name, &bundle->nsimage);
-	  if ((ret == NSObjectFileImageSuccess) &&
-	      (nsbundle_symmark(bundle, bundle) >= 0) &&
-              (nsbundle_exec_all_but(NULL) >= 0) &&
-	      (nsbundle_update() >= 0) )
+	  sprintf(cmd, "nm -gn \"%s\"", bundle->name);
+	  if (parse_nm_output(bundle, cmd) >= 0 &&
+	      nsbundle_symmark(bundle, bundle) >= 0 &&
+	      nsbundle_exec_all_but(NULL) >= 0 &&
+	      nsbundle_update() >= 0 )
 	    nsbundle_error = 0;
 	}
     }
@@ -364,10 +428,12 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
     free(cmd);
   if (! nsbundle_error)
     return 0;
-  if (bundle->nsimage)
+  if (bundle->symdef.count)
     nsbundle_symmark(bundle, NULL);
-  if (bundle->nsimage)
-    NSDestroyObjectFileImage(bundle->nsimage);
+  strarray_free(&bundle->symdef);
+  strarray_free(&bundle->symref);
+  if (bundle->name)
+    remove(bundle->name);
   if (bundle->name)
     free(bundle->name);
   if (bundle->prev)
@@ -385,19 +451,16 @@ nsbundle_lookup(const char *sname, int exist)
   char *usname = malloc(strlen(sname)+2);
   if (usname)
     {
+      nsbundle_t *def;      
       strcpy(usname, "_");
       strcat(usname, sname);
-      if (NSIsSymbolNameDefined(usname))
-	{
-	  NSSymbol symbol = NSLookupAndBindSymbol(usname);
-	  addr = NSAddressOfSymbol(symbol);
-	}
-      else if (exist)
-	{
-	  nsbundle_t *def = nsbundle_hget(usname);
-	  if (def && def!=&nsbundle_head)
-	    addr = (void*)(~0);
-	}
+      def = nsbundle_hget(usname);
+      if (def && def != &nsbundle_head)
+	addr = dlsym(def->dlmodule, sname);
+      else
+	addr = dlsym(RTLD_DEFAULT, sname);
+      if (! addr && exist && def && def != &nsbundle_head)
+	addr = (void*)(~0);
       free(usname);
     }
   return addr;
@@ -823,7 +886,7 @@ cleanup_module(struct module *m)
     nsbundle_exec_all_but(&m->bundle);
     for (mc = root.next; mc != &root; mc = mc->next)
       if (mc->initname && mc->defs)
-	if (mc == m || mc->bundle.executable < 0)
+	if (mc == m || mc->bundle.executable <= 0)
 	  cleanup_defs(&classes, mc);
     nsbundle_exec_all_but(NULL);
   }
@@ -913,7 +976,7 @@ update_exec_flag(struct module *m)
   if (m->flags & MODULE_O)
     {
       newstate = 0;
-      if (m->initname && m->bundle.executable>=0)
+      if (m->initname && m->bundle.executable > 0)
 	newstate = MODULE_EXEC;
       if (m->defs && !newstate)
 	m->flags &= ~MODULE_INIT;
@@ -1271,9 +1334,7 @@ module_load(const char *fname, at *hook)
   m->handle = handle;
 #endif
 #if NSBUNDLE
-  m->bundle.name = 0;
-  m->bundle.nsimage = 0;
-  m->bundle.nsmodule = 0;
+  memset(&m->bundle, 0, sizeof(nsbundle_t));
 #endif
   filename = m->filename = strdup(filename);
   m->initname = 0;
@@ -1428,13 +1489,12 @@ DX(xmod_undefined)
 	   bundle != &nsbundle_head; 
 	   bundle=bundle->next)
 	{
-	  NSObjectFileImage nsimg = bundle->nsimage;
-	  int ns = NSSymbolReferenceCountInObjectFileImage(nsimg);
+	  int ns = bundle->symref.count;
 	  while (--ns >= 0)
 	    {
-	      const char *sname = NSSymbolReferenceNameInObjectFileImage(nsimg, ns, NULL);
+	      const char *sname = bundle->symref.d[ns];
 	      nsbundle_t *def = nsbundle_hget(sname);
-	      if (def==&nsbundle_head || (!def && !NSIsSymbolNameDefined(sname)))
+	      if (def==&nsbundle_head || (!def && !dltest(sname)))
 		{
 		  if (sname[0]=='_') sname += 1;
 		  *where = cons( new_string((char*)sname), NIL);

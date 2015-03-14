@@ -5,7 +5,7 @@
 
 AC_PREREQ(2.50)
 AC_INIT(lush, 1.0)
-AC_REVISION($Id: configure.ac,v 1.55 2008-09-16 15:59:27 leonb Exp $)
+AC_REVISION($Id: configure.ac,v 1.56 2015-03-14 01:19:09 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADER(include/lushconf.h)
@@ -243,7 +243,6 @@ AC_CHECK_LIB(readline,readline)
 AC_CHECK_LIB(iconv,libiconv_open)
 
 
-
 # ----------------------------------------
 # Header Files
 # ----------------------------------------
@@ -294,7 +293,7 @@ AC_CHECK_FUNCS(feenableexcept ieee_handler fpsetmask __setfpucw)
 AC_CHECK_FUNCS(tanh sincos dlopen sigsetjmp waitpid openpty)
 AC_CHECK_FUNCS(mprotect getpagesize gettimeofday ftime cfree)
 AC_CHECK_FUNCS(gethostbyname flockfile sysconf fpathconf tcsetattr)
-AC_CHECK_FUNCS(setenv putenv fseeko ftello)
+AC_CHECK_FUNCS(setenv putenv fseeko ftello rl_getc)
 AC_FUNC_MBRTOWC
 AC_CHECK_FUNCS(setlocale nl_langinfo)
 
