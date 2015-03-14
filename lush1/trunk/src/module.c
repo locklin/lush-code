@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.81 2015-03-14 01:19:09 leonb Exp $
+ * $Id: module.c,v 1.82 2015-03-14 23:11:49 leonb Exp $
  **********************************************************************/
 
 
@@ -118,15 +118,26 @@ strarray_free(strarray_t *a)
   a->d = NULL;
 }
 
+static int
+isdef(const char *sname)
+{
+  if (sname[0] != '_')
+    return 1; // not a c symbol
+  if (dlsym(RTLD_DEFAULT, sname + 1))
+    return 1;
+  return 0;
+}
+
 typedef struct nsbundle_s {
   char *name;
   struct nsbundle_s *prev;
   struct nsbundle_s *next;
-  void *dlmodule;
   strarray_t symdef;
   strarray_t symref;
+  void *dlmodule;
   int executable;
   int loadrank;
+  int recurse;
 } nsbundle_t;
 
 static const char *nsbundle_error;
@@ -189,8 +200,6 @@ nsbundle_hset(const char *sname, nsbundle_t *mark)
   p->def = mark;
 }
 
-
-
 static int
 nsbundle_symmark(nsbundle_t *bundle, nsbundle_t *mark)
 {
@@ -213,23 +222,20 @@ nsbundle_symmark(nsbundle_t *bundle, nsbundle_t *mark)
 }
 
 static int
-dltest(const char *sname)
-{
-  if (sname[0]=='_')
-    if (dlsym(RTLD_DEFAULT, sname+1))
-      return 1;
-  if (!strcmp(sname,"dyld_stub_binder"))
-    return 1;
-  return 0;
-}
-
-static int
 nsbundle_exec(nsbundle_t *bundle)
 {
+  int changed = 0;
   int savedexecutable = bundle->executable;
-  if (bundle->executable >= 0)
+  if (bundle->recurse)
     {
-      int bx = 0;
+      nsbundle_error = 
+        "MacOS X loader no longer handles circular dependencies in object files.\n"
+        "*** Use 'ld -r' to collect these object files into a single image\n***";
+      bundle->executable = -1;
+    }
+  else if (bundle->executable>=0)
+    {
+      bundle->recurse = 1;
       int ns = bundle->symref.count;
       while (--ns>=0)
 	{
@@ -241,20 +247,19 @@ nsbundle_exec(nsbundle_t *bundle)
             }
           else if (def && def != bundle)
             {
-	      if (def->executable == 0)
-		return 0;
-              else if (def->executable < 0)
+              if (nsbundle_exec(def))
+                savedexecutable = -2;
+              if (def->executable < 0)
                 bundle->executable = def->executable;
-	      else if (def->executable > bx)
-		bx = def->executable;
-	    }
-          else if (!def && !dltest(sname))
+              else if (def->executable >= bundle->executable)
+                bundle->executable = 1 + def->executable;
+            }
+          else if (!def && !isdef(sname))
             bundle->executable = -1;
 	  if (bundle->executable < 0)
 	    break;
 	}
-      if (bundle->executable >= 0)
-	bundle->executable = bx + 1;
+      bundle->recurse = 0;
     }
   return bundle->executable != savedexecutable;
 }
@@ -263,13 +268,13 @@ static int
 nsbundle_exec_all_but(nsbundle_t *but)
 {
   int again = 1;
-  int recurse = 0;
   nsbundle_t *bundle;
   nsbundle_error = 0;
   for (bundle = nsbundle_head.next; 
        bundle != &nsbundle_head; 
        bundle=bundle->next)
     {
+      bundle->recurse = 0;
       bundle->executable = -1;
       if (bundle != but)
         bundle->executable = 0;
@@ -283,16 +288,6 @@ nsbundle_exec_all_but(nsbundle_t *but)
         if (nsbundle_exec(bundle))
           again = 1;
     }
-  if (! nsbundle_error)
-    for (bundle = nsbundle_head.next; 
-	 bundle != &nsbundle_head; 
-	 bundle=bundle->next)
-      if (bundle->executable == 0)
-	recurse = 1;
-  if (recurse)
-    nsbundle_error = 
-      "MacOS X loader no longer handles circular dependencies in object files.\n"
-      "*** Use 'ld -r' to collect these object files into a single image\n***";
   if (nsbundle_error)
     return -1;
   return 0;
@@ -313,15 +308,15 @@ nsbundle_update(void)
            bundle != &nsbundle_head; 
            bundle=bundle->next)
         {
-          if (bundle->dlmodule && bundle->executable <= 0)
-            if (!target || bundle->loadrank > target->loadrank)
+          if (bundle->dlmodule && bundle->executable<0)
+            if (!target || bundle->loadrank>target->loadrank)
               target = bundle;
         }
-      if (target && target->dlmodule)
+      if (target)
         {
           again = 1;
 	  dlclose(target->dlmodule);
-	  target->dlmodule = 0;
+          target->dlmodule = 0;
         }
     }
   /* attempt to load */
@@ -334,7 +329,7 @@ nsbundle_update(void)
            bundle != &nsbundle_head; 
            bundle=bundle->next)
         {
-          if (bundle->executable>0 && !bundle->dlmodule)
+          if (bundle->executable>=0 && !bundle->dlmodule)
             if (!target || bundle->executable < target->executable)
               target = bundle;
         }
@@ -359,12 +354,12 @@ nsbundle_unload(nsbundle_t *bundle)
   if (bundle->next)
     bundle->next->prev = bundle->prev;
   nsbundle_symmark(bundle, NULL);
-  strarray_free(&bundle->symdef);
-  strarray_free(&bundle->symref);
   if (bundle->name)
     remove(bundle->name);
   if (bundle->name)
     free(bundle->name);
+  strarray_free(&bundle->symdef);
+  strarray_free(&bundle->symref);
   memset(bundle, 0, sizeof(nsbundle_t));
   return 0;
 }
@@ -378,9 +373,11 @@ parse_nm_output(nsbundle_t *bundle, char *cmd)
       char buffer[512], symbol[512];
       while(fgets(buffer, sizeof(buffer), f))
 	{
-	  int c;
 	  char t;
 	  void *p;
+	  int l = strlen(buffer);
+	  if (buffer[l-1] != '\n')
+	    return -1;
 	  if (isxdigit((unsigned char)buffer[0])) {
 	    if (sscanf(buffer,"%p %c %s", (void**)&p, &t, symbol) == 3)
 	      strarray_append(&bundle->symdef, symbol);
@@ -388,9 +385,6 @@ parse_nm_output(nsbundle_t *bundle, char *cmd)
 	    if (sscanf(buffer," %c %s", &t, symbol) == 2)
 	      strarray_append(&bundle->symref, symbol);
 	  }
-	  c = getc(f);
-	  while (c != '\n' && c != EOF)
-	    c = getc(f);
 	}
       return pclose(f);
     }
@@ -408,16 +402,18 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
   bundle->prev->next = bundle;
   bundle->next->prev = bundle;
   nsbundle_error = "out of memory";
-  if ((cmd = malloc(fnamelen + 256)) && (bundle->name = malloc(256)))
+  if ((cmd = malloc(fnamelen + 256)) &&
+      (bundle->name = malloc(256)))
     {
-      strcpy(bundle->name, tmpname("/tmp","bundle"));
-      sprintf(cmd, "cc -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"", 
-	      fname, bundle->name);
-      nsbundle_error = "Cannot create bundle from object file";
-      if (system(cmd) == 0)
+      nsbundle_error = "cannot get object file symbols";
+      sprintf(cmd, "nm -gn \"%s\"", fname);
+      if (parse_nm_output(bundle, cmd) >= 0)
 	{
-	  sprintf(cmd, "nm -gn \"%s\"", bundle->name);
-	  if (parse_nm_output(bundle, cmd) >= 0 &&
+	  nsbundle_error = "Cannot create bundle from object file";
+	  strcpy(bundle->name, tmpname("/tmp","bundle"));
+	  sprintf(cmd, "cc -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"",
+		  fname, bundle->name);
+	  if (system(cmd) == 0 &&
 	      nsbundle_symmark(bundle, bundle) >= 0 &&
 	      nsbundle_exec_all_but(NULL) >= 0 &&
 	      nsbundle_update() >= 0 )
@@ -428,18 +424,15 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
     free(cmd);
   if (! nsbundle_error)
     return 0;
-  if (bundle->symdef.count)
-    nsbundle_symmark(bundle, NULL);
-  strarray_free(&bundle->symdef);
-  strarray_free(&bundle->symref);
-  if (bundle->name)
-    remove(bundle->name);
+  nsbundle_symmark(bundle, NULL);
   if (bundle->name)
     free(bundle->name);
   if (bundle->prev)
     bundle->prev->next = bundle->next;
   if (bundle->next)
     bundle->next->prev = bundle->prev;
+  strarray_free(&bundle->symdef);
+  strarray_free(&bundle->symref);
   memset(bundle, 0, sizeof(nsbundle_t));
   return -1;
 }
@@ -449,20 +442,20 @@ nsbundle_lookup(const char *sname, int exist)
 {
   void *addr = 0;
   char *usname = malloc(strlen(sname)+2);
+  nsbundle_t *def = 0;
   if (usname)
     {
-      nsbundle_t *def;      
       strcpy(usname, "_");
       strcat(usname, sname);
       def = nsbundle_hget(usname);
-      if (def && def != &nsbundle_head)
-	addr = dlsym(def->dlmodule, sname);
-      else
-	addr = dlsym(RTLD_DEFAULT, sname);
-      if (! addr && exist && def && def != &nsbundle_head)
-	addr = (void*)(~0);
       free(usname);
     }
+  if (def && def != &nsbundle_head && def->dlmodule)
+    addr = dlsym(def->dlmodule, sname);
+  if (!addr)
+    addr = dlsym(RTLD_DEFAULT, sname);
+  if (!addr && exist && def && def!=&nsbundle_head)
+    addr = (void*)(~0);
   return addr;
 }
 
@@ -886,7 +879,7 @@ cleanup_module(struct module *m)
     nsbundle_exec_all_but(&m->bundle);
     for (mc = root.next; mc != &root; mc = mc->next)
       if (mc->initname && mc->defs)
-	if (mc == m || mc->bundle.executable <= 0)
+	if (mc == m || mc->bundle.executable < 0)
 	  cleanup_defs(&classes, mc);
     nsbundle_exec_all_but(NULL);
   }
@@ -976,7 +969,7 @@ update_exec_flag(struct module *m)
   if (m->flags & MODULE_O)
     {
       newstate = 0;
-      if (m->initname && m->bundle.executable > 0)
+      if (m->initname && m->bundle.executable>=0)
 	newstate = MODULE_EXEC;
       if (m->defs && !newstate)
 	m->flags &= ~MODULE_INIT;
@@ -1494,7 +1487,7 @@ DX(xmod_undefined)
 	    {
 	      const char *sname = bundle->symref.d[ns];
 	      nsbundle_t *def = nsbundle_hget(sname);
-	      if (def==&nsbundle_head || (!def && !dltest(sname)))
+	      if (def==&nsbundle_head || (!def && !isdef(sname)))
 		{
 		  if (sname[0]=='_') sname += 1;
 		  *where = cons( new_string((char*)sname), NIL);
