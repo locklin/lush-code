@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: unix.c,v 1.67 2015-03-14 01:19:09 leonb Exp $
+ * $Id: unix.c,v 1.68 2015-03-14 16:12:05 leonb Exp $
  **********************************************************************/
 
 /************************************************************************
@@ -121,6 +121,9 @@
 #  define HAVE_CONFIG_H HAVE_LUSHCONF_H 
 # endif
 # ifndef RL_READLINE_VERSION
+#  define RL_READLINE_VERSION 0  /* non-gnu */
+# elif ! defined(HAVE_RL_GETC)
+#  undef RL_READLINE_VERSION  
 #  define RL_READLINE_VERSION 0  /* non-gnu */
 # endif
 #endif
@@ -829,9 +832,11 @@ console_wait_for_char(int prep)
       at *handler = event_wait(TRUE);
       console_in_eventproc = 1;
       process_pending_events();
-      if (prep) rl_prep_terminal(1);
+      if (prep)
+	rl_prep_terminal(1);
       console_in_eventproc = 0;
-      if (! handler) break;
+      if (! handler)
+	break;
       UNLOCK(handler);
     }
 }
@@ -848,12 +853,14 @@ console_getc(FILE *f)
     return EOF;
   return rl_getc(f);
 #else
+  char buf;
   if (f && f != stdin)
     return getc(f);
   console_wait_for_char(TRUE);
-  if (break_attempt)
-    return EOF;
-  return getc(stdin);
+  if (!break_attempt)
+    if (read(0, &buf, 1) == 1)
+      return (int)buf;
+  return EOF;
 #endif
 }
 
@@ -910,7 +917,7 @@ symbol_generator(const char *text, int state)
 }
 
 
-#if RL_READLINE_VERSION > 0x402
+#if RL_READLINE_VERSION > 0x400
 
 static char **
 console_complete(const char *text, int start, int end)
@@ -978,7 +985,7 @@ console_init(void)
   /* callbacks */
   rl_getc_function = console_getc;
   /* completion */
-#if RL_READLINE_VERSION > 0x402
+#if RL_READLINE_VERSION > 0x400
   rl_special_prefixes = special_prefixes;
   rl_basic_quote_characters = quote_characters;
   rl_basic_word_break_characters = word_break_characters;
@@ -990,7 +997,7 @@ console_init(void)
   rl_completion_entry_function = (void*)symbol_generator;
 #endif
   /* matching parenthesis */
-#if RL_READLINE_VERSION > 0x402
+#if RL_READLINE_VERSION > 0x400
   rl_set_paren_blink_timeout(250000);
   rl_bind_key (')', rl_insert_close);
   rl_bind_key (']', rl_insert_close);
