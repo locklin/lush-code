@@ -24,7 +24,7 @@
  ***********************************************************************/
 
 /***********************************************************************
- * $Id: module.c,v 1.82 2015-03-14 23:11:49 leonb Exp $
+ * $Id: module.c,v 1.83 2015-03-15 00:58:23 leonb Exp $
  **********************************************************************/
 
 
@@ -224,7 +224,6 @@ nsbundle_symmark(nsbundle_t *bundle, nsbundle_t *mark)
 static int
 nsbundle_exec(nsbundle_t *bundle)
 {
-  int changed = 0;
   int savedexecutable = bundle->executable;
   if (bundle->recurse)
     {
@@ -365,9 +364,9 @@ nsbundle_unload(nsbundle_t *bundle)
 }
 
 static int
-parse_nm_output(nsbundle_t *bundle, char *cmd)
+parse_nm_output(nsbundle_t *bundle, char *fname)
 {
-  FILE *f = popen(cmd, "rb");
+  FILE *f = fopen(fname, "rb");
   if (f)
     {
       char buffer[512], symbol[512];
@@ -386,7 +385,7 @@ parse_nm_output(nsbundle_t *bundle, char *cmd)
 	      strarray_append(&bundle->symref, symbol);
 	  }
 	}
-      return pclose(f);
+      return fclose(f);
     }
   return -1;
 }
@@ -405,12 +404,14 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
   if ((cmd = malloc(fnamelen + 256)) &&
       (bundle->name = malloc(256)))
     {
+      strcpy(bundle->name, tmpname("/tmp","bundle"));
       nsbundle_error = "cannot get object file symbols";
-      sprintf(cmd, "nm -gn \"%s\"", fname);
-      if (parse_nm_output(bundle, cmd) >= 0)
+      sprintf(cmd, "nm -gn \"%s\" > \"%s\"", fname, bundle->name);
+      if (system(cmd) == 0 &&
+	  parse_nm_output(bundle, bundle->name) >= 0)
 	{
+	  remove(bundle->name);
 	  nsbundle_error = "Cannot create bundle from object file";
-	  strcpy(bundle->name, tmpname("/tmp","bundle"));
 	  sprintf(cmd, "cc -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"",
 		  fname, bundle->name);
 	  if (system(cmd) == 0 &&
@@ -857,8 +858,10 @@ cleanup_module(struct module *m)
   extern void delete_at_special(at *, int); /* OOSTRUCT.C */
   
   /* 1 --- No cleanup when not ready for errors */
+#if DLDBFD
   if (! error_doc.ready_to_an_error)
     return;
+#endif
   
   /* 2 --- Collect impacted classes */
 #if DLDBFD
@@ -905,7 +908,7 @@ cleanup_module(struct module *m)
 		} 
 	      end_iter_at(x);
 	    }
-	  if (n > 0)
+	  if (n > 0 && error_doc.ready_to_an_error)
 	    fprintf(stderr,"+++ Warning: "
 		    "destroyed %d instances of class %s\n", n, pname(q));
 	}
@@ -920,7 +923,7 @@ cleanup_module(struct module *m)
             {
               int n = lside_mark_unlinked(cl->classdoc);
 	      cl->classdoc = 0;
-              if (n > 0)
+	      if (n > 0 && error_doc.ready_to_an_error)
                 fprintf(stderr,"+++ Warning: "
                         "unlinked %d instances of compiled class %s\n", 
                         n, pname(q));
@@ -1224,9 +1227,6 @@ module_maybe_unload(struct module *m)
 #if NSBUNDLE
   if (m->flags & MODULE_O)
     if (nsbundle_unload(&m->bundle) < 0)
-      dynlink_error(new_string(m->filename));
-  if (m->flags & MODULE_SO) 
-    if (nsbundle_update() < 0)
       dynlink_error(new_string(m->filename));
 #endif
   check_executability = TRUE;
