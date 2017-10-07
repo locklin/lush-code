@@ -1,0 +1,95 @@
+@SET_MAKE@
+SHELL=/bin/sh
+VPATH=@srcdir@
+top=@top_srcdir@
+srcdir=@srcdir@
+bindir=@prefix@/bin
+libdir=@prefix@/lib
+tl3dir=${libdir}/@tl3dir@
+LN_S=@LN_S@
+INSTALL=${top}/config/install-sh -c
+SUBDIRS=src lib help open
+exe=@exe_suffix@
+dll=@shlib_suffix@
+
+# Main rule
+
+all:
+	@echo "+++ Compiling..."
+	@for subdir in ${SUBDIRS}; do (cd $$subdir;${MAKE} $@ ) || exit 10; done
+	@echo "+++ Compilation Done."
+
+clean: 
+	@for subdir in ${SUBDIRS}; do (cd $$subdir; ${MAKE} $@ ); done
+	-rm 2>/dev/null -rf bin packages
+
+distclean: configure include/config.h.in
+	@for subdir in ${SUBDIRS} ; do (cd $$subdir; ${MAKE} $@ ); done	
+	-rm 2>/dev/null Makefile config.cache config.status config.log 
+	-rm 2>/dev/null include/config.h
+	-rm 2>/dev/null -rf bin packages
+
+.PHONY: clean distclean all
+
+
+# Autoconf
+
+${srcdir}/configure: configure.in 
+	cd ${srcdir} && autoconf
+
+${srcdir}/include/config.h.in: configure.in
+	echo > ${srcdir}/include/config.h.in
+	cd ${srcdir} && autoheader
+
+# Installation
+
+.PHONY: install install-dirs install-files install-bin
+
+install: all install-dirs install-files install-bin
+	@echo "+++ Installation Done."
+
+install-dirs:
+	${INSTALL} -m 0755 -d ${tl3dir}
+	${INSTALL} -m 0755 -d ${tl3dir}/bin
+	${INSTALL} -m 0755 -d ${tl3dir}/lib
+	${INSTALL} -m 0755 -d ${tl3dir}/help
+	${INSTALL} -m 0755 -d ${tl3dir}/include
+	${INSTALL} -m 0755 -d ${tl3dir}/packages
+	${INSTALL} -m 0755 -d ${tl3dir}/open
+	${INSTALL} -m 0755 -d ${tl3dir}/open/unix
+	${INSTALL} -m 0755 -d ${tl3dir}/open/examples/capnth
+	${INSTALL} -m 0755 -d ${tl3dir}/open/examples/complex
+	${INSTALL} -m 0755 -d ${tl3dir}/open/examples/nr
+	${INSTALL} -m 0755 -d ${tl3dir}/open/examples/nr/recipes
+
+install-files:
+	for n in `cat ${top}/file.list` ; do \
+	  if test -r $$n ; then \
+	    ${INSTALL} -m 0644 $$n ${tl3dir}/$$n ; \
+	  elif test -r ${top}/$$n ; then \
+	    ${INSTALL} -m 0644 ${top}/$$n ${tl3dir}/$$n ; \
+	  else \
+	    echo 1>&2 "Cannot find file $$n" ; exit 1 ; \
+	  fi ; \
+	done
+
+install-bin:
+	test -x bin/tl3${exe} && \
+	  ${INSTALL} -m 0755 bin/tl3${exe} ${tl3dir}/bin/tl3${exe} 
+	test -r bin/tl3dll${dll} && \
+	  ${INSTALL} -m 0644 bin/tl3dll${dll} ${tl3dir}/bin/tl3dll${dll} || true
+	for n in packages/* ; do \
+	  test -r $$n && ${INSTALL} -m 0644 $$n ${tl3dir}/$$n ; done || true
+	rm 2>/dev/null ${bindir}/tl3${exe} || true
+	-test -x ${tl3dir}/bin/tl3${exe} && \
+	  ${LN_S} ${tl3dir}/bin/tl3${exe} ${bindir}/tl3${exe}
+
+# Tarball
+
+.PHONY: tarball
+
+tarball:
+	${MAKE} clean
+	${MAKE} all
+	${MAKE} distclean
+	( cd .. ; tar cvfz tl3-1.7.tar.gz --exclude CVS tl3 )

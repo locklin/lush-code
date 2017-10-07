@@ -1,0 +1,727 @@
+;;; TL3 Lisp interpreter and development tools
+;;; Copyright (C) 1991-1999 Leon Bottou and Neuristique.
+;;;
+;;; This program is free software; you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation; either version 2 of the License, or
+;;; (at your option) any later version.
+;;;
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+;;;
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program; if not, write to the Free Software
+;;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; TL3
+;;; Miscelanous utilities.
+
+;;;  $Id: miscenv.sn,v 1.1.1.1 2002-04-16 17:37:34 leonb Exp $
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;============== Symbols =====================
+
+
+(df constant l0    
+  (let* ((l ()))
+    (setq l l0)
+    (while l
+      (apply 'unlock-symbol (list (car l)))
+      (set (car l) (eval (cadr l)))
+      (apply 'lock-symbol (list (car l)))
+      (setq l (cddr l))
+      ) ) )
+(lock-symbol constant)
+
+(constant pi 3.14159265358979)
+(lock-symbol pi)
+
+(dmd swap (x y)
+  (list 'setq x y y x) )
+(lock-symbol swap)
+
+
+;;;============== Objects =====================
+
+(de rsubclasses (c)
+  (all ((s (subclasses c)))
+    (cons s (rsubclasses s))
+    ) )
+(lock-symbol rsubclasses)
+
+
+;;;============== Numbers =====================
+
+(de next**2 (n)
+  (let* ((p (int (/ (log n) (log 2)))))
+      ;;; check required by potential unsafe precision
+    (** 2 (if (< (** 2 p) n)
+	      (1+ p)
+	    p ) ) ) )
+(lock-symbol next**2)
+
+
+;;;============== Lists =====================
+
+(de lbound1 (l)
+  (let* ((r ()))
+    (while ~(atomp l)
+      (setq r (cons (length l) r))
+      (setq l (car l))
+      )
+    (reverse r)
+    ) )
+(lock-symbol lbound1)
+
+
+(de lboundn (l)
+  (if (consp l)
+      (let* ((r (mapcar lboundn l))
+	     (n (1- (sup (mapcar length r))))
+	     )
+	(cons (length l)
+	      (when (>= n 0)
+		(mapfor (i 0 n)
+		  (sup (flatten (all ((x r)) (nth i x))))
+		  ) ) ) )
+    ()
+    ) )
+(lock-symbol lboundn)
+
+(de sort-2lists (l l2 comp)
+  (if (not (cdr l))
+      (list l l2)
+    (let* ((piv ())
+	   (pl ())
+	   (pl2 ())
+	   (ll ())
+	   (ll2 ())
+	   (rl ()) 
+	   (rl2 ()) )
+      (let* ((n (length l))
+	     (p1 (car l))
+	     (lc (nthcdr (div n 2) l))
+	     (p3 (last lc)) )
+	(setq piv (car lc))
+	(if (comp p1 piv)
+	    (setq piv p1 p1 piv))
+	(if (comp piv p3)
+	    (setq piv p3 p3 piv))
+	(if (comp p1 piv)
+	    (setq piv p1 p1 piv)) )
+      (each ((i l)(i2 l2))
+	(cond
+	  ((= i piv)
+	   (setq pl (cons i pl))
+	   (setq pl2 (cons i2 pl2)) )
+	  ((comp i piv)
+	   (setq rl (cons i rl)) 
+	   (setq rl2 (cons i2 rl2)) )
+	  (t
+	    (setq ll (cons i ll)) 
+	    (setq ll2 (cons i2 ll2)) ) ) )
+      (let (((srl srl2) (sort-2lists rl rl2 comp))
+	    ((sll sll2) (sort-2lists ll ll2 comp)) )
+	(list (nconc sll (nconc pl srl))
+	      (nconc sll2 (nconc pl2 srl2)) ) ) ) ) )
+
+(de sort-index(l)
+  (cadr (sort-2lists l (range 0 (1- (length l))) <)) )
+
+(lock-symbol sort-2lists sort-index)
+
+
+
+(de nth% (i l)
+  (let* ((j (length l)))
+    (nth (mod i j) l)
+    ) )
+(lock-symbol nth%)
+
+
+(de alist-add (key value alist)
+  (let ((pair (assoc key alist)))
+    (if pair
+	(rplacd pair value)
+      (setq alist (cons (cons key value) alist)) )
+    alist ) )
+(lock-symbol alist-add)
+
+
+(de alist-get(key alist)
+  (let ((pair (assoc key alist)))
+    (when pair
+      (cdr pair) ) ) )
+(lock-symbol alist-get)
+
+
+(de a-rank-of-min (l &optional comp)
+  (when ~comp (setq comp >))
+  (let* ((r 0)
+	 (m (car l)) )
+    (each ((x (cdr l))
+	   (n (range (1- (length l)))) )
+      (when (comp m x)
+	(setq m x)
+	(setq r n)
+	) )
+    r
+    ) )
+(lock-symbol a-rank-of-min)
+
+
+(de a-rank-of-max (l &optional comp)
+  (when ~comp (setq comp >))
+  (let* ((r 0)
+	 (m (car l)) )
+    (each ((x (cdr l))
+	   (n (range (1- (length l)))) )
+      (when (comp x m)
+	(setq m x)
+	(setq r n)
+	) )
+    r
+    ) )
+(lock-symbol a-rank-of-max)
+
+
+(de sublist (l n . s)
+  ;; convert the list into an array
+  (if ~n
+      ;; when the list is already shaped
+      (setq l (list-to-array l))
+    ;; when the list is flat
+    (setq l ((array (length l)) () l))
+    ;; split the 1D array into a 2D array
+    (setq l (msplit-dim l 0 (if (numberp n) (list () n) n)))
+    )
+  ;; get the submatrix
+  (setq l (apply submatrix (cons l s)))
+  ;; get a flat copy of the subarray
+  (setq l (copy-any-matrix l (array (apply * (bound l)))))
+  ;; return the flat sublist
+  (l ())
+  )
+(lock-symbol sublist)
+
+
+;;;============== Matrices =====================
+
+(de list-to-array (l &optional type)
+  (let* ((dims (lboundn l))
+	 (a    (apply any-matrix (cons (or type |ARRAY|) dims)))
+	 )
+    (apply a  (nconc1 (makelist (bound a 0) ()) l))
+    a
+    ) )
+(lock-symbol list-to-array)
+
+
+(de array-print (a &optional rs)
+  (when ~rs (setq rs "\t"))
+  (for (i 0 (bound a 1))
+    (mapcar (lambda (x) (pprin x) (printf rs))  (a i ()))
+    (print)
+    ) )
+(lock-symbol array-print)
+
+
+(de import-raw-dmatrix (f &optional (offset 0))
+  (let* ((m (dmatrix (/ (fsize f) (sizeof "real")))))
+    (import-raw-matrix m f offset)
+    ) )
+(lock-symbol import-raw-dmatrix)
+
+(de import-raw-fmatrix (f &optional (offset 0))
+  (let* ((m (matrix (/ (fsize f) (sizeof "flt")))))
+    (import-raw-matrix m f offset)
+    ) )
+(lock-symbol import-raw-fmatrix)
+
+(de import-raw-bmatrix (f &optional (offset 0))
+  (let* ((m (bmatrix (fsize f))))
+    (import-raw-matrix m f offset)
+    ) )
+(lock-symbol import-raw-bmatrix)
+
+
+(de any-matrix (c . l)
+  (if (functionp c)
+      (apply c l)
+    ;; get the dimension when implicit
+    (when ~l (setq l (bound c)))
+    ;; get the class
+    (selectq (classname (classof c))
+      (|STRING| (setq c (named c)))
+      (|SYMB|   c)
+      (class    (setq c (classname c)))
+      (t        (setq c (classname (classof c))))
+      )
+    ;; allocate the matrix
+    (selectq c
+      (|MAT|   (apply  matrix l))
+      (|ARRAY| (apply   array l))
+      (|BMAT|  (apply bmatrix l))
+      (|DMAT|  (apply dmatrix l))
+      (|IMAT|  (apply imatrix l))
+      (|PMAT|  (apply pmatrix l))
+      (|SMAT|  (apply smatrix l))
+      (t       (error "unsupported kind of matrix"))
+      ) ) )
+(lock-symbol any-matrix)
+
+
+(de matrix-concat l
+  (setq l (flatten l))
+  (let* ((a0  (car (flatten (all ((x l)) (when (or (arrayp x) (matrixp x)) x)))))
+	 (nl  (cdr (bound a0)))
+	 (n1  (apply + (all ((x l)) (if (numberp x) x (car (bound x))))))
+	 (res (apply any-matrix `(,a0 ,n1 ,@nl)))
+	 (nillist (makelist (1- (bound res 0)) ()))
+	 (i   0)
+	 )
+    (each ((x l))
+      (if (numberp x)
+	  (incr i x)
+	(copy-matrix x (eval `(submatrix ,res (list i (+ i (bound x 1))) ,@nillist)))
+	(incr i (1+ (bound x 1)))
+	) )
+    res
+    ) )
+(lock-symbol matrix-concat)
+
+
+(de matrix-lines (m s &optional res neg rev)
+  ;; exclusion list becomes a selection list
+  (when neg
+    (let* ((a (list-to-array (range 0 (bound m 1)))))
+      (each ((x s)) (a x ()))
+      (setq s (flatten (a ())))
+      ) )
+  (when s
+    ;; matrix is allocated on need
+    (let* ((ld (cons (length s) (cdr (bound m)))))
+      (if res
+	  (when (<> ld (bound res)) (error "Dimension mismatch"))
+	(setq res (apply any-matrix (cons m ld)))
+	) )
+    ;; copy is made
+    (let* ((nl (makelist (1- (bound m 0)) ()))
+	   (ex (if rev
+		   `(copy-matrix (submatrix res i ,@nl) (submatrix m (car s) ,@nl))
+		 `(copy-matrix (submatrix m (car s) ,@nl) (submatrix res i ,@nl))
+		 ) )
+	   )
+      (for (i 0 (bound res 1))
+	(eval ex)
+	(setq s (cdr s))
+	res
+	) ) ) ) )
+(lock-symbol matrix-lines)
+
+
+(de matrix-columns (m s &optional res &rest l)
+  (let* ((r (mtranspose (eval `(matrix-lines (mtranspose m 0 1)
+					     s
+					     (when res (mtranspose res 0 1))
+					     ,@l))
+			0 1 )))
+    (or res (copy-matrix r))
+    ) )
+(lock-symbol matrix-columns)
+
+
+(de matrix-group-columns (m s &optional id res)
+  (let* ((gs  ())
+	 (rres ())
+	 )
+    ;; compute groups size and groups number.
+    (let* ((gsl (flatten (all ((l s)) (when (consp l) (length l))))))
+      (setq gs (car gsl))
+      (when (cdr gsl) (each ((x (cdr gsl)))
+			(when (<> x gs)
+			  (error "Groups of columns must have the same size") ) ))
+      )
+    ;; check or allocate result matrix
+    (let* ((dl ()))
+      (setq dl (bound m))
+      (setq dl (cons (* (car dl) gs) (cons (length s) (cddr dl))))
+      (if res
+	  (when (<> dl (bound res)) (error "Unconsistent matrix dimension"))
+	(setq res (apply any-matrix (cons m dl)))
+	) )
+    ;; create identifier list
+    (if id
+	(when (and (consp id) (<> (length id) gs))
+	  (error "unconsistent identifier list") )
+      (setq id (range 0 (1- gs)))
+      )
+    (setq id (makelist (/ (1+ (bound res 1)) gs) id))
+    ;; go
+    (let* ((rres (msplit-dim res 0 (list () gs)))
+	   (nl (makelist (- (bound res 0) 2) ()))
+	   )
+      (each ((x s)
+	     (i (range 0 (bound res 2))) )
+	(cond ((numberp x)
+	       (eval `(copy-matrix (submatrix (mrep-dim m 1 gs) () () x ,@nl)
+				   (submatrix rres () () i ,@nl) ))
+	       )
+	  ((consp x)
+	   (each ((y x)
+		  (j (range 0 (1- gs))) )
+	     (eval `(copy-matrix (submatrix m () y ,@nl)
+				 (submatrix rres () j i ,@nl) ))
+	     )
+	   )
+	  (~x
+	   (apply rres (append (nconc (list () () i) nl) (list id)))
+	   )
+	  (t
+	    (error "unproper argument in subscript list")
+	    )
+	  ) ) )
+    ;; return result
+    res
+    ) )
+(lock-symbol matrix-group-columns)
+
+
+(de m**m (m1 m2 &optional ans)
+  (when ~ans (setq ans (any-matrix m1)))
+  (let ((m3 (if (<> m2 ans) ans (any-matrix m1))))
+    (mexp (mxm m2 (mlog m1 m3) ans) ans)
+    ) )
+(lock-symbol m**m)
+
+
+(de mapply (m f &optional n)
+  (when ~n (setq n m))
+  (let* ((ls (makelist (bound m 0) ())))
+    (eval (append `(,n ,@ls) `((rmapcar ,f (,m ,@ls)))))
+    ) )
+(lock-symbol mapply)
+
+
+(de mreplace (m y z)
+  (mapply m (eval `(lambda (x) (if (= x ,y) ,z x))))
+  )
+(lock-symbol mreplace)
+
+
+;;;============== Strings =====================
+
+
+(de strip (s)
+  (stripl (stripr s))
+  )
+(lock-symbol strip)
+
+(de stripl (s)
+  (regex-subst "^( )+" "" s)
+  )
+(lock-symbol stripl)
+
+(de stripr (s)
+  (regex-subst "( )+$" "" s)
+  )
+(lock-symbol stripr)
+
+
+
+(de regex-rseek (r s &optional n gr)
+  (setq n (if (numberp n) (max (int n) 0) -1))
+  (let* ((x ())
+	 (i 1)
+	 (l '(())) )
+    
+    ;; find recursive occurences
+    (while (and (<> 0 n)
+		(setq x (regex-seek r s i))
+		)
+      (setq i (apply + x))
+      (setq l (cons x l))
+      (incr n -1)
+      )
+    (setq l (when (<= n 0) (cdr (reverse l))))
+    
+    ;; check garbage stuff conformity
+    (when (and l gr)
+      (let* ((ll l)
+	     (x 1) )
+	(while ll
+	  (when ~(regex-match gr (mid s x (- (caar ll) x)))
+	    (setq l () ll ()) ;; failure
+	    )
+	  (setq x (caar ll))
+	  (setq ll (cdr ll))
+	  )
+	(when (< n 0) ;; undefined n
+	  (when ~(regex-match gr (mid s (apply + (last l))))
+	    (setq l () ll ()) ;; failure
+	    )
+	  ) ) )
+    ;; return value
+    l
+    ) )
+(lock-symbol regex-rseek)
+
+
+(de regex-skip (r s &optional n gr neg)
+  (when ~n (setq n 1))
+  (if (<= n 0)
+      s
+    (let* ((l (regex-rseek r s n gr)))
+      (when l (mid s (if neg (car (last l)) (apply + (last l)))))
+      ) ) )
+(lock-symbol regex-skip)
+
+
+(de regex-split (r s &optional n gr neg)
+  (let* ((l (regex-rseek r s n gr)))
+    (if neg
+	(let* ((y 1))
+	  (nconc
+	    (all (((x i) l)) (prog1 (mid s y (- x y)) (setq y (+ x i))))
+	    (if n () (list (mid s y)))
+	    ) )
+      (all (((x i) l)) (mid s x i))
+      ) ) )
+(lock-symbol regex-split)
+
+
+(de regex-count (r s)
+  (length (regex-rseek r s))
+  )
+(lock-symbol regex-count)
+
+
+(de regex-tail (r s &optional n gr neg)
+  (when ~n (setq n 1))
+  (let* ((i (regex-count r s)))
+    (when (>= i n)
+      (regex-skip r s (if neg (- i n) (1+ (- i n))) gr ~neg)
+      ) ) )
+(lock-symbol regex-tail)
+
+
+(de regex-member (rl s)
+  (while (and rl s)
+    (if (regex-match rl)
+	(setq s ())
+      (setq rl (cdr rl))
+      ) )
+  (car rl)
+  )
+(lock-symbol regex-member)
+
+
+
+;;;============== Files and arrays =====================
+
+(de read-table l
+  (mreplace (list-to-array (apply read-lineset l)) () "") )
+(lock-symbol read-table)
+
+(de read-lineset l
+  (let (((rs ls stop addlast) (apply prepare-read-lineset l))
+	(l ())
+	(ll ())
+	(s ())
+	(ok -1) )
+    ;; Standard input is processed and turned into a list of list of strings
+    (while ok
+      (incr ok)
+      (setq s (ls))
+      (setq l (rs s))
+      (cond
+	((stop s l ok)
+	 (setq ok ()) )
+	((= (skip-char " ") "\e")
+	 (setq ok ())
+	 (setq addlast t) ) )
+      (when (or ok addlast) 
+	(setq ll (cons l ll)) ) )
+    (reverse ll) ) )
+(lock-symbol read-lineset)
+
+
+(de prepare-read-lineset (&optional rs ls stop addlast)
+  ;; Argument <rs> is processed and turned into a function
+  (when ~rs (setq rs "\t"))
+  (setq rs
+	(cond
+	  ;; field separator string
+	  ((stringp rs)
+	   (eval `(lambda (s)
+		    (let* ((l ())
+			   (n ()) )
+		      (while (setq n (index ,rs s))
+			(setq l (cons (left s (1- n)) l))
+			(setq s (strdel s 1 (+ n ,(1- (len rs))))) )
+		      (reverse (cons s l)) ) ) ) )
+	  ;; fixed field length
+	  ((numberp rs)
+	   (eval `(lambda (s)
+		    (let* ((l ()) )
+		      (while (>= (len s) ,rs)
+			(setq l (cons (left s ,rs) l))
+			(setq s (mid s (1+ rs))) )
+		      (reverse (cons s l)) ) ) ) )
+	  ;; fixed field positions and lengths
+	  ((consp rs) 
+	   (each (((x y) rs)) 
+	     (when (not (and (numberp x) (numberp y)))
+	       (error 'read-lineset "Illegal argument" ()) ) )
+	   (eval `(lambda (s)
+		    (all (((x y) ,rs))
+		      (mid s x y) ) )) )
+	  ;; function
+	  ((functionp rs)
+	   rs )
+	  ;; error
+	  (t
+	    (error "Unsupported row separator type") ) ) )
+  
+  ;; Argument <ls> is processed and turned into a function.
+  (when ~ls (setq ls "\n"))
+  (setq ls
+	(cond
+	  ;; line separator single character
+	  ((stringp ls)
+	   (when (> (len ls) 1)
+	     (error 'read-lineset "Line separator is not a single character" ()) )
+	   (eval `(lambda ()
+		    (prog1
+			(read-string ,(concat "~\e" ls))
+		      (read-string 1)) ) ) )
+	  ;; fixed line dimension
+	  ((numberp ls)
+	   (eval `(lambda () (read-string ,ls)) ) )
+	  ;; function
+	  ((functionp ls)
+	   ls )
+	  ;; error
+	  (t
+	    (error "Unsupported line separator type") ) ) )
+  
+  ;; Argument stop is processed and turned into a function.
+  (setq stop
+	(cond 
+	  ;; default
+	  ((not stop)
+	   (lambda (s l &rest ll)
+	     (regex-match "[ \t]*" s) ) )
+	  ;; number of lines
+	  ((numberp stop)
+	   (when ~addlast (setq addlast t))
+	   (eval `(lambda (s &optional l n &rest ll)
+		    (>= n ,(1- stop)) )) )
+	  ;; function
+	  ((functionp stop)
+	   stop )
+	  ;; regex string 
+	  ((stringp stop)
+	   (eval `(lambda (s &rest ll)
+		    (regex-match ,stop s) ) ) )
+	  ;; error
+	  (t (error "unexpected stop definition")) ) )
+  ;; Return updated argument list.
+  (list rs ls stop addlast) )
+(lock-symbol prepare-read-lineset)
+
+
+(de write-table (a &optional rs ls)
+  (when ~rs (setq rs "\t"))
+  (when ~ls (setq ls "\n"))
+  (each ((li (a () ())))
+    (each ((x (cdr (flatten (all ((y li)) (cons rs y))))))
+      (printf "%s" x) )
+    (printf "%s" ls) ) )
+(lock-symbol write-table)
+
+(de mkdir-on-need (path)
+    (let ((dir (dirname path)))
+      (when (and (not (dirp dir)) (<> dir "."))
+	(mkdir-on-need dir) ) )
+    (if (not (dirp path))
+	(mkdir path) ) )
+(lock-symbol mkdir-on-need)   
+ 
+;;;============== miscellaneous =====================
+
+(dmd mapwhile(expr . body)
+  `(let* ((|MAPW| (list ()))
+	  (|MAPA| |MAPW|) )
+     (while ,expr 
+       (setq |MAPA| (lastcdr |MAPA|))
+       (rplacd |MAPA| (list (progn ,@body))) )
+     (cdr |MAPW|)) )
+
+
+
+
+;;; ------------------------
+
+(de round (x &optional (n 1))
+  (cond 
+    ((<= x 0)
+     0
+     )
+    ((> n 0)
+     (let* ((scale (** 10 (- (int (+ 1e-6 (/ (log x) (log 10)))) (1- n)))))
+       (if (= scale 0) x (* scale (int (/ x scale))))
+       )
+     )
+    ((= n 0)
+     (let* ((scale  (int (+ 1e-6 (/ (log x) (log 10))))))
+       (** 10 scale)
+       )
+     )
+    (t
+      (error "positive number expected")
+      )
+    ) )
+
+;;; ------------------------
+
+(de rint (x)
+    (int (/ (+ (* 2 x) 1) 2))
+    )
+
+;;; ------------------------
+
+(de list-insert (l pos x)
+  (if (= 0 pos)
+      (cons x l)
+    (let* ((w (nthcdr (1- pos) l)))
+      (if (not w)
+	  (error "list too short")
+	(rplacd w (cons x (cdr w))) ) ) 
+    l ) )
+
+
+;;; ------------------------
+
+(de list-delete (l pos)
+  (if (= 0 pos)
+      (cdr l)
+    (let* ((w (nthcdr (1- pos) l)))
+      (if (not w)
+	  (error "list too short")
+	(rplacd w (cddr w)) ) )
+    l ) )
+
+;;; ------------------------
+
+(de list-merge (l l2)
+  (when (and (not l) l2)
+    (setq l (list (car l2)))
+    (setq l2 (cdr l2)) )
+  (each ((i l2)) (when ~(member i l) (nconc1 l i)))
+  l )
+

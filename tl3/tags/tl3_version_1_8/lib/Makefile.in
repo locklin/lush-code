@@ -1,0 +1,59 @@
+@SET_MAKE@
+SHELL=/bin/sh
+VPATH=@srcdir@
+top=@top_srcdir@
+srcdir=@srcdir@
+LN_S=@LN_S@
+
+SNFILES=sysenv.sn graphenv.sn ogre.sn miscenv.sn stdenv.sn help.sn
+SNCFILES=sysenv.snc graphenv.snc ogre.snc miscenv.snc
+TLCFILES=tltools.tlc
+
+TLTOOLS=${srcdir}/tltools/o-dbrowser.sn \
+	${srcdir}/tltools/o-newgrapher.sn \
+	${srcdir}/tltools/datahandler.sn \
+	${srcdir}/tltools/o-table.sn \
+	${srcdir}/tltools/o-requester.sn 
+
+
+all: env-stamp ${SNCFILES} ${TLCFILES}
+	-@rm 2>/dev/null snc-stamp || true
+
+env-stamp: 
+	@echo > env-stamp
+	for f in ${SNFILES} ; \
+	  do test -r $$f || ${LN_S} ${srcdir}/$$f $$f ; done
+
+${SNCFILES}: ${SNFILES}
+	test -r snc-stamp || ${MAKE} sncfiles || exit 10
+	@echo > snc-stamp
+
+sncfiles:
+	-@rm 2>/dev/null ${SNCFILES} || true
+	( echo '(progn \
+		  (tokenize "sysenv.sn")\
+		  (tokenize "graphenv.sn")\
+		  (tokenize "ogre.sn")\
+		  (tokenize "miscenv.sn") )'\
+	)| ../src/tl3 > /dev/null
+	@for n in ${SNCFILES} ; do test -r $$n || exit 10 ; done
+
+${TLCFILES}: ${TLTOOLS}
+	-@rm 2>/dev/null ${TLCFILES} || true
+	echo '(ogre)' > tltools.tl
+	cat ${TLTOOLS} >> tltools.tl
+	echo '(tokenize "tltools.tl" "tltools.tlc")' | ../src/tl3 > /dev/null
+	-@rm tltools.tl || true
+	@for n in ${TLCFILES} ; do test -r $$n || exit 10 ; done
+
+clean: 
+	-rm 2>/dev/null snc-stamp env-stamp
+	-rm 2>/dev/null tltools.tlc tltools.tl
+	-rm 2>/dev/null sysenv.snc graphenv.snc ogre.snc miscenv.snc
+
+distclean:
+	-rm 2>/dev/null snc-stamp env-stamp
+	-rm 2>/dev/null tltools.tl
+	-rm 2>/dev/null Makefile
+
+.PHONY: clean distclean all sncfiles
