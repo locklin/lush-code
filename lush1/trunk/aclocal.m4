@@ -129,7 +129,7 @@ AC_DEFUN(AC_CC_OPTIMIZE,[
        AC_CHECK_CC_OPT([-O3],[OPTS="$OPTS -O3"],
          [ AC_CHECK_CC_OPT([-O2], [OPTS="$OPTS -O2"] ) ] )
        if test -z "$ac_cpu" ; then
-        test "$host_cpu" = "x86_64" && host_cpu="nocona" 
+        test "$host_cpu" = "x86_64" && host_cpu="native" 
         AC_MSG_WARN([guessing cpu $host_cpu (override with --with-cpu=cpuname.)])
        fi
        opt="-march=${ac_cpu-${host_cpu}}"
