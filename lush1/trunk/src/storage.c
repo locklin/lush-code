@@ -1006,7 +1006,7 @@ storage_mmap(at *atp, FILE *f, size_t offset)
   st->allinfo.sts_mmap.xtra = xtra;
   st->allinfo.sts_mmap.addr = addr;
   st->srg.data = (char*)(st->allinfo.sts_mmap.addr)+offset;
-  st->srg.flags = (STS_MMAP | STF_RDONLY) & ~STF_UNSIZED;
+  st->srg.flags = (short)((STS_MMAP | STF_RDONLY) & ~STF_UNSIZED);
 }
 
 DX(xstorage_mmap)
