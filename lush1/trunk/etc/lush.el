@@ -243,6 +243,9 @@ the most recently enclosed macro or function."
 (modify-syntax-entry ?{ "(}2b" lisp-mode-syntax-table)
 (modify-syntax-entry ?} "){4" lisp-mode-syntax-table)
 
+;; make - part of keywords
+(modify-syntax-entry ?- "w" lisp-mode-syntax-table)
+
 ;; colors
 (font-lock-add-keywords 
  'lisp-mode

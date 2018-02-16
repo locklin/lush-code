@@ -999,9 +999,7 @@ console_init(void)
   /* matching parenthesis */
 #if RL_READLINE_VERSION > 0x400
   rl_set_paren_blink_timeout(250000);
-  rl_bind_key (')', rl_insert_close);
-  rl_bind_key (']', rl_insert_close);
-  rl_bind_key ('}', rl_insert_close);
+  rl_variable_bind("blink-matching-paren","on");
   rl_variable_bind("comment-begin",";;; ");
 #endif  
 }

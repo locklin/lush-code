@@ -39,19 +39,6 @@ if test -d $curwd/gnu/lib ; then
    LDFLAGS="$LDFLAGS -L$curwd/gnu/lib"
 fi
 
-# Check for fink on macs.
-case "$host" in
-  *-darwin* | *-macos10*)
-     if test -d /opt/local ; then
-       CPPFLAGS="$CPPFLAGS -I/opt/local/include"
-       LDFLAGS="$LDFLAGS -L/opt/local/lib"
-     elif test -d /sw ; then
-       CPPFLAGS="$CPPFLAGS -I/sw/include"
-       LDFLAGS="$LDFLAGS -L/sw/lib"
-     fi
-  ;;
-esac
-
 
 # ----------------------------------------
 # Overrides
@@ -97,18 +84,13 @@ AC_PATH_PROG(CP, cp)
 AC_PATH_PROG(RM, rm)
 AC_PATH_PROG(AR, ar)
 AC_PATH_PROG(TOUCH, touch)
-AC_PATH_PROG(INDENT, indent)
 
-if test -x "$INDENT" ; then
-  AC_MSG_CHECKING([if $INDENT accepts GNU options])
-  if $INDENT -gnu </dev/null 2>/dev/null ; then 
-    AC_MSG_RESULT(yes)
-  else 
-    AC_MSG_RESULT(no)
-    unset INDENT
-  fi
-fi
-
+AC_CACHE_CHECK([for indent that supports -gnu], [ac_cv_path_INDENT],[
+AC_PATH_PROGS_FEATURE_CHECK([INDENT], [indent gindent],
+        [[$ac_path_INDENT -gnu </dev/null 2>/dev/null && \
+          ac_cv_path_INDENT=$ac_path_INDENT ac_path_INDENT_found=:]],
+        [AC_MSG_ERROR([could not find indent that supports -gnu])])])
+AC_SUBST([INDENT], [$ac_cv_path_INDENT])
 
 # ----------------------------------------
 # Libraries
@@ -238,9 +220,23 @@ AC_SUBST(X_YES)
 AC_PATH_PTHREAD
 
 # readline
-AC_CHECK_LIB(curses,tputs)
-AC_CHECK_LIB(readline,readline)
-AC_CHECK_LIB(iconv,libiconv_open)
+case "$host" in
+    *-darwin* | *-macos10* )
+      rldir=
+      AC_MSG_CHECKING([for gnu readline in homebrew])
+      for n in /usr/local/Cellar/readline/* ; do rldir="$n" ; done
+      if test -d "$rldir" ; then
+         CPPFLAGS="$CPPFLAGS -I$rldir/include"
+         LDFLAGS="$LDFLAGS -L$rldir/lib"
+         AC_MSG_RESULT($rldir)
+      else
+         AC_MSG_RESULT(no)
+      fi  
+  ;;
+esac
+AC_SEARCH_LIBS(tputs,curses)
+AC_SEARCH_LIBS(readline,readline)
+AC_SEARCH_LIBS(iconv_open,iconv)
 
 
 # ----------------------------------------
