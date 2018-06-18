@@ -38,13 +38,13 @@ struct recur_doc recur_doc;
 struct context *context;
 
 static struct context first_context;
-static at* at_startup;
-static at* at_toplevel;
-static at* at_break;
-static at* at_debug;
-static at* at_file;
-static at *result;
 static int quiet;
+at* at_startup;
+at* at_toplevel;
+at* at_break;
+at* at_debug;
+at* at_file;
+at *result;
 
 /* initialization functions */
 #ifdef UNIX
@@ -683,7 +683,7 @@ DX(xexit)
  * text atsuffix) prints the error stocked in error_doc.
  */
 
-static char *
+char *
 error_text(void)
 {
   extern char *print_buffer;

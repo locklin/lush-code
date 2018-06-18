@@ -23,7 +23,7 @@
  * 
  ***********************************************************************/
 
-/***********************************************************************
+/*************************g**********************************************
  * $Id: unix.c,v 1.68 2015-03-14 16:12:05 leonb Exp $
  **********************************************************************/
 
@@ -1019,7 +1019,8 @@ console_getline(char *prompt, char *buf, int size)
       fflush(stdout);
       if (!break_attempt)
         if (!feof(stdin))
-          fgets(buf,size-2,stdin);
+          if (!fgets(buf,size-2,stdin))
+            buf[0] = 0;
       return;
     }
   /* Problem: Readline erases previous output on the same line.
@@ -1034,7 +1035,8 @@ console_getline(char *prompt, char *buf, int size)
         {
           if (!break_attempt)
             if (!feof(stdin))
-              fgets(buf,size-2,stdin);
+              if (!fgets(buf,size-2,stdin))
+                buf[0] = 0;
           return;
         }
     }
@@ -1329,9 +1331,7 @@ DY(ybground)
   f = open(SADD(fname->Object), O_WRONLY|O_TRUNC|O_CREAT, 0666);
   if (f<0)
     test_file_error(NULL);
-  fflush(stdin);
-  fflush(stdout);
-  fflush(stderr);
+  fflush(NULL);
   if ((pid = fork())) {		/* FATHER */
     close(f);
     return NEW_NUMBER(pid);
@@ -1340,6 +1340,7 @@ DY(ybground)
     goodsignal(SIGHUP, SIG_IGN);
     goodsignal(SIGINT, SIG_IGN);
     goodsignal(SIGQUIT, SIG_IGN);
+    fflush(stdin);
     if (error_doc.script_file)
       set_script(NIL);
 #ifdef BUFSIZ
@@ -1367,6 +1368,90 @@ DY(ybground)
   return NIL; /* Never reached; silences compiler */
 }
 
+
+/* savevm -- execute expression without side effects */
+
+DY(ysavevm)
+{
+  int pid;
+  int pipefd[2];
+  FILE *piperd;
+  FILE *pipewr;
+  at *code = NIL;
+  at *result = NIL;
+
+  ifn(CONSP(ARG_LIST))
+    error(NIL, "syntax error", NIL);
+  fflush(NULL);
+  if (pipe(pipefd) < 0)
+    error(NIL,"pipe() failed", NULL);
+  piperd = fdopen(pipefd[0],"rb");
+  pipewr = fdopen(pipefd[1],"wb");
+  pid = fork();
+  if (pid < 0)
+    {
+      fclose(piperd);
+      fclose(pipewr);
+      error(NIL,"fork() failed", NULL);
+    }
+  if (pid == 0)
+    {
+      /* SON PROCESS */
+      fclose(piperd);
+      error_doc.debug_toplevel = FALSE;
+      if (sigsetjmp(context->error_jump, 1))
+        {
+          extern char *error_text(); /* toplevel.c */
+          result = new_string(error_text());
+        }
+      else
+        {
+          extern at *at_break;
+          extern at *at_debug;
+          at *nullb = cons(true(), NIL);
+          at *nullf = new_de(NIL,nullb);
+          UNLOCK(nullb);
+          symbol_push(at_break, nullf);
+          symbol_push(at_debug, nullf);
+          UNLOCK(nullf);
+          result = progn(ARG_LIST);
+          symbol_pop(at_break);
+          symbol_pop(at_debug);
+          code = true();
+        }
+      bwrite(code, pipewr, FALSE);
+      bwrite(result, pipewr, FALSE);
+      fclose(pipewr);
+      UNLOCK(result);
+      UNLOCK(code);
+      fflush(NULL);
+      _exit(0);
+    }
+  else
+    {
+      /* PARENT PROCESS */
+      fclose(pipewr);
+      goodsignal(SIGINT, SIG_IGN);
+      code = bread(piperd, FALSE);
+      result = bread(piperd, FALSE);
+      goodsignal(SIGINT, break_irq);      
+      fclose(piperd);
+      if (code)
+        {
+          UNLOCK(code);
+          return result;
+        }
+      else
+        {
+          const char *errtext = "Unknown error";
+          if (EXTERNP(result, &string_class))
+            errtext = SADD(result->Object);
+          error(NIL, errtext, NIL);
+        }
+    }
+  /* not reached */
+  return NIL;
+}
 
 
 /* ---------------------------------------- */
@@ -2035,6 +2120,7 @@ init_unix(void)
   dx_define("isatty", xisatty);
   dx_define("sys", xsys);
   dy_define("bground", ybground);
+  dy_define("savevm", ysavevm);
   dy_define("time", ytime);
   dy_define("realtime", yrealtime);
   dy_define("cputime", ycputime);
