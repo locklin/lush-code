@@ -1956,47 +1956,58 @@ DX(xsocketaccept)
   int portnumber;
   struct sockaddr_in server;
   FILE *ff1, *ff2;
+  at *p;
   
   ALL_ARGS_EVAL;
-  if (arg_number!=1) 
+  if (arg_number != 1) 
     {
       ARG_NUMBER(3);
       ASYMBOL(2);
       ASYMBOL(3);
     }
-  portnumber = AINTEGER(1);
-  sock1 = socket( AF_INET, SOCK_STREAM, 0);
-  if (sock1<0)
-    test_file_error(NULL);
-  server.sin_family = AF_INET;
-  memset(&server.sin_addr, 0, sizeof(server.sin_addr));
-  server.sin_port = htons(portnumber);
-  if ((bind(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0) ||
-      (listen(sock1, 1) < 0) )
+  
+  p = APOINTER(1);
+  if (NUMBERP(p))
     {
-      close(sock1);
-      return NIL;
-    }
-  if (arg_number == 1)
-    {
-      close(sock1);
-      return true();
+      portnumber = AINTEGER(1);
+      sock1 = socket( AF_INET, SOCK_STREAM, 0);
+      if (sock1 < 0)
+        test_file_error(NULL);
+      server.sin_family = AF_INET;
+      memset(&server.sin_addr, 0, sizeof(server.sin_addr));
+      server.sin_port = htons(portnumber);
+      if ((bind(sock1, (struct sockaddr*)&server, sizeof(server) ) < 0) ||
+          (listen(sock1, 1) < 0) )
+        {
+          close(sock1);
+          if (arg_number == 1)
+            return NIL;
+          test_file_error(NULL);
+        }
+      if (arg_number == 1)
+        return new_extern(&file_R_class, fdopen(sock1, "rb"));
     }
   else
     {
-      sock2 = accept(sock1, NULL, NULL);
-      close(sock1);
-      if (sock2 < 0)
-        test_file_error(NULL);
-      sock1 = dup(sock2);
-      ff1 = fdopen(sock1,"r");
-      ff2 = fdopen(sock2,"w");
-      f1=new_extern(&file_R_class, ff1);
-      f2=new_extern(&file_W_class, ff2);
-      var_set(APOINTER(2),f1);
-      var_set(APOINTER(3),f2);
-      return cons(f2,f1);
+      ARG_NUMBER(3);
+      if (! EXTERNP(p, &file_R_class))
+        error(NIL,"Port number or socket descriptor expected", p);
+      sock1 = fileno(p->Object);
+      portnumber = -1;
     }
+  sock2 = accept(sock1, NULL, NULL);
+  if (sock2 < 0)
+    test_file_error(NULL);
+  if (portnumber >= 0)
+    close(sock1);
+  sock1 = dup(sock2);
+  ff1 = fdopen(sock1,"rb");
+  ff2 = fdopen(sock2,"wb");
+  f1 = new_extern(&file_R_class, ff1);
+  f2 = new_extern(&file_W_class, ff2);
+  var_set(APOINTER(2),f1);
+  var_set(APOINTER(3),f2);
+  return cons(f2,f1);
 #else
   error(NIL,"Sockets are not supported on this machine",NIL);
 #endif
