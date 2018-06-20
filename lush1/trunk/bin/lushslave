@@ -36,40 +36,41 @@ exec lush "$0" "$@"
 
 (unlock-symbol toplevel debug-hook break-hook)
 
+(defvar slave-hostname (reading "|hostname" (read-string)))
+(defvar slave-port (if (cadr argv) (val (cadr argv)) 4000))
+
 (de slave-abort()
   (lush-is-quiet t)
-  (printf "LUSHSLAVE TERMINATED 10\n")
+  (printf "LUSHSLAVE TERMINATED %s %d %d ERR\n"
+          slave-hostname slave-port (getpid) )
   (exit 10) )
 
 (setq debug-hook slave-abort)
 (setq break-hook slave-abort)
+
+(let ((sock ()))
+  (while (not (setq sock (socketaccept slave-port)))
+    (incr slave-port) )
+  (printf "LUSHSLAVE %s %d %d\n"
+          slave-hostname slave-port (getpid) )
+  (flush)
+  (socketaccept sock 'slave-input 'slave-output) )
+
 
 (de slave-error()
   (let ((err (errname)))
     (printf "*** %s\n" err)
     (lush-is-quiet t)
     (writing slave-output
-      (print (cons 'error err))
+      (bwrite (cons 'error err))
       (flush) ) )
   (lush-is-quiet ()) 
   (flush)
   t )
 
-(let ((sock ())
-      (port 4000))
-  (if (cdr argv) (setq port (val (cadr argv))))
-  (while (not (setq sock (socketaccept port)))
-    (incr port) )
-  (printf "LUSHSLAVE %s %d %d\n" 
-	  (reading "| hostname" (read-string)) 
-	  port (getpid) )
-  (flush)
-  (socketaccept sock 'slave-input 'slave-output) )
-
-
 (de toplevel() 
   (lush-is-quiet ())
-  (while (<> (reading slave-input (skip-char)) "\e")
+  (while (>= (read8 slave-input t) 0)
     (let ((command (reading slave-input (read)))
           (result ()) )
       (let ((debug-hook slave-error))
@@ -79,13 +80,16 @@ exec lush "$0" "$@"
         (flush) )
       (flush) ) )
   (lush-is-quiet t)
-  (printf "LUSHSLAVE TERMINATED 0\n")
+  (printf "LUSHSLAVE TERMINATED %s %d %d OK\n"
+          slave-hostname slave-port (getpid) )
   (exit 0) ) ) )
 
 (lock-symbol slave-input 
              slave-output
              slave-error
              slave-abort
+             slave-hostname
+             slave-port
              debug-hook
              break-hook
              toplevel )

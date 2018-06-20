@@ -1400,8 +1400,10 @@ test_file_error(FILE *f)
       stdout_errors++;
       return;
     }
+#ifdef EINTR
   } else if (f && errno == EINTR) {
     clearerr(f);
+#endif
   }
   sprintf(buffer,"%s (errno=%d)",strerror(errno),errno);
   error(s,buffer,NIL);
