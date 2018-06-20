@@ -85,11 +85,12 @@ AC_PATH_PROG(RM, rm)
 AC_PATH_PROG(AR, ar)
 AC_PATH_PROG(TOUCH, touch)
 
-AC_CACHE_CHECK([for indent that supports -gnu], [ac_cv_path_INDENT],[
-AC_PATH_PROGS_FEATURE_CHECK([INDENT], [indent gindent],
+AC_CACHE_CHECK([for indent that supports -gnu], [ac_cv_path_INDENT],
+  [AC_PATH_PROGS_FEATURE_CHECK([INDENT], [indent gindent],
         [[$ac_path_INDENT -gnu </dev/null 2>/dev/null && \
           ac_cv_path_INDENT=$ac_path_INDENT ac_path_INDENT_found=:]],
-        [AC_MSG_ERROR([could not find indent that supports -gnu])])])
+        [ac_cv_path_INDENT=no])])
+test -x "$ac_cv_path_INDENT" || ac_cv_path_INDENT=
 AC_SUBST([INDENT], [$ac_cv_path_INDENT])
 
 # ----------------------------------------
