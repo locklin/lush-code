@@ -1400,6 +1400,8 @@ test_file_error(FILE *f)
       stdout_errors++;
       return;
     }
+  } else if (f && errno == EINTR) {
+    clearerr(f);
   }
   sprintf(buffer,"%s (errno=%d)",strerror(errno),errno);
   error(s,buffer,NIL);
@@ -1963,20 +1965,26 @@ DY(yreading_string)
 
 DX(xread8)
 {
+  at *peek = NIL;
   at *fdesc;
   FILE *f;
-
-  ARG_NUMBER(1);
+  int c;
+  if (arg_number == 2) {
+    ARG_EVAL(2);
+    peek = APOINTER(2);
+  } else {
+    ARG_NUMBER(1);
+  }
   ARG_EVAL(1);
   fdesc = APOINTER(1);
   if (! (fdesc && (fdesc->flags&C_EXTERN) && (fdesc->Class==&file_R_class)))
     error(NIL, "read file descriptor expected", fdesc);
   f = fdesc->Object;
-  return (NEW_NUMBER(fgetc(f)));
+  c = fgetc(f);
+  if (peek && c >= 0)
+    ungetc(c, f);
+  return (NEW_NUMBER(c));
 }
-
-
-
 
 
 DX(xwrite8)
@@ -1996,7 +2004,6 @@ DX(xwrite8)
   f = fdesc->Object;
   return (NEW_NUMBER(fputc(x,f)));
 }
-
 
 
 DX(xfsize)

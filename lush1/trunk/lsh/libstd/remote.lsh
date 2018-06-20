@@ -104,6 +104,8 @@
 ;; submitted with method <send>. When the remote evaluation causes an error,
 ;; method <exec> sets the slot <status> to <error> and returns the symbol
 ;; <error>.  The error message is then available in slot <error>.
+;; When the remote process dies, the slot status is also set to <error>,
+;; the slot <error> is set to <eof> and the symbol <eof> is returned.
 ;;
 ;; Method <receive> usually waits for the execution of the remote command.
 ;; This can be changed by setting argument <nowait> to true.  Method <receive>
@@ -112,17 +114,21 @@
 
 (defmethod RemoteLush receive(&optional nowait)
   (when (and (not status)
-             (or (not nowait)
-                 (socketselect fin 0) ) )
-    (let ((ans (reading fin (read))))
-      (cond
-       ((and (consp ans) (= (car ans) 'ok))
-        (setq status 'ok)
-        (setq error ()) 
-        (cdr ans) )
-       (t
-        (setq error (if (consp ans) (cdr ans) "Unknown error"))
-        (setq status 'error) ) ) ) ) )
+             (or (not nowait) (socketselect fin 0)) )
+    (if (>= (read8 fin t) 0)
+        ;; not EOF
+        (let ((ans (reading fin (read))))
+          (cond
+           ((and (consp ans) (= (car ans) 'ok))
+            (setq status 'ok)
+            (setq error ()) 
+            (cdr ans) )
+           (t
+            (setq error (if (consp ans) (cdr ans) "Unknown error"))
+            (setq status 'error) ) ) )
+      ;; EOF -- process must have died
+      (setq status 'error)
+      (setq error 'eof) ) ) )
 
 
 #? (==> <remotelush> print)
