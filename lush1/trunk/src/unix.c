@@ -1890,7 +1890,64 @@ DX(xfilteropenpty)
 
 DX(xsocketopen)
 {
-#ifdef HAVE_GETHOSTBYNAME
+#if HAVE_GETADDRINFO
+
+  at *p1, *p2 , *f1, *f2;
+  int sock1, sock2, ret;
+  char *hostname;
+  int portnumber;
+  char servname[16];
+  struct addrinfo addrinfo, *addrs, *r;
+  FILE *ff1, *ff2;
+  
+  p1 = NIL;
+  p2 = NIL;
+  ALL_ARGS_EVAL;
+  if (arg_number!=2) 
+    {
+      ARG_NUMBER(4);
+      ASYMBOL(3);
+      ASYMBOL(4);
+      p1 = APOINTER(3);
+      p2 = APOINTER(4);
+    }
+  hostname = ASTRING(1);
+  portnumber = AINTEGER(2);
+  sprintf(servname, "%d", abs(portnumber));
+  memset(&addrinfo, 0, sizeof(addrinfo));
+  addrinfo.ai_family = AF_UNSPEC;
+  addrinfo.ai_socktype = SOCK_STREAM;
+  addrinfo.ai_protocol = IPPROTO_TCP;
+  ret = getaddrinfo(hostname, servname, &addrinfo, &addrs);
+  if (ret < 0 || !addrs)
+    error(NIL,"Unknown host or service",NIL);
+  for (r = addrs; r; r = r->ai_next)
+    {
+      sock1 = socket(r->ai_family, r->ai_socktype, r->ai_protocol);
+      if (sock1 < 0)
+        continue;
+      if (connect(sock1, r->ai_addr, r->ai_addrlen) >= 0)
+        break;
+      close(sock1);
+    }
+  freeaddrinfo(addrs);
+  if (!r && portnumber < 0)
+    return NIL;
+  if (!r)
+      test_file_error(NULL);
+  sock2 = dup(sock1);
+  ff1 = fdopen(sock1,"r");
+  ff2 = fdopen(sock2,"w");
+  f1=new_extern(&file_R_class, ff1);
+  f2=new_extern(&file_W_class, ff2);
+  if (p1)
+    var_set(p1,f1);
+  if (p2)
+    var_set(p2,f2);
+  return cons(f2,f1);
+
+#elif HAVE_GETHOSTBYNAME
+
   at *p1, *p2 , *f1, *f2;
   int sock1, sock2;
   char *hostname;
@@ -1941,8 +1998,11 @@ DX(xsocketopen)
   if (p2)
     var_set(p2,f2);
   return cons(f2,f1);
+
 #else
+
   error(NIL,"Sockets are not supported on this machine",NIL);
+
 #endif
 }
 
@@ -1950,7 +2010,96 @@ DX(xsocketopen)
 
 DX(xsocketaccept)
 {
-#ifdef HAVE_GETHOSTBYNAME
+#if HAVE_GETADDRINFO
+  
+  at *f1, *f2;
+  int portnumber, ret;
+  int sock1, sock2;
+  FILE *ff1, *ff2;
+  at *p;
+
+  ALL_ARGS_EVAL;
+  if (arg_number != 1) 
+    {
+      ARG_NUMBER(3);
+      ASYMBOL(2);
+      ASYMBOL(3);
+    }
+  
+  p = APOINTER(1);
+  if (NUMBERP(p))
+    {
+      /* socket creation */
+      char servname[16];
+      struct addrinfo addrinfo, *addrs, *r;
+      portnumber = AINTEGER(1);
+      sprintf(servname, "%d", abs(portnumber));
+      memset(&addrinfo, 0, sizeof(addrinfo));
+      addrinfo.ai_family = AF_UNSPEC;
+      addrinfo.ai_socktype = SOCK_STREAM;
+      addrinfo.ai_protocol = IPPROTO_TCP;
+      addrinfo.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
+      ret = getaddrinfo(NULL, servname, &addrinfo, &addrs);
+      if (ret < 0 || !addrs)
+        error(NIL,"Unable to call getaddrinfo",NIL);
+      sock1 = sock2 = 0;
+      for (r = addrs; r; r = r->ai_next)
+        {
+#ifdef IPV6_V6ONLY
+          /* Attempt to use dual stack system */
+          if (r->ai_family != AF_INET6)
+            continue;
+          if ((sock1 = socket(r->ai_family, r->ai_socktype, r->ai_protocol)) <= 0)
+            continue;
+          if (setsockopt(sock1, IPPROTO_IPV6, IPV6_V6ONLY, &sock2, sizeof(int)) >= 0 &&
+              bind(sock1, r->ai_addr, r->ai_addrlen) >= 0 &&
+              listen(sock1, 1) >= 0)
+            break;
+          close(sock1);
+        }
+      if (r == 0)
+        for (r = addrs; r; r = r->ai_next)
+          {
+#endif
+            if ((sock1 = socket(r->ai_family, r->ai_socktype, r->ai_protocol)) <= 0)
+              continue;
+            if (bind(sock1, r->ai_addr, r->ai_addrlen) >= 0 &&
+                listen(sock1, 1) >= 0)
+              break;
+            close(sock1);
+          }
+      freeaddrinfo(addrs);
+      if (! r && arg_number == 1)
+        return NIL;
+      if (! r)
+        test_file_error(NULL);
+      if (arg_number == 1)
+        return new_extern(&file_R_class, fdopen(sock1, "rb"));
+    }
+  else
+    {
+      ARG_NUMBER(3);
+      if (! EXTERNP(p, &file_R_class))
+        error(NIL,"Port number or socket descriptor expected", p);
+      sock1 = fileno(p->Object);
+      portnumber = -1;
+    }
+  sock2 = accept(sock1, NULL, NULL);
+  if (sock2 < 0)
+    test_file_error(NULL);
+  if (portnumber >= 0)
+    close(sock1);
+  sock1 = dup(sock2);
+  ff1 = fdopen(sock1,"rb");
+  ff2 = fdopen(sock2,"wb");
+  f1 = new_extern(&file_R_class, ff1);
+  f2 = new_extern(&file_W_class, ff2);
+  var_set(APOINTER(2),f1);
+  var_set(APOINTER(3),f2);
+  return cons(f2,f1);
+  
+#elif HAVE_GETHOSTBYNAME
+  
   at *f1, *f2;
   int sock1, sock2;
   int portnumber;
@@ -2008,8 +2157,11 @@ DX(xsocketaccept)
   var_set(APOINTER(2),f1);
   var_set(APOINTER(3),f2);
   return cons(f2,f1);
+
 #else
+
   error(NIL,"Sockets are not supported on this machine",NIL);
+
 #endif
 }
 
