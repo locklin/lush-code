@@ -125,6 +125,7 @@ else
     fi
     AC_CHECK_HEADER(bfd.h,,has_bfd=no)
     AC_CHECK_LIB(bfd, bfd_init,,[has_bfd=no])
+    AC_CHECK_CC_OPT([-fno-pie],[OPTS="$OPTS -fno-pie -no-pie"])
 fi
 AC_SUBST(BFD_YES)
 

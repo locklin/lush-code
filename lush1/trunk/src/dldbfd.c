@@ -2292,6 +2292,9 @@ apply_relocations(module_entry *module, int externalp)
 		      void **stub = 0;
 		      bfd_byte *data = vmaptr(p->vma) + reloc->address;
 #ifdef __x86_64__
+#if defined(__pie__) || defined(__pic__)
+# error "DLDBFD is known to fail when compiled in PIE mode on x86_64"
+#endif
 		      bfd_byte opcode = data[-1];
 		      if ((opcode==0xe8) || (opcode==0xe9))
 			{
