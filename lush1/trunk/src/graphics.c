@@ -1448,12 +1448,12 @@ rgb_draw_idx(int x, int y, struct idx *idx, int sx, int sy)
                 im[2] = im[3];
                 im[3] = zj;
                 /* diffuse */
-                if (i+1<d1) im1[2] += (zi*7) >> 4;
+                if (i+1<d1) im1[2] += (zi*7) / 16;
                 if (j+1<d2) {
                   im1 =  im1 + d1 + d1 - 2;
-                  if (i>0) im1[0] += (zi*3) >> 4;
+                  if (i>0) im1[0] += (zi*3) / 16;
                   im1[2] += (zi*5) >> 4;
-                  if (i+1<d1) im1[4] += zi >> 4;                    
+                  if (i+1<d1) im1[4] += zi / 16;                    
                 }
                 im += 4;
               }

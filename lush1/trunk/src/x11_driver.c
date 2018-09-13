@@ -81,7 +81,7 @@
 
 #define MAXWIN 64
 #define MAXFONT 96
-#define MINDEPTH 2
+#define BWONLY (xdef.forcebw || xdef.depth < 2)
 #define ASYNC_EVENTS (ExposureMask|StructureNotifyMask)
 #define SYNC_EVENTS  (ButtonPressMask|ButtonReleaseMask|KeyPressMask|ButtonMotionMask)
 
@@ -114,6 +114,7 @@ static struct X_def {
   Atom     wm_delete_window, wm_protocols;
   GC gcclear, gccopy, gcdash;
   int      gcflag;
+  int      forcebw;
 } xdef;
 
 static struct X_font {
@@ -253,12 +254,14 @@ x11_init(void)
   xdef.blue_mask = 0;
   xdef.cmap = DefaultColormap(xdef.dpy, xdef.screen);
   xdef.cmapflag = 0;
+  xdef.forcebw = 0;
   vinfo.visualid = XVisualIDFromVisual(xdef.visual);
   vinfoptr = XGetVisualInfo(xdef.dpy, VisualIDMask, &vinfo, &i);
   if (vinfoptr)
     {
       vinfo = *vinfoptr;
       XFree(vinfoptr);
+      xdef.depth = vinfo.depth;
       if (vinfo.class == TrueColor || vinfo.class == DirectColor)
         {
           xdef.red_mask = vinfo.red_mask;
@@ -289,6 +292,10 @@ x11_init(void)
   xc.pixel = WhitePixel(xdef.dpy, xdef.screen);
   XAllocColor(xdef.dpy, xdef.cmap, &xc);
   xdef.bgcolor = xc.pixel;
+  tempstr = XGetDefault(xdef.dpy, "SN", "ForceBlackAndWhite");
+  if (tempstr && !strcmp(tempstr, "on")) {
+    xdef.forcebw = 1;
+  }
   tempstr = XGetDefault(xdef.dpy, "SN", "ReverseVideo");
   if (tempstr && !strcmp(tempstr, "on")) {
     int tmp = xdef.bgcolor;
@@ -1003,7 +1010,7 @@ x11_setcolor(struct window *linfo, int c)
         XSetFillStyle(xdef.dpy, info->gc, FillSolid);
         XSetForeground(xdef.dpy, info->gc, x);
       }
-    else if (xdef.depth >= MINDEPTH)
+    else if (! BWONLY)
       {
         x = alloc_from_cube(r, g, b);
         r = (r + 26) / 51;  r *= 51;
@@ -1629,39 +1636,43 @@ x11_rect_text(struct window *linfo,
 static void
 error_diffusion(unsigned int *image, int w, int h)
 {
-  unsigned int *im = image;
+  int *im = (int*)image;
   unsigned char *data;
   int i, j, err;
-
+  for (i = 0; i < h; i++)
+    for (j = 0; j < w; j++, im++) {
+      unsigned int c = *(unsigned int*)im;
+      *im = SHADE_256(c);
+    }
+  im = (int*)image;
   for (i = 0; i < h - 1; i++) {
     (*im > 127) ? (err = *im - 255, *im = 1) : (err = *im, *im = 0);
-    im[1] += (err * 7) >> 4;
-    im[w] += (err * 5) >> 4;
-    im[w + 1] += err >> 4;
+    im[1] += (err * 7) / 16;
+    im[w] += (err * 5) / 16;
+    im[w + 1] += err / 16;
     im++;
     for (j = 1; j < w - 1; j++) {
       (*im > 127) ? (err = *im - 255, *im = 1) : (err = *im, *im = 0);
-      im[1] += (err * 7) >> 4;
-      im[w - 1] += (err * 3) >> 4;
-      im[w] += (err * 5) >> 4;
-      im[w + 1] += err >> 4;
+      im[1] += (err * 7) / 16;
+      im[w - 1] += (err * 3) / 16;
+      im[w] += (err * 5) / 16;
+      im[w + 1] += err / 16;
       im++;
     }
     (*im > 127) ? (err = *im - 255, *im = 1) : (err = *im, *im = 0);
-    im[w - 1] += (err * 3) >> 4;
-    im[w] += (err * 5) >> 4;
+    im[w - 1] += (err * 3) / 16;
+    im[w] += (err * 5) / 16;
     im++;
   }
   for (j = 0; j < w - 1; j++) {
     (*im > 127) ? (err = *im - 255, *im = 1) : (err = *im, *im = 0);
-    im[1] += (err * 7) >> 4;
+    im[1] += (err * 7) / 16;
     im++;
   }
   (*im > 127) ? (err = *im - 255, *im = 1) : (err = *im, *im = 0);
 
-  im = image;
+  im = (int*)image;
   data = (unsigned char *) image;
-
   for (i = 0; i < h; i++) {
     for (j = 0; j < w; j++) {
       err <<= 1;
@@ -1696,14 +1707,14 @@ x11_pixel_map(struct window *linfo, unsigned int *image,
   
 
   if (!image) {
-    if (sx * sy > 36 && xdef.depth >= MINDEPTH) /* test if ok */
+    if (sx * sy > 36 && ! BWONLY) /* test if ok */
       return FALSE;
     else
       return TRUE;
   }
   if (sx == 1 && sy == 1) {
 
-    if (xdef.depth < MINDEPTH) {
+    if (BWONLY) {
       error_diffusion(image, w, h);
       ximage = XCreateImage(xdef.dpy, DefaultVisual(xdef.dpy, 0),
 			    1, XYBitmap,
@@ -1756,7 +1767,7 @@ x11_pixel_map(struct window *linfo, unsigned int *image,
       }
     }
 
-    if (xdef.depth < MINDEPTH) {
+    if (BWONLY) {
       error_diffusion(image2, sx_w, sy_h);
       ximage = XCreateImage(xdef.dpy, DefaultVisual(xdef.dpy, 0),
 			    1, XYBitmap,
@@ -2016,7 +2027,7 @@ DX(xx11_depth)
   ARG_NUMBER(0);
   if (!Xinitialised)
     x11_init();
-  return NEW_NUMBER(xdef.depth);
+  return NEW_NUMBER(BWONLY ? 1 : xdef.depth);
 }
 
 DX(xx11_fontname)
