@@ -151,6 +151,8 @@ namedclean(const char *n)
 {
   at *ans;
   char *s, *d;
+  while ((isspace((unsigned char)*n)))
+    n += 1;
   if (! (d = strdup(n)))
     error(NIL,"Out of memory",NIL);
   if (*d == '|')
@@ -166,8 +168,10 @@ namedclean(const char *n)
       for (s=d; *s; s++)
         if (s>d && *s=='_')
           *s = '-';
-        else if (isascii(*(unsigned char*)s))
-          *s = tolower(*(unsigned char*)s);
+        else if (isascii((unsigned char)*s))
+          *s = tolower((unsigned char)*s);
+      while (s>d && isspace((unsigned char)s[-1]))
+        *--s = 0;
     }
   ans = new_symbol(d);
   free(d);

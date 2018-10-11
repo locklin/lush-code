@@ -1440,7 +1440,8 @@ convert(register char *s, register at *list, register char *end)
       mode = 0;
       if (list->flags & X_SYMBOL) {
         for (m = n; *m; m++)
-          if (!isascii((unsigned char)*m) || 
+          if (!isascii((unsigned char)*m) ||
+              isspace((unsigned char)*m) ||
               iscntrl((unsigned char)*m) ||
               isupper((unsigned char)*m) ||
               (m>n && *m=='_') ||
