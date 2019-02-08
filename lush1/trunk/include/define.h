@@ -64,15 +64,6 @@ typedef void* gptr;
 # define FALSE 0
 #endif
 
-/* --------- UNFORTUNATE NAMES -------- */
-
-#define abort     TLabort
-#define error     TLerror
-#define class     TLclass
-#define true      TLtrue
-#define basename  TLbasename
-#define dirname   TLdirname
-
 /* --------- MACHINE DEPENDANT STUFF -------- */
 
 #ifdef WIN32
@@ -259,6 +250,15 @@ typedef void* gptr;
 #define LINE_BUFFER   (int)1024	/* line buffer length */
 #define FILELEN       (int)1024	/* file names length */
 #define DZ_STACK_SIZE (int)1000 /* stack size for DZs */
+
+/* --------- UNFORTUNATE NAMES -------- */
+
+#define abort     TLabort
+#define error     TLerror
+#define class     TLclass
+#define true      TLtrue
+#define basename  TLbasename
+#define dirname   TLdirname
 
 /* ---------------------------------- */
 #endif

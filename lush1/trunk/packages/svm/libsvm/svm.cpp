@@ -128,7 +128,7 @@ void svm_set_verbosity(int v)
 	verbose = v;
 }
 
-void info(char *fmt,...)
+void info(const char *fmt,...)
 {
 	va_list ap;
 	va_start(ap,fmt);
