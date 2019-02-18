@@ -717,7 +717,7 @@ rl_utf8(long h, int nofail)
     return 0;
   else if (h > 0xffff)
     {
-      *u++ = 0xe0 | (unsigned char)(h>>18);
+      *u++ = 0xf0 | (unsigned char)(h>>18);
       *u++ = 0x80 | (unsigned char)((h>>12)&0x3f);
       *u++ = 0x80 | (unsigned char)((h>>6)&0x3f);
       *u++ = 0x80 | (unsigned char)(h&0x3f);
