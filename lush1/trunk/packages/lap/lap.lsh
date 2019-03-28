@@ -1,0 +1,79 @@
+
+
+(libload "libc/make")
+(libload "libidx/idx-double")
+(libload "libidx/idx-int")
+
+
+#? (lapjv <cost>)
+;; This function solves the linear assignment problem with the
+;; Jonker-Volgenant algorithm.  It takes a NxM double precision matrix
+;; <cost> and returns a list composed of:
+;;.IP
+;;  The optimal assigmment cost <opt>.
+;;.IP
+;;  An integer vector <x_c> of N elements specifying to which column each row is assigned.
+;;.IP
+;;  An integer vector <y_c> of M elements specifying to which row each column is assigned.
+;;.PP
+;; When N is not equal to M, there may be unassigned rows or columns.
+;; This is indicated by returning <-1> for the unassigned rows or columns
+;; in the largest of the two vectors <x_c> or <y_c>.
+
+(de lapjv(acost)
+  ((-idx2- (-double-)) acost)
+  (let* ((nrows (idx-dim acost 0))
+         (ncols (idx-dim acost 1))
+         (n 0) )
+    ((-int-) nrows ncols n)
+    (if (= nrows ncols)
+        (setq n nrows)
+      (setq n (+ nrows ncols)) )
+    (let ((cost (dmatrix n n))
+          (x_c (imatrix n))
+          (y_c (imatrix n))
+          (iret 0)
+          (opt 0) )
+      ((-int-) iret)
+      ((-double-) opt)
+      (if (= nrows ncols)
+          (idx-copy acost cost)
+        (let ((cmax (idx-addm0 (idx-sup acost) [@ 1])))
+          (idx-clear cost)
+          (idx-copy (narrow (narrow cost 0 nrows 0) 1 ncols 0))
+          (idx-addm0 (narrow (narrow cost 0 (- n nrows) nrows) 1 ncols 0) cmax)
+          (idx-addm0 (narrow (narrow cost 0 nrows 0) 1 (- n ncols) ncols) cmax) ) )
+      #{{
+           int i;
+           double **cost_ptr = (double**) malloc($n * sizeof(double *));
+           for(i=0; i<$n; i++)
+             cost_ptr[i] = IDX_PTR($cost, double) + i * $cost->mod[0];
+           $iret = lapjv_internal($n, cost_ptr, IDX_PTR($x_c, int), IDX_PTR($y_c, int));
+           free(cost_ptr);
+       }#}
+      (when (<> n nrows)
+        (for (i 0 (1- n))
+             ((-int-) i)
+             (when (>= (x_c i) ncols) (x_c i -1))
+             (when (>= (y_c i) nrows) (y_c i -1)) )
+        (idx_narrow x_c 0 nrows 0)
+        (idx_narrow y_c 0 ncols 0) )
+      (for (i 0 (1- nrows))
+           ((-int-) i)
+           (let ((j (x_c i)))
+             (when (>= j 0)
+               (incr opt (cost i j)) ) ) )
+      (list opt x_c y_c) ) ) )
+
+(let ((lm (new lushmake)))
+  (==> lm rule "lapjv.o" '("lapjv.c" "lapjv.h"))
+  (==> lm make) 
+  (==> lm load) )
+
+(let ((dhc-make-lushflags (concat dhc-make-lushflags " -I" (dirname file-being-loaded))))
+  (dhc-make-with-libs () t
+     #{
+        #include "lapjv.h"
+     #}
+     lapjv ) )
+
