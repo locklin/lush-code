@@ -735,6 +735,10 @@ handle_sync_events(void)
             buttondown = "Button4";
           else if (ev.xbutton.button == Button5)
             buttondown = "Button5";
+          else if (ev.xbutton.button == 6)
+            buttondown = "Button6";
+          else if (ev.xbutton.button == 7)
+            buttondown = "Button7";
           timedown = ev.xbutton.time;
           
 	  if (info->lwin.eventhandler)
