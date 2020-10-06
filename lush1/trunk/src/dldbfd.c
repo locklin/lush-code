@@ -100,6 +100,13 @@
 # define my_bfd_hash_table_init(a,b,c) bfd_hash_table_init(a,b,c)
 #endif
 
+#if HAVE_BFD_SET_SECTOIN_SIZE_WANTS_3_ARGS
+# define my_bfd_set_section_size(b,s,v) bfd_set_section_size(b,s,v)
+# define my_bfd_section_size(b,s) bfd_section_size(b,s)
+#else
+# define my_bfd_set_section_size(b,s,v) bfd_set_section_size(s,v)
+# define my_bfd_section_size(b,s) bfd_section_size(s)
+#endif
 
 void *bfd_alloc(bfd *abfd, bfd_size_type wanted);
 unsigned int bfd_log2 (bfd_vma x);
@@ -845,7 +852,7 @@ handle_common_symbols(module_entry *ent)
     /* Cleanup bss section */
     if (sbss)
     {
-        bfd_set_section_size(ent->abfd, sbss, scommon);
+        my_bfd_set_section_size(ent->abfd, sbss, scommon);
         /* Take no risk with alignment */
         if (sbss->alignment_power < 4)
             sbss->alignment_power = 4;
@@ -1953,7 +1960,7 @@ check_multiple_definitions(module_entry *module)
                     if (s && s[1])
                       defby_name = s+1;
                   }
-                sprintf(error_buffer,"Symbol '%s' already defined by %s", 
+                sprintf(error_buffer,"Symbol '%.100s' already defined by %.100s", 
                         name, defby_name );
                 THROW(error_buffer);
               }
@@ -2350,7 +2357,7 @@ apply_relocations(module_entry *module, int externalp)
                 }
               }
             /* Update I-cache */
-            update_instruction_cache(p->vma, bfd_section_size(abfd, p));
+            update_instruction_cache(p->vma, my_bfd_section_size(abfd, p));
         }
     /* Mark module as relocated */
     if (externalp)
@@ -2506,6 +2513,8 @@ compute_executable_flag(module_entry *module)
 #ifdef DEBUG
               printf("[%x,%x[ protected with status %d -- {%s:%s}\n", 
                      start, end, status, module->filename, p->name );
+#else
+              (void)status;
 #endif
             }
       }
@@ -3206,6 +3215,7 @@ dld_find_executable (const char *file)
     char *search;
     struct stat st;
     char *p;
+    char *unused;
     
     if (strchr(file, '/'))
       return strdup(file);
@@ -3222,7 +3232,8 @@ dld_find_executable (const char *file)
 	*next = 0;
 	if (*p) p++;
 	if (name[0] == '.' && name[1] == 0)
-          getcwd (name, sizeof(name));
+          unused = getcwd (name, sizeof(name));
+        (void) unused;
 	strcat (name, "/");
 	strcat (name, file);
 	if (access (name, X_OK) == 0) 

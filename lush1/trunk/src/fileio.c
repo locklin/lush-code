@@ -156,7 +156,8 @@ files(const char *s)
       int n = NAMLEN(d);
       at *ats = new_string_bylen(n);
       char *s = SADD(ats->Object);
-      strncpy(s, d->d_name, n); s[n] = 0;
+      strncpy(s, d->d_name, n+1);
+      s[n] = 0;
       *where = cons(ats,NIL);
       where = &(*where)->Cdr;
     }

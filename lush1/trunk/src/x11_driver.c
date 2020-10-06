@@ -1148,7 +1148,7 @@ static char fname_buffer[256];
 static char*
 psfonttoxfont(char *f)
 {
-  char family[256];
+  char family[128];
   int size = 11;
   char *weight = "medium";
   char *slant = "r";

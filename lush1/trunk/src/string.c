@@ -1264,7 +1264,7 @@ implode_chars(at *p)
       if (p->Car->Number != (real)wc)
         error(NIL,"Integer expected",p->Car);
       d = wcrtomb(buffer, wc, &ps);
-      if (d > 0)
+      if (d > 0 && d <= MB_LEN_MAX)
         large_string_add(&ls, buffer, d);
       else
         error(NIL,"Integer is out of range",p->Car);

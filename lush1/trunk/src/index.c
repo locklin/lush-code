@@ -841,8 +841,6 @@ void
 index_from_index(at *newp, at *basep, int *dim, int *start)
 {
   struct index *ind,*oldind;  
-  at *atst;
-  struct storage *st;
   int i,ndim,off;
 
   ifn (indexp(newp))
@@ -852,8 +850,6 @@ index_from_index(at *newp, at *basep, int *dim, int *start)
 
   ind = newp->Object;
   oldind = basep->Object;
-  atst = ind->atst;
-  st = ind->st;
   ndim = oldind->ndim;
 
   if (oldind->st != ind->st)

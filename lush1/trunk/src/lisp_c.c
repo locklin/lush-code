@@ -2644,7 +2644,8 @@ dh_listeval(at *p, at *q)
   struct cfunction *cfunc;
   dhrecord *drec;
   at *atgs[MAXARGS];
-  dharg args[MAXARGS];
+  dharg args1[MAXARGS+1];
+  dharg *args = args1+1; /* just to silence gcc9 */
   at *atfuncret;
   dharg funcret;
   int nargs;

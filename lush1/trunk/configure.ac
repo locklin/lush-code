@@ -187,6 +187,18 @@ if test x$has_bfd = xyes ; then
                       [Define if bfd_hash_table_init() takes two arguments])
         fi
     fi
+    if test x$okay_bfd = xyes ; then
+	AC_MSG_CHECKING([whether bfd_set_section_size wants three arguments])
+        AC_TRY_COMPILE([#include "bfd.h"],
+                       [abfd *b; asection *s; bfd_vma v; bfd_set_section_size(b,s,v);],
+                       [bfd_set_section_size_3_args=yes],
+                       [bfd_set_section_size_3_args=no])
+        AC_MSG_RESULT($bfd_set_section_size_3_args)
+        if test x$bfd_set_section_size_3_args = xyes ; then
+            AC_DEFINE(HAVE_BFD_SET_SECTOIN_SIZE_WANTS_3_ARGS,1,
+                      [Define if bfd_set_section_size() takes three arguments])
+        fi
+    fi
     if test x$okay_bfd = xno ; then
 	has_bfd=no
     fi
