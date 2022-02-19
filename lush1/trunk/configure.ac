@@ -38,6 +38,20 @@ fi
 if test -d $curwd/gnu/lib ; then
    LDFLAGS="$LDFLAGS -L$curwd/gnu/lib"
 fi
+# Always consider /opt/X11
+if test -d /opt/X11/include ; then
+   CPPFLAGS="$CPPFLAGS -I/opt/X11/include"
+fi
+if test -d /opt/X11/lib ; then
+   LDFLAGS="$LDFLAGS -L/opt/X11/lib"
+fi
+# Always look into a local "homebrew" directory
+if test -d $HOME/homebrew/include ; then
+   CPPFLAGS="$CPPFLAGS -I$HOME/homebrew/include"
+fi
+if test -d $HOME/homebrew/lib ; then
+   LDFLAGS="$LDFLAGS -L$HOME/homebrew/lib"
+fi
 
 
 # ----------------------------------------
