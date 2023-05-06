@@ -801,8 +801,7 @@ DX(xstr_number_hex)
 /*------------------------ */
 
 char *
-str_gptr(x)
-gptr x;
+str_gptr(gptr x)
 {
     sprintf(string_buffer, "#$%lX", (unsigned long)(x));
     return string_buffer;

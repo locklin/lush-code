@@ -36,10 +36,11 @@
 extern at *at_true;
 
 /* Forward */
-static void update_c_from_lisp();
-static void update_lisp_from_c();
-static at *dharg_to_at();
-static void at_to_dharg();
+typedef struct avlnode avlnode;
+static void update_c_from_lisp(avlnode*);
+static void update_lisp_from_c(avlnode*);
+static at *dharg_to_at(dharg*, dhrecord*, at*);
+static void at_to_dharg(at*, dharg*, dhrecord*, at*);
 
 /* Flags */
 static int dont_track_cside = 0;
@@ -107,7 +108,7 @@ init_storage_to_dht(void)
  */
 
 
-typedef struct avlnode {
+struct avlnode {
   /* doubly linked list */
   struct avlnode *chnxt;
   struct avlnode *chprv;
@@ -125,7 +126,7 @@ typedef struct avlnode {
   char avl_lthread;           /* set if no left subtree */
   char avl_rthread;           /* set if no right subtree */
   char avl_bf;                /* which side of the tree is deepest */
-} avlnode;
+};
 
 
 /* values for field CINFO */

@@ -1602,7 +1602,7 @@ unix_popen(const char *cmd, const char *mode)
   child_fd =  (rd ? p[1] : p[0]);
   std_fd = (rd ? fileno(stdout) : fileno(stdin));
   /* Fork */
-#ifdef HAVE_VFORK
+#ifdef HAVE_VFORK__Obsolete
   pid = vfork();
 #else
   pid = fork();
@@ -1701,7 +1701,7 @@ filteropen(const char *cmd, FILE **pfw, FILE **pfr)
     close(fd_up[1]);
     test_file_error(NULL);
   }
-#ifdef HAVE_VFORK
+#ifdef HAVE_VFORK_Obsolete
   pid = vfork();
 #else
   pid = fork();
@@ -1802,7 +1802,7 @@ filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
   sprintf(string_buffer,"exec %s",cmd);
   if (openpty(&master, &slave, 0, 0, 0) < 0)
     test_file_error(NULL);
-# ifdef HAVE_VFORK
+# ifdef HAVE_VFORK_Obsolete
   pid = vfork();
 # else
   pid = fork();

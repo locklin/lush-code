@@ -3,18 +3,18 @@
 # Initialization
 # ----------------------------------------
 
-AC_PREREQ(2.50)
-AC_INIT(lush, 1.0)
+AC_PREREQ([2.71])
+AC_INIT([lush],[1.0])
 AC_REVISION($Id: configure.ac,v 1.56 2015-03-14 01:19:09 leonb Exp $)
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_SRCDIR(README)
-AC_CONFIG_HEADER(include/lushconf.h)
+AC_CONFIG_HEADERS([include/lushconf.h])
 AC_PREFIX_DEFAULT(/usr/local)
 AC_CANONICAL_HOST
+AC_LANG(C)
 
 AC_ARG_WITH(extra-includes,
-            AC_HELP_STRING([--with-extra-includes=DIR],
-                       [Define an additional directory for include files]),
+            AS_HELP_STRING([--with-extra-includes=DIR],[Define an additional directory for include files]),
         [ if test -d "$withval" ; then
             CPPFLAGS="$CPPFLAGS -I$withval" 
           else
@@ -22,8 +22,7 @@ AC_ARG_WITH(extra-includes,
           fi ] )
 
 AC_ARG_WITH(extra-libraries,
-            AC_HELP_STRING([--with-extra-libraries=DIR],
-                       [Define an additional directory for library files]),
+            AS_HELP_STRING([--with-extra-libraries=DIR],[Define an additional directory for library files]),
         [ if test -d "$withval" ; then
            LDFLAGS="$LDFLAGS -L$withval"
           else
@@ -45,13 +44,16 @@ fi
 if test -d /opt/X11/lib ; then
    LDFLAGS="$LDFLAGS -L/opt/X11/lib"
 fi
-# Always look into a local "homebrew" directory
-if test -d $HOME/homebrew/include ; then
-   CPPFLAGS="$CPPFLAGS -I$HOME/homebrew/include"
-fi
-if test -d $HOME/homebrew/lib ; then
-   LDFLAGS="$LDFLAGS -L$HOME/homebrew/lib"
-fi
+# Search for homebrew
+case "$host" in
+    *-darwin* | *-macos10* )
+	homebrew=`brew --prefix 2>/dev/null`
+	if test -n "$homebrew" ; then
+	    CPPFLAGS="$CPPFLAGS -I$homebrew/include"
+	    LDFLAGS="$LDFLAGS -L$homebrew/lib"
+	fi
+	;;
+esac
 
 
 # ----------------------------------------
@@ -60,8 +62,7 @@ fi
 
 ac_have_mpi=no
 AC_ARG_WITH(mpi,
-            AC_HELP_STRING([--with-mpi],
-                       [Force compilation with MPI]),
+            AS_HELP_STRING([--with-mpi],[Force compilation with MPI]),
         [ if test $withval != no ; then
             ac_have_mpi=yes
           fi ] )
@@ -123,8 +124,7 @@ AC_CHECK_FUNCS(NSLinkModule,[require_bfd=no])
 
 # bfd
 AC_ARG_WITH(bfd,
-    AC_HELP_STRING([--without-bfd],
-        [Compile Lush without the BFD library.]),
+    AS_HELP_STRING([--without-bfd],[Compile Lush without the BFD library.]),
     [require_bfd=$withval])
 
 if test x$require_bfd = xno ; then
@@ -153,34 +153,25 @@ if test x$has_bfd = xyes ; then
     si_LIBS=`echo $i_LIBS | sed -e 's/-lbfd\( -liberty\)*/-Wl,-Bstatic & -Wl,-Bdynamic/'`
     LIBS=$sn_LIBS
     AC_MSG_CHECKING([whether bfd works with -Bstatic])
-    AC_TRY_LINK([#include "bfd.h"],
-                [bfd_openr("junk1","default"); ],
-		[okay_bfd=yes],[okay_bfd=no]);
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include "bfd.h"]], [[bfd_openr("junk1","default"); ]])],[okay_bfd=yes],[okay_bfd=no]);
     AC_MSG_RESULT($okay_bfd)
     if test x$okay_bfd = xno ; then
 	if test x$has_intl = xyes ; then
 	    LIBS=$si_LIBS
 	    AC_MSG_CHECKING([whether bfd works with -Bstatic and -lintl])
-	    AC_TRY_LINK([#include "bfd.h"],
-		    [bfd_openr("junk1","default"); ],
-		    [okay_bfd=yes],[okay_bfd=no]);
+	    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include "bfd.h"]], [[bfd_openr("junk1","default"); ]])],[okay_bfd=yes],[okay_bfd=no]);
 	    AC_MSG_RESULT($okay_bfd)
 	fi
 	if test x$okay_bfd = xno ; then
 	    LIBS=$n_LIBS
 	    AC_MSG_CHECKING([whether bfd works alone])
-	    AC_TRY_LINK([#include "bfd.h"],
-		    [bfd_openr("junk1","default"); ],
-		    [okay_bfd=yes],[okay_bfd=no]);
+	    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include "bfd.h"]], [[bfd_openr("junk1","default"); ]])],[okay_bfd=yes],[okay_bfd=no]);
 	    AC_MSG_RESULT($okay_bfd)
 	    if test x$okay_bfd = xno ; then
 		if test x$has_intl = xyes ; then
 		    LIBS=$i_LIBS
 		    AC_MSG_CHECKING([whether bfd works with -lintl])
-		    AC_TRY_LINK([#include "bfd.h"],
-			    [bfd_openr("junk1","default"); ],
-			    [okay_bfd=yes],
-			    [okay_bfd=no]);
+		    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include "bfd.h"]], [[bfd_openr("junk1","default"); ]])],[okay_bfd=yes],[okay_bfd=no]);
 		    AC_MSG_RESULT($okay_bfd)
 		fi
 		if test x$okay_bfd = xno ; then
@@ -191,10 +182,7 @@ if test x$has_bfd = xyes ; then
     fi
     if test x$okay_bfd = xyes ; then
 	AC_MSG_CHECKING([whether bfd_hash_table_init wants two arguments])
-        AC_TRY_COMPILE([#include "bfd.h"],
-                       [struct bfd_hash_table t; bfd_hash_table_init(&t,(void*)0);],
-                       [bfd_hash_init_2_args=yes],
-                       [bfd_hash_init_2_args=no])
+        AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include "bfd.h"]], [[struct bfd_hash_table t; bfd_hash_table_init(&t,(void*)0);]])],[bfd_hash_init_2_args=yes],[bfd_hash_init_2_args=no])
         AC_MSG_RESULT($bfd_hash_init_2_args)
         if test x$bfd_hash_init_2_args = xyes ; then
             AC_DEFINE(HAVE_BFD_HASH_TABLE_INIT_WANTS_2_ARGS,1,
@@ -203,10 +191,7 @@ if test x$has_bfd = xyes ; then
     fi
     if test x$okay_bfd = xyes ; then
 	AC_MSG_CHECKING([whether bfd_set_section_size wants three arguments])
-        AC_TRY_COMPILE([#include "bfd.h"],
-                       [abfd *b; asection *s; bfd_vma v; bfd_set_section_size(b,s,v);],
-                       [bfd_set_section_size_3_args=yes],
-                       [bfd_set_section_size_3_args=no])
+        AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include "bfd.h"]], [[abfd *b; asection *s; bfd_vma v; bfd_set_section_size(b,s,v);]])],[bfd_set_section_size_3_args=yes],[bfd_set_section_size_3_args=no])
         AC_MSG_RESULT($bfd_set_section_size_3_args)
         if test x$bfd_set_section_size_3_args = xyes ; then
             AC_DEFINE(HAVE_BFD_SET_SECTOIN_SIZE_WANTS_3_ARGS,1,
@@ -250,17 +235,16 @@ AC_PATH_PTHREAD
 # readline
 case "$host" in
     *-darwin* | *-macos10* )
-      rldir=
-      AC_MSG_CHECKING([for gnu readline in homebrew])
-      for n in /usr/local/Cellar/readline/* ; do rldir="$n" ; done
-      if test -d "$rldir" ; then
-         CPPFLAGS="$CPPFLAGS -I$rldir/include"
-         LDFLAGS="$LDFLAGS -L$rldir/lib"
-         AC_MSG_RESULT($rldir)
-      else
-         AC_MSG_RESULT(no)
-      fi  
-  ;;
+	AC_MSG_CHECKING([for gnu readline in homebrew])
+       rldir="$homebrew/opt/readline"
+       if test -d "$rldir" ; then
+            CPPFLAGS="$CPPFLAGS -I$rldir/include"
+            LDFLAGS="$LDFLAGS -L$rldir/lib"
+            AC_MSG_RESULT($rldir)
+	else
+            AC_MSG_RESULT(no)
+	fi  
+	;;
 esac
 AC_SEARCH_LIBS(tputs,curses)
 AC_SEARCH_LIBS(readline,readline)
@@ -271,9 +255,12 @@ AC_SEARCH_LIBS(iconv_open,iconv)
 # Header Files
 # ----------------------------------------
 
-AC_HEADER_STDC
+AC_CHECK_INCLUDES_DEFAULT
+AC_PROG_EGREP
+
 AC_HEADER_DIRENT
-AC_HEADER_TIME
+AC_CHECK_HEADERS_ONCE([sys/time.h])
+
 AC_HEADER_SYS_WAIT     
 AC_CHECK_HEADERS(wchar.h wctype.h langinfo.h iconv.h)
 AC_CHECK_HEADERS(memory.h string.h strings.h limits.h alloca.h)
@@ -281,7 +268,7 @@ AC_CHECK_HEADERS(unistd.h sys/mman.h termios.h pty.h util.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h fenv.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/types.h sys/ttold.h)
 AC_CHECK_HEADERS(sys/time.h sys/timeb.h locale.h bfd.h)
-AC_CHECK_HEADERS(readline/readline.h readline/history.h)
+AC_CHECK_HEADERS(stdio.h readline/readline.h readline/history.h)
 AC_SYS_LARGEFILE
 
 if test $ac_have_mpi = yes ; then
@@ -297,7 +284,7 @@ AC_TYPE_MODE_T
 AC_TYPE_OFF_T
 AC_TYPE_SIZE_T
 AC_TYPE_PID_T
-AC_TYPE_SIGNAL
+AC_DEFINE_UNQUOTED([RETSIGTYPE],[void],[Return type of signal handlers])
 AC_CHECK_TYPES(long long int)
 AC_CHECK_TYPES(wchar_t,,,[#include "stddef.h"])
 AC_CHECK_TYPES(wint_t,,,[#include "wchar.h"])
@@ -325,9 +312,7 @@ AC_CHECK_FUNCS(setlocale nl_langinfo)
 # iconv function might be defined as libiconv in iconv.h
 AC_MSG_CHECKING([for iconv])
 ac_has_iconv=no
-AC_TRY_LINK([#include "iconv.h"],
-            [iconv((iconv_t)0, (char**)0, (size_t*)0, (char**)0, (size_t*)0);],
-            [ac_has_iconv=yes])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include "iconv.h"]], [[iconv((iconv_t)0, (char**)0, (size_t*)0, (char**)0, (size_t*)0);]])],[ac_has_iconv=yes],[])
 AC_MSG_RESULT($ac_has_iconv)
 if test x$ac_has_iconv = xyes ; then
     AC_DEFINE(HAVE_ICONV,1,

@@ -537,7 +537,6 @@ comdraw_end(struct window *linfo)
   int image =  info->compview_no;
   char command[MAX_INPUT_SIZE];
   stack_ptr S = info->group_stack;
-  int linecnt = 0;
 
   command[0] = 0;
   if (! info->lwin.used)
@@ -558,14 +557,12 @@ comdraw_end(struct window *linfo)
 	  push(S,info->group_cnt);
 	  sprintf(command,"lushng%d=growgroup(c%d c%d)\n",
                   info->group_cnt, image, image);    
-	  linecnt++;
 	}
       }
     else 
       {
 	sprintf(command,"lushng%d=growgroup(lushng%d c%d)\n",
                 info->group_cnt, group2, image);    
-	linecnt++;
       }
   }
   else 
@@ -573,7 +570,6 @@ comdraw_end(struct window *linfo)
       group2 = read_top(S);
       sprintf(command,"lushng%d=growgroup(lushng%d lushng%d)\n",
               group2, group2, group1);    
-      linecnt++;
     }
   if (info->command_type != 2){
     sprintf(&command[strlen(command)],"select(:clear)\n");
