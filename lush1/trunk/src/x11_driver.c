@@ -1170,7 +1170,7 @@ psfonttoxftfont(char *f)
 {
   /* convert a PS name to a XFT name */
   char *d;
-  char family[256];
+  char family[128];
   int size = 11;
   char *weight = 0;
   char *slant = 0;
