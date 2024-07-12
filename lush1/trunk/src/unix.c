@@ -68,16 +68,10 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#ifdef TIME_WITH_SYS_TIME
-# include <sys/time.h>
-# include <time.h>
-#else
-# ifdef HAVE_SYS_TIME_H
+#ifdef HAVE_SYS_TIME_H
 #  include <sys/time.h>
-# else
-#  include <time.h>
-# endif
 #endif
+#include <time.h>
 #ifdef HAVE_SYS_TIMEB_H
 # include <sys/timeb.h>
 #endif
@@ -1602,7 +1596,7 @@ unix_popen(const char *cmd, const char *mode)
   child_fd =  (rd ? p[1] : p[0]);
   std_fd = (rd ? fileno(stdout) : fileno(stdin));
   /* Fork */
-#ifdef HAVE_VFORK__Obsolete
+#ifdef HAVE_VFORK_OBSOLETE
   pid = vfork();
 #else
   pid = fork();
@@ -1701,7 +1695,7 @@ filteropen(const char *cmd, FILE **pfw, FILE **pfr)
     close(fd_up[1]);
     test_file_error(NULL);
   }
-#ifdef HAVE_VFORK_Obsolete
+#ifdef HAVE_VFORK_OBSOLETE
   pid = vfork();
 #else
   pid = fork();
@@ -1802,7 +1796,7 @@ filteropenpty(const char *cmd, FILE **pfw, FILE **pfr)
   sprintf(string_buffer,"exec %s",cmd);
   if (openpty(&master, &slave, 0, 0, 0) < 0)
     test_file_error(NULL);
-# ifdef HAVE_VFORK_Obsolete
+# ifdef HAVE_VFORK_OBSOLETE
   pid = vfork();
 # else
   pid = fork();

@@ -11,7 +11,6 @@ AC_CONFIG_SRCDIR(README)
 AC_CONFIG_HEADERS([include/lushconf.h])
 AC_PREFIX_DEFAULT(/usr/local)
 AC_CANONICAL_HOST
-AC_LANG(C)
 
 AC_ARG_WITH(extra-includes,
             AS_HELP_STRING([--with-extra-includes=DIR],[Define an additional directory for include files]),
@@ -44,16 +43,14 @@ fi
 if test -d /opt/X11/lib ; then
    LDFLAGS="$LDFLAGS -L/opt/X11/lib"
 fi
-# Search for homebrew
-case "$host" in
-    *-darwin* | *-macos10* )
-	homebrew=`brew --prefix 2>/dev/null`
-	if test -n "$homebrew" ; then
-	    CPPFLAGS="$CPPFLAGS -I$homebrew/include"
-	    LDFLAGS="$LDFLAGS -L$homebrew/lib"
-	fi
-	;;
-esac
+# Always look into a local "homebrew" directory
+if /usr/bin/which -s brew ; then
+    bdir=`brew --prefix`
+    if test -d $bdir; then
+      CPPFLAGS="$CPPFLAGS -I$bdir/include"
+      LDFLAGS="$LDFLAGS -L$bdir/lib"
+    fi
+fi
 
 
 # ----------------------------------------
@@ -235,16 +232,17 @@ AC_PATH_PTHREAD
 # readline
 case "$host" in
     *-darwin* | *-macos10* )
-	AC_MSG_CHECKING([for gnu readline in homebrew])
-       rldir="$homebrew/opt/readline"
-       if test -d "$rldir" ; then
-            CPPFLAGS="$CPPFLAGS -I$rldir/include"
-            LDFLAGS="$LDFLAGS -L$rldir/lib"
-            AC_MSG_RESULT($rldir)
-	else
-            AC_MSG_RESULT(no)
-	fi  
-	;;
+      rldir=
+      AC_MSG_CHECKING([for gnu readline in homebrew])
+      /usr/bin/which -s brew && rldir=`brew --prefix readline`
+      if test -d "$rldir/include" -a -d "$rldir/lib" ; then
+         CPPFLAGS="$CPPFLAGS -I$rldir/include"
+         LDFLAGS="$LDFLAGS -L$rldir/lib"
+         AC_MSG_RESULT($rldir)
+      else
+         AC_MSG_RESULT(no)
+      fi  
+  ;;
 esac
 AC_SEARCH_LIBS(tputs,curses)
 AC_SEARCH_LIBS(readline,readline)
@@ -257,18 +255,23 @@ AC_SEARCH_LIBS(iconv_open,iconv)
 
 AC_CHECK_INCLUDES_DEFAULT
 AC_PROG_EGREP
-AC_HEADER_TIME
+
 AC_HEADER_DIRENT
 AC_CHECK_HEADERS_ONCE([sys/time.h])
+# Obsolete code to be removed.
+if test $ac_cv_header_sys_time_h = yes; then
+  AC_DEFINE([TIME_WITH_SYS_TIME],[1],[Define to 1 if you can safely include both <sys/time.h>
+	     and <time.h>.  This macro is obsolete.])
+fi
 
 AC_HEADER_SYS_WAIT     
-AC_CHECK_HEADERS(wchar.h wctype.h langinfo.h iconv.h)
+AC_CHECK_HEADERS(stdio.h stdlib.h wchar.h wctype.h langinfo.h iconv.h)
 AC_CHECK_HEADERS(memory.h string.h strings.h limits.h alloca.h)
 AC_CHECK_HEADERS(unistd.h sys/mman.h termios.h pty.h util.h)
 AC_CHECK_HEADERS(dlfcn.h dl.h ieeefp.h fpu_control.h fenv.h)
 AC_CHECK_HEADERS(stropts.h sys/stropts.h sys/select.h sys/types.h sys/ttold.h)
 AC_CHECK_HEADERS(sys/time.h sys/timeb.h locale.h bfd.h)
-AC_CHECK_HEADERS(stdio.h readline/readline.h readline/history.h)
+AC_CHECK_HEADERS(readline/readline.h readline/history.h)
 AC_SYS_LARGEFILE
 
 if test $ac_have_mpi = yes ; then
@@ -284,7 +287,15 @@ AC_TYPE_MODE_T
 AC_TYPE_OFF_T
 AC_TYPE_SIZE_T
 AC_TYPE_PID_T
-AC_DEFINE_UNQUOTED([RETSIGTYPE],[void],[Return type of signal handlers])
+AC_CACHE_CHECK([return type of signal handlers],[ac_cv_type_signal],[AC_COMPILE_IFELSE(
+    [AC_LANG_PROGRAM([#include <sys/types.h>
+                      #include <signal.h>],
+		 [return *(signal (0, 0)) (0) == 1;])],
+		   [ac_cv_type_signal=int],
+		   [ac_cv_type_signal=void])])
+AC_DEFINE_UNQUOTED([RETSIGTYPE],[$ac_cv_type_signal],[Define as the return type of signal handlers
+		    (`int' or `void').])
+
 AC_CHECK_TYPES(long long int)
 AC_CHECK_TYPES(wchar_t,,,[#include "stddef.h"])
 AC_CHECK_TYPES(wint_t,,,[#include "wchar.h"])
@@ -348,7 +359,7 @@ case "$host" in
         ;;
     *-darwin* | *-macos10* | *-rhapsody*)
         SOEXT=dylib
-        MAKESO="$LDCC -bundle -flat_namespace -undefined suppress -o"
+        MAKESO="$LDCC -bundle -flat_namespace -o"
         ;;
     *-freebsd2*)
         CC_PIC_FLAG='-fPIC'

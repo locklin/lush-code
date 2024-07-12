@@ -37,8 +37,8 @@ extern at *at_true;
 
 /* Forward */
 typedef struct avlnode avlnode;
-static void update_c_from_lisp(avlnode*);
-static void update_lisp_from_c(avlnode*);
+static void update_c_from_lisp(struct avlnode*);
+static void update_lisp_from_c(struct avlnode*);
 static at *dharg_to_at(dharg*, dhrecord*, at*);
 static void at_to_dharg(at*, dharg*, dhrecord*, at*);
 

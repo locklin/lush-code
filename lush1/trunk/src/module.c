@@ -412,7 +412,7 @@ nsbundle_load(const char *fname, nsbundle_t *bundle)
 	{
 	  remove(bundle->name);
 	  nsbundle_error = "Cannot create bundle from object file";
-	  sprintf(cmd, "cc -bundle -flat_namespace -undefined suppress \"%s\" -o \"%s\"",
+	  sprintf(cmd, "cc -bundle -flat_namespace -undefined dynamic_lookup \"%s\" -o \"%s\"",
 		  fname, bundle->name);
 	  if (system(cmd) == 0 &&
 	      nsbundle_symmark(bundle, bundle) >= 0 &&
