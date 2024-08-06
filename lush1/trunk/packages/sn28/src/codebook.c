@@ -163,7 +163,7 @@ store_codebook_label(at *atcb, at *arg)
   int i;
 
   cb = check_codebook(atcb);
-  d[1] = cb->ncode;
+  d[0] = cb->ncode;
   arr = easy_index_check(arg, 1, d);
   for(i=0; i<cb->ncode; i++) 
     cb->code[i].label = easy_index_get(arr, &i);

@@ -823,7 +823,6 @@ DX(xupdate_nn_weight)
   } else
     for(i=3;i<=arg_number;i++) {
       mapneur(ALIST(i),updS_nn_all);
-      i++;
     }
   return NIL;
 }

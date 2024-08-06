@@ -706,11 +706,10 @@ DX(xnlf_df_spline)
 flt ddf_spline(struct nlf *n, float xx)
 {
         int k,klo,khi,size;
-	flt *x,*y,*y2;
+	flt *x,*y2;
 	flt a,b,h;
 
 	x = n->Splin.x - 1;
-	y = n->Splin.y - 1;
 	y2 = n->Splin.y2 - 1;
 	size = n->Splin.size;
 
