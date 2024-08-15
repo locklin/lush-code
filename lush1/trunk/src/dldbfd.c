@@ -1695,6 +1695,98 @@ handle_alphaelf_code(module_entry *ent)
 
 #endif
 
+
+
+/* ---------------------------------------- */
+/* SPECIAL PROCESSING FOR ARM64
+   Return courtesy from GCL.
+   Untested */
+
+#ifdef __aarch64__
+
+static uint32_t
+_bfd_aarch64_reencode_adr_imm (uint32_t insn, uint32_t imm)
+{
+#define MASK(n) ((1u << (n)) - 1)  
+  return (insn & ~((MASK (2) << 29) | (MASK (19) << 5)))
+    | ((imm & MASK (2)) << 29) | ((imm & (MASK (19) << 2)) << 3);
+#undef MASK
+}
+
+static bfd_reloc_status_type
+arm64elf_new_adrimm_reloc (bfd *abfd, 
+			   arelent *reloc_entry,
+			   asymbol *symbol,
+			   PTR data,
+			   asection *input_section,
+			   bfd *output_bfd,
+			   char **error_message) 
+{
+  bfd_reloc_status_type flag = bfd_reloc_ok;
+  reloc_howto_type *howto = reloc_entry->howto;
+  bfd_vma addr = ptrvma(data) + reloc_entry->address;
+  bfd_vma value = symbol->section->vma + symbol->value + reloc_entry->addend;
+  uint32_t insn = bfd_get_32(abfd, (bfd_byte*)vmaptr(addr));
+  bfd_vma relocation = (value & ~0xfff) - (addr & ~0xfff);
+
+  if (howto->complain_on_overflow != complain_overflow_dont && flag == bfd_reloc_ok)
+    flag = bfd_check_overflow (howto->complain_on_overflow,
+			       howto->bitsize,
+			       howto->rightshift,
+			       bfd_arch_bits_per_address (abfd),
+			       relocation);
+  relocation >>= (bfd_vma) howto->rightshift;
+  insn = _bfd_aarch64_reencode_adr_imm(insn, relocation);
+  bfd_put_32(abfd, insn,  (bfd_byte*)vmaptr(addr));
+  return flag;
+}
+
+static void
+arm64elf_adrimm_patch(reloc_howto_type *howto)
+{
+  write_const_pointer((void**)&howto->special_function, arm64elf_new_adrimm_reloc);
+}
+
+static void
+arm64elf_install_patches(bfd *abfd) 
+{
+  static bfd_reloc_code_real_type types[] = {
+    BFD_RELOC_AARCH64_ADR_GOT_PAGE,
+    BFD_RELOC_AARCH64_ADR_HI21_NC_PCREL,
+    BFD_RELOC_AARCH64_ADR_HI21_PCREL,
+    BFD_RELOC_AARCH64_ADR_LO21_PCREL,
+    BFD_RELOC_AARCH64_TLSDESC_ADR_PAGE21,
+    BFD_RELOC_AARCH64_TLSDESC_ADR_PREL21,
+    BFD_RELOC_AARCH64_TLSGD_ADR_PAGE21,
+    BFD_RELOC_AARCH64_TLSGD_ADR_PREL21,
+    BFD_RELOC_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21,
+    BFD_RELOC_AARCH64_TLSLD_ADR_PAGE21,
+    BFD_RELOC_AARCH64_TLSLD_ADR_PREL21,
+    -1
+  };
+
+  int i;
+  reloc_howto_type *howto;
+  for (i=0; types[i] != -1; i++) {
+    howto = bfd_reloc_type_lookup(abfd, types[i]);
+    if (howto)
+      arm64elf_adrimm_patch(howto);
+  }
+}
+
+static void
+handle_arm64elf_code(module_entry *ent)
+{
+  /* ALPHAELF case */
+  if (bfd_get_flavour(ent->abfd) == bfd_target_elf_flavour &&
+      bfd_get_arch(ent->abfd) == bfd_arch_aarch64 )
+    {
+      arm64elf_install_patches(ent->abfd);
+    }
+}
+
+#endif
+
 /* ---------------------------------------- */
 /* REWRITES */
 
@@ -1711,6 +1803,9 @@ perform_rewrites(module_entry *ent)
 #ifdef __alpha__
   handle_alphaelf_code(ent);
 #endif
+#ifdef __aarch64__
+  handle_arm64elf_code(ent);
+#endif
 }
 
 
@@ -1720,7 +1815,7 @@ perform_rewrites(module_entry *ent)
    This is implemented using the MAP_32BIT mmap flag.
 */
 
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 # ifdef MAP_32BIT
 #  define DLD_ALLOCATE_DEFINED
 #  define DLD_DEALLOCATE_DEFINED
@@ -2313,6 +2408,36 @@ apply_relocations(module_entry *module, int externalp)
                         {
                           fprintf(stderr,
                                   "dldbfd: x86_64 relocation overflow (%s)\n"
+                                  "  This happens when accessing data variables\n"
+                                  "  located in a shared object loaded via dlopen\n"
+                                  "  Instead of\n"
+                                  "     extern int remotevar;\n"
+                                  "     if (remotevar = 15) ....\n"
+                                  "  You can do:\n"
+                                  "     extern int remotevar;\n"
+                                  "     static int* volatile premotevar = &remotevar\n"
+                                  "     if (*premotevar = 15) ....\n",
+                                  dummy_symbol.name );
+                        }
+#endif
+#ifdef __aarch64__
+#if defined(__pie__) || defined(__pic__)
+# error "DLDBFD is known to fail when compiled in PIE mode on arm64"
+#endif
+		      if (dummy_reloc.howto == bfd_reloc_type_lookup(abfd, BFD_RELOC_AARCH64_CALL26) ||
+			  dummy_reloc.howto == bfd_reloc_type_lookup(abfd, BFD_RELOC_AARCH64_JUMP26) )
+			{
+			  stub = dld_allocate(2*sizeof(void*), 1);
+			  stub[0] = vmaptr(0xd61f022058000051LU); /* ldr x17,[pc+8]; br [x17] */
+			  stub[1] = vmaptr(value);
+#if 0 && defined(HAVE_MPROTECT) && defined(PROT_BTI)
+			  mprotect((void*)stub, 2*sizeof(void*), PROT_READ|PROT_WRITE|PROT_EXEC);
+#endif
+			}
+                      else
+                        {
+                          fprintf(stderr,
+                                  "dldbfd: arm64 relocation overflow (%s)\n"
                                   "  This happens when accessing data variables\n"
                                   "  located in a shared object loaded via dlopen\n"
                                   "  Instead of\n"
