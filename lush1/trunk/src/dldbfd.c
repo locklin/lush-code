@@ -1730,7 +1730,7 @@ typedef struct a_arena_s {
   size_t size;
 } a_arena_t;
 
-#define A_ALIGN(x)   (((x)+0xF)&~0xF)
+#define A_ALIGN(x)   (((x)+0x3F)&~0x3F)
 #define A_CHUNKSIZE  (0x400000)
 
 static a_arena_t *arenas = 0;
