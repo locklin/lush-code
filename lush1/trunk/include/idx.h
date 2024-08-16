@@ -71,7 +71,7 @@
 #define switch_type2(t1, FUNC_NAME) \
     switch((&i2)->srg->type) { \
     case_type2(ST_U8, t1, unsigned char, FUNC_NAME) \
-    case_type2(ST_I8, t1, char, FUNC_NAME) \
+    case_type2(ST_I8, t1, signed char, FUNC_NAME) \
     case_type2(ST_I16, t1, short, FUNC_NAME) \
     case_type2(ST_I32, t1, int, FUNC_NAME) \
     case_type2(ST_F, t1, flt, FUNC_NAME) \
@@ -93,7 +93,7 @@
 #define switch_type3(t1, FUNC_NAME) \
     switch((&i3)->srg->type) { \
     case_type2(ST_U8, t1, unsigned char, FUNC_NAME) \
-    case_type2(ST_I8, t1, char, FUNC_NAME) \
+    case_type2(ST_I8, t1, signed char, FUNC_NAME) \
     case_type2(ST_I16, t1, short, FUNC_NAME) \
     case_type2(ST_I32, t1, int, FUNC_NAME) \
     case_type2(ST_F, t1, flt, FUNC_NAME) \
@@ -146,7 +146,7 @@
 #define switch_type1(FUNC_NAME) \
     switch((&i1)->srg->type) { \
     case_type1(ST_U8, unsigned char, FUNC_NAME) \
-    case_type1(ST_I8, char, FUNC_NAME) \
+    case_type1(ST_I8, signed char, FUNC_NAME) \
     case_type1(ST_I16, short, FUNC_NAME) \
     case_type1(ST_I32, int, FUNC_NAME) \
     case_type1(ST_F, flt, FUNC_NAME) \

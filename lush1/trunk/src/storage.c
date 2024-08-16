@@ -81,7 +81,7 @@ int storage_type_size[ST_LAST] = {
   sizeof(real),
   sizeof(int),
   sizeof(short),
-  sizeof(char),
+  sizeof(signed char),
   sizeof(unsigned char),
   sizeof(gptr),
 };
@@ -103,7 +103,7 @@ static flt AT_getf(gptr pt, int off)
 static flt P_getf(gptr pt, int off)
 {
   int b;
-  b = ((char *)pt)[off];
+  b = ((signed char *)pt)[off];
   return (flt)b / 16.0;
 }
 
@@ -123,7 +123,7 @@ Generic_getf(F, flt)
 Generic_getf(D, real)
 Generic_getf(I32, int)
 Generic_getf(I16, short)
-Generic_getf(I8, char)
+Generic_getf(I8, signed char)
 Generic_getf(U8, unsigned char)
 
 #undef Generic_getf
@@ -179,7 +179,7 @@ Generic_setf(F, flt)
 Generic_setf(D, real)
 Generic_setf(I32, int)
 Generic_setf(I16, short)
-Generic_setf(I8, char)
+Generic_setf(I8, signed char)
 Generic_setf(U8, unsigned char)
 
 #undef Generic_setf
@@ -213,7 +213,7 @@ static real AT_getr(gptr pt, int off)
 static real P_getr(gptr pt, int off)
 {
   int b;
-  b = ((char *)pt)[off];
+  b = ((signed char *)pt)[off];
   return (real)b / 16.0;
 }
 
@@ -233,7 +233,7 @@ Generic_getr(F, flt)
 Generic_getr(D, real)
 Generic_getr(I32, int)
 Generic_getr(I16, short)
-Generic_getr(I8, char)
+Generic_getr(I8, signed char)
 Generic_getr(U8, unsigned char)
 
 #undef Generic_getr
@@ -287,7 +287,7 @@ Generic_setr(F, flt)
 Generic_setr(D, real)
 Generic_setr(I32, int)
 Generic_setr(I16, short)
-Generic_setr(I8, char)
+Generic_setr(I8, signed char)
 Generic_setr(U8, unsigned char)
 
 #undef Generic_setr
@@ -742,7 +742,7 @@ Generic_new_storage(F, N, flt)
 Generic_new_storage(D, N, real)
 Generic_new_storage(I32, N, int)
 Generic_new_storage(I16, N, short)
-Generic_new_storage(I8, N, char)
+Generic_new_storage(I8, N, signed char)
 Generic_new_storage(U8, N, unsigned char)
 Generic_new_storage(GPTR, GPTR, gptr)
 

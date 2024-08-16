@@ -872,14 +872,14 @@ static void write_const_pointer(void **pointer, void *value)
 #endif
 
 static void
-write_const_pointer(void **pointer, void *value)
+make_writable(void *addr, size_t size)
 {
 #if HAVE_MPROTECT
   bfd_vma pagesize = getpagesize();
-  bfd_vma start = ptrvma(pointer) & ~(pagesize-1);
-  mprotect( vmaptr(start), pagesize, PROT_READ|PROT_WRITE);
+  bfd_vma start = ptrvma(addr) & ~(pagesize-1);
+  bfd_vma last = (ptrvma(addr) + size - 1) | (pagesize - 1);
+  mprotect( vmaptr(start), last-start+1, PROT_READ|PROT_WRITE);
 #endif
-  *pointer = value;
 }
 
 static void
@@ -892,6 +892,15 @@ make_executable(void *addr, size_t size)
   mprotect( vmaptr(start), last-start+1, PROT_READ|PROT_WRITE|PROT_EXEC);
 #endif
 }
+
+static void
+write_const_pointer(void **pointer, void *value)
+{
+  make_writable(pointer, sizeof(void*));
+  *pointer = value;
+}
+
+
 
 /* ---------------------------------------- */
 /* SPECIAL PROCESSING FOR MIPS-ELF */
@@ -1758,9 +1767,22 @@ arm64elf_adrimm_patch(reloc_howto_type *howto)
 }
 
 static void
+arm64elf_bitpos_patch(reloc_howto_type *chowto, int bp, uint32_t bm)
+{
+  struct reloc_howto_struct *howto = (struct reloc_howto_struct*)chowto;
+  if (howto->bitpos != bp) {
+    make_writable(howto, sizeof(*howto));
+    howto->bitpos = bp;
+    howto->src_mask = 0;
+    howto->dst_mask = bm;
+  }
+}
+
+static void
 arm64elf_install_patches(bfd *abfd) 
 {
-  static bfd_reloc_code_real_type types[] = {
+  /* ARG. Most reloc records are buggy! */
+  static bfd_reloc_code_real_type adr_types[] = {
     BFD_RELOC_AARCH64_ADR_HI21_NC_PCREL,
     BFD_RELOC_AARCH64_ADR_HI21_PCREL,
     BFD_RELOC_AARCH64_ADR_LO21_PCREL,
@@ -1770,13 +1792,27 @@ arm64elf_install_patches(bfd *abfd)
         BFD_RELOC_AARCH64_TLSLD_ADR_PAGE21, BFD_RELOC_AARCH64_TLSLD_ADR_PREL21, **/
     -1
   };
+  static bfd_reloc_code_real_type ldst_types[] = {
+    BFD_RELOC_AARCH64_LDST128_LO12, BFD_RELOC_AARCH64_LDST64_LO12, BFD_RELOC_AARCH64_LDST32_LO12,
+    BFD_RELOC_AARCH64_LDST16_LO12, BFD_RELOC_AARCH64_LDST8_LO12, BFD_RELOC_AARCH64_LDST_LO12,
+    -1
+  };
+  static bfd_reloc_code_real_type ld19_types[] = {
+    BFD_RELOC_AARCH64_LD_LO19_PCREL,
+    -1
+  };
+  
   int i;
   reloc_howto_type *howto;
-  for (i=0; types[i] != -1; i++) {
-    howto = bfd_reloc_type_lookup(abfd, types[i]);
-    if (howto)
+  for (i=0; adr_types[i] != -1; i++) 
+    if ((howto = bfd_reloc_type_lookup(abfd, adr_types[i])))
       arm64elf_adrimm_patch(howto);
-  }
+  for (i=0; ldst_types[i] != -1; i++) 
+    if ((howto = bfd_reloc_type_lookup(abfd, ldst_types[i])))
+      arm64elf_bitpos_patch(howto, 10, 0xfff<<10);
+  for (i=0; ld19_types[i] != -1; i++) 
+    if ((howto = bfd_reloc_type_lookup(abfd, ld19_types[i])))
+      arm64elf_bitpos_patch(howto, 5, 0x7ffff<<5);
 }
 
 static void
