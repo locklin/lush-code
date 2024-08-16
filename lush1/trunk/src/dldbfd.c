@@ -875,13 +875,23 @@ static void
 write_const_pointer(void **pointer, void *value)
 {
 #if HAVE_MPROTECT
-  int pagesize = getpagesize();
+  bfd_vma pagesize = getpagesize();
   bfd_vma start = ptrvma(pointer) & ~(pagesize-1);
   mprotect( vmaptr(start), pagesize, PROT_READ|PROT_WRITE);
 #endif
   *pointer = value;
 }
 
+static void
+make_executable(void *addr, size_t size)
+{
+#if HAVE_MPROTECT
+  bfd_vma pagesize = getpagesize();
+  bfd_vma start = ptrvma(addr) & ~(pagesize-1);
+  bfd_vma last = (ptrvma(addr) + size - 1) | (pagesize - 1);
+  mprotect( vmaptr(start), last-start+1, PROT_READ|PROT_WRITE|PROT_EXEC);
+#endif
+}
 
 /* ---------------------------------------- */
 /* SPECIAL PROCESSING FOR MIPS-ELF */
@@ -1751,20 +1761,15 @@ static void
 arm64elf_install_patches(bfd *abfd) 
 {
   static bfd_reloc_code_real_type types[] = {
-    BFD_RELOC_AARCH64_ADR_GOT_PAGE,
     BFD_RELOC_AARCH64_ADR_HI21_NC_PCREL,
     BFD_RELOC_AARCH64_ADR_HI21_PCREL,
     BFD_RELOC_AARCH64_ADR_LO21_PCREL,
-    BFD_RELOC_AARCH64_TLSDESC_ADR_PAGE21,
-    BFD_RELOC_AARCH64_TLSDESC_ADR_PREL21,
-    BFD_RELOC_AARCH64_TLSGD_ADR_PAGE21,
-    BFD_RELOC_AARCH64_TLSGD_ADR_PREL21,
-    BFD_RELOC_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21,
-    BFD_RELOC_AARCH64_TLSLD_ADR_PAGE21,
-    BFD_RELOC_AARCH64_TLSLD_ADR_PREL21,
+    /** BFD_RELOC_AARCH64_TLSDESC_ADR_PAGE21, BFD_RELOC_AARCH64_TLSDESC_ADR_PREL21,
+        BFD_RELOC_AARCH64_TLSGD_ADR_PAGE21, BFD_RELOC_AARCH64_TLSGD_ADR_PREL21,
+        BFD_RELOC_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21, BFD_RELOC_AARCH64_ADR_GOT_PAGE,
+        BFD_RELOC_AARCH64_TLSLD_ADR_PAGE21, BFD_RELOC_AARCH64_TLSLD_ADR_PREL21, **/
     -1
   };
-
   int i;
   reloc_howto_type *howto;
   for (i=0; types[i] != -1; i++) {
@@ -2403,6 +2408,7 @@ apply_relocations(module_entry *module, int externalp)
 			  stub = dld_allocate(2*sizeof(void*), 1);
 			  stub[0] = vmaptr(0x0225ff);
 			  stub[1] = vmaptr(value);
+                          make_executable(stub, 2*sizeof(void*));
 			}
                       else
                         {
@@ -2430,9 +2436,7 @@ apply_relocations(module_entry *module, int externalp)
 			  stub = dld_allocate(2*sizeof(void*), 1);
 			  stub[0] = vmaptr(0xd61f022058000051LU); /* ldr x17,[pc+8]; br [x17] */
 			  stub[1] = vmaptr(value);
-#if 0 && defined(HAVE_MPROTECT) && defined(PROT_BTI)
-			  mprotect((void*)stub, 2*sizeof(void*), PROT_READ|PROT_WRITE|PROT_EXEC);
-#endif
+                          make_executable(stub, 2*sizeof(void*));
 			}
                       else
                         {
@@ -2617,33 +2621,15 @@ compute_executable_flag(module_entry *module)
     
     /* Setup memory protection */
  exit:
-#if HAVE_MPROTECT
     if (module->executable_flag > 0)
       {
         asection *p;
         bfd *abfd = module->abfd;
-        int pagesize = getpagesize();
         /* Call mprotect */
         for (p=abfd->sections; p; p=p->next)
           if ((p->flags & SEC_LOAD) && (p->flags & SEC_CODE))
-            {
-              int status;
-              bfd_vma start = p->vma;
-              bfd_vma end = start + dldbfd_section_rawsize(p);
-              /* Assume PAGESIZE is a power of two */
-              start = (start) & ~(pagesize-1);
-              end = (end + pagesize - 1) & ~(pagesize-1);
-              status = mprotect(vmaptr(start), (size_t)end-start, 
-                                PROT_READ|PROT_WRITE|PROT_EXEC);
-#ifdef DEBUG
-              printf("[%x,%x[ protected with status %d -- {%s:%s}\n", 
-                     start, end, status, module->filename, p->name );
-#else
-              (void)status;
-#endif
-            }
+            make_executable(vmaptr(p->vma), dldbfd_section_rawsize(p));
       }
-#endif
     /* Return */
     return module->executable_flag;
 }
