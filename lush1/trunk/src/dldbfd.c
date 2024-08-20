@@ -1783,18 +1783,19 @@ arm64elf_install_patches(bfd *abfd)
 {
   /* ARG. Most reloc records are buggy! */
   static bfd_reloc_code_real_type adr_types[] = {
-    BFD_RELOC_AARCH64_ADR_HI21_NC_PCREL,
-    BFD_RELOC_AARCH64_ADR_HI21_PCREL,
+    BFD_RELOC_AARCH64_ADR_HI21_NC_PCREL, BFD_RELOC_AARCH64_ADR_HI21_PCREL,
     BFD_RELOC_AARCH64_ADR_LO21_PCREL,
-    /** BFD_RELOC_AARCH64_TLSDESC_ADR_PAGE21, BFD_RELOC_AARCH64_TLSDESC_ADR_PREL21,
-        BFD_RELOC_AARCH64_TLSGD_ADR_PAGE21, BFD_RELOC_AARCH64_TLSGD_ADR_PREL21,
-        BFD_RELOC_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21, BFD_RELOC_AARCH64_ADR_GOT_PAGE,
-        BFD_RELOC_AARCH64_TLSLD_ADR_PAGE21, BFD_RELOC_AARCH64_TLSLD_ADR_PREL21, **/
+    /* tls relocs need testing */
+    BFD_RELOC_AARCH64_TLSDESC_ADR_PAGE21, BFD_RELOC_AARCH64_TLSDESC_ADR_PREL21,
+    BFD_RELOC_AARCH64_TLSGD_ADR_PAGE21, BFD_RELOC_AARCH64_TLSGD_ADR_PREL21,
+    BFD_RELOC_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21, BFD_RELOC_AARCH64_ADR_GOT_PAGE,
+    BFD_RELOC_AARCH64_TLSLD_ADR_PAGE21, BFD_RELOC_AARCH64_TLSLD_ADR_PREL21,
     -1
   };
   static bfd_reloc_code_real_type ldst_types[] = {
-    BFD_RELOC_AARCH64_LDST128_LO12, BFD_RELOC_AARCH64_LDST64_LO12, BFD_RELOC_AARCH64_LDST32_LO12,
-    BFD_RELOC_AARCH64_LDST16_LO12, BFD_RELOC_AARCH64_LDST8_LO12, BFD_RELOC_AARCH64_LDST_LO12,
+    BFD_RELOC_AARCH64_LDST128_LO12, BFD_RELOC_AARCH64_LDST64_LO12,
+    BFD_RELOC_AARCH64_LDST32_LO12,  BFD_RELOC_AARCH64_LDST16_LO12,
+    BFD_RELOC_AARCH64_LDST8_LO12, BFD_RELOC_AARCH64_LDST_LO12,
     -1
   };
   static bfd_reloc_code_real_type ld19_types[] = {
@@ -1809,7 +1810,7 @@ arm64elf_install_patches(bfd *abfd)
       arm64elf_adrimm_patch(howto);
   for (i=0; ldst_types[i] != -1; i++) 
     if ((howto = bfd_reloc_type_lookup(abfd, ldst_types[i])))
-      arm64elf_bitpos_patch(howto, 10, 0xfff<<10);
+      arm64elf_bitpos_patch(howto, 10, (0xfff & (0xfff >> howto->rightshift)) <<10);
   for (i=0; ld19_types[i] != -1; i++) 
     if ((howto = bfd_reloc_type_lookup(abfd, ld19_types[i])))
       arm64elf_bitpos_patch(howto, 5, 0x7ffff<<5);
