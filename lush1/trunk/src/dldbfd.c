@@ -1723,14 +1723,11 @@ handle_alphaelf_code(module_entry *ent)
 
 #ifdef __aarch64__
 
-static uint32_t
-_bfd_aarch64_reencode_adr_imm (uint32_t insn, uint32_t imm)
-{
-#define MASK(n) ((1u << (n)) - 1)  
-  return (insn & ~((MASK (2) << 29) | (MASK (19) << 5)))
-    | ((imm & MASK (2)) << 29) | ((imm & (MASK (19) << 2)) << 3);
-#undef MASK
-}
+typedef bfd_reloc_status_type
+(*reloc_function)(bfd *, arelent *, struct bfd_symbol *,
+		  void *, asection *, bfd *, char **);
+
+extern reloc_function bfd_elf_generic_reloc;
 
 static bfd_reloc_status_type
 arm64elf_new_adrimm_reloc (bfd *abfd, 
@@ -1755,15 +1752,39 @@ arm64elf_new_adrimm_reloc (bfd *abfd,
 			       bfd_arch_bits_per_address (abfd),
 			       relocation);
   relocation >>= (bfd_vma) howto->rightshift;
-  insn = _bfd_aarch64_reencode_adr_imm(insn, relocation);
+  insn &= ~0x60ffffe0;
+  insn |= ((relocation<<29) & 0x60000000) | ((relocation<<3) & 0xffffe0);
   bfd_put_32(abfd, insn,  (bfd_byte*)vmaptr(addr));
   return flag;
 }
 
-static void
-arm64elf_adrimm_patch(reloc_howto_type *howto)
+static bfd_reloc_status_type
+arm64elf_new_movzn_reloc (bfd *abfd, 
+			  arelent *reloc_entry,
+			  asymbol *symbol,
+			  PTR data,
+			  asection *input_section,
+			  bfd *output_bfd,
+			  char **error_message) 
 {
-  write_const_pointer((void**)&howto->special_function, arm64elf_new_adrimm_reloc);
+  bfd_reloc_status_type flag;
+  flag = bfd_elf_generic_reloc(abfd, reloc_entry, symbol, data,
+			       input_section, output_bfd, error_message);
+  if (flag == bfd_reloc_ok) {
+    bfd_vma addr = ptrvma(data) + reloc_entry->address;
+    bfd_vma value = symbol->section->vma + symbol->value + reloc_entry->addend;
+    uint32_t insn = bfd_get_32(abfd, (bfd_byte*)vmaptr(addr)) | 0x40000000;
+    if (value & (1LU<<63))
+      insn ^= 0x401fffe0; /* MOVZ becomes MOVN */
+    bfd_put_32(abfd, insn,  (bfd_byte*)vmaptr(addr));
+  }
+  return flag;
+}
+
+static void
+arm64elf_func_patch(reloc_howto_type *howto, reloc_function func)
+{
+  write_const_pointer((void**)&howto->special_function, func);
 }
 
 static void
@@ -1781,39 +1802,62 @@ arm64elf_bitpos_patch(reloc_howto_type *chowto, int bp, uint32_t bm)
 static void
 arm64elf_install_patches(bfd *abfd) 
 {
-  /* ARG. Most reloc records are buggy! */
+  /* Most reloc records are buggy!
+     Yet gnu-ld works because the actual linking is achieved by a
+     standalone function elfNN_aarch64_final_link_relocate() in
+     elfnn-aarch64.c, bypassing all the bfd setup. Ugly.
+     So we need to fix them all. 
+     The TLS ones still don't work because one would
+     have to prepare a GOT, etc. This is not very useful
+     in lush code as thread-based code is likely to
+     be loaded with dld_dlopen(...).  */
   static bfd_reloc_code_real_type adr_types[] = {
     BFD_RELOC_AARCH64_ADR_HI21_NC_PCREL, BFD_RELOC_AARCH64_ADR_HI21_PCREL,
-    BFD_RELOC_AARCH64_ADR_LO21_PCREL,
-    /* tls relocs need testing */
-    BFD_RELOC_AARCH64_TLSDESC_ADR_PAGE21, BFD_RELOC_AARCH64_TLSDESC_ADR_PREL21,
-    BFD_RELOC_AARCH64_TLSGD_ADR_PAGE21, BFD_RELOC_AARCH64_TLSGD_ADR_PREL21,
-    BFD_RELOC_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21, BFD_RELOC_AARCH64_ADR_GOT_PAGE,
-    BFD_RELOC_AARCH64_TLSLD_ADR_PAGE21, BFD_RELOC_AARCH64_TLSLD_ADR_PREL21,
-    -1
+    BFD_RELOC_AARCH64_ADR_LO21_PCREL, -1
   };
   static bfd_reloc_code_real_type ldst_types[] = {
     BFD_RELOC_AARCH64_LDST128_LO12, BFD_RELOC_AARCH64_LDST64_LO12,
     BFD_RELOC_AARCH64_LDST32_LO12,  BFD_RELOC_AARCH64_LDST16_LO12,
-    BFD_RELOC_AARCH64_LDST8_LO12, BFD_RELOC_AARCH64_LDST_LO12,
-    -1
+    BFD_RELOC_AARCH64_LDST8_LO12, BFD_RELOC_AARCH64_LDST_LO12, -1
   };
-  static bfd_reloc_code_real_type ld19_types[] = {
-    BFD_RELOC_AARCH64_LD_LO19_PCREL,
-    -1
+  static bfd_reloc_code_real_type movw_types[] = {
+    BFD_RELOC_AARCH64_MOVW_G0, BFD_RELOC_AARCH64_MOVW_G0_NC,
+    BFD_RELOC_AARCH64_MOVW_G1, BFD_RELOC_AARCH64_MOVW_G1_NC,
+    BFD_RELOC_AARCH64_MOVW_G2, BFD_RELOC_AARCH64_MOVW_G2_NC,
+    BFD_RELOC_AARCH64_MOVW_G3, 
+    BFD_RELOC_AARCH64_MOVW_PREL_G0, BFD_RELOC_AARCH64_MOVW_PREL_G0_NC,
+    BFD_RELOC_AARCH64_MOVW_PREL_G1, BFD_RELOC_AARCH64_MOVW_PREL_G1_NC,
+    BFD_RELOC_AARCH64_MOVW_PREL_G2, BFD_RELOC_AARCH64_MOVW_PREL_G2_NC,
+    BFD_RELOC_AARCH64_MOVW_PREL_G3,
+    BFD_RELOC_AARCH64_MOVW_G0_S, BFD_RELOC_AARCH64_MOVW_G1_S,
+    BFD_RELOC_AARCH64_MOVW_G2_S, -1
+  };
+  static bfd_reloc_code_real_type movzn_types[] = {
+    BFD_RELOC_AARCH64_MOVW_G0_S, BFD_RELOC_AARCH64_MOVW_G1_S,
+    BFD_RELOC_AARCH64_MOVW_G2_S, -1
   };
   
   int i;
   reloc_howto_type *howto;
+  /* they're all wrong! */
   for (i=0; adr_types[i] != -1; i++) 
     if ((howto = bfd_reloc_type_lookup(abfd, adr_types[i])))
-      arm64elf_adrimm_patch(howto);
+      arm64elf_func_patch(howto, arm64elf_new_adrimm_reloc);
   for (i=0; ldst_types[i] != -1; i++) 
     if ((howto = bfd_reloc_type_lookup(abfd, ldst_types[i])))
       arm64elf_bitpos_patch(howto, 10, (0xfff & (0xfff >> howto->rightshift)) <<10);
-  for (i=0; ld19_types[i] != -1; i++) 
-    if ((howto = bfd_reloc_type_lookup(abfd, ld19_types[i])))
-      arm64elf_bitpos_patch(howto, 5, 0x7ffff<<5);
+  for (i=0; movw_types[i] != -1; i++) 
+    if ((howto = bfd_reloc_type_lookup(abfd, movw_types[i])))
+      arm64elf_bitpos_patch(howto, 5, 0xffff<<5);
+  for (i=0; movzn_types[i] != -1; i++) 
+    if ((howto = bfd_reloc_type_lookup(abfd, movzn_types[i])))
+      arm64elf_func_patch(howto, arm64elf_new_movzn_reloc);
+  if ((howto = bfd_reloc_type_lookup(abfd, BFD_RELOC_AARCH64_LD_LO19_PCREL)))
+    arm64elf_bitpos_patch(howto, 5, 0x7ffff<<5);
+  if ((howto = bfd_reloc_type_lookup(abfd, BFD_RELOC_AARCH64_TSTBR14)))
+    arm64elf_bitpos_patch(howto, 5, 0x3fff<<5);
+  if ((howto = bfd_reloc_type_lookup(abfd, BFD_RELOC_AARCH64_BRANCH19)))
+    arm64elf_bitpos_patch(howto, 5, 0x7ffff<<5);
 }
 
 static void
