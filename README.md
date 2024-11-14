@@ -3,8 +3,8 @@ This is a git svn backup of svn://svn.code.sf.net/p/lush/code/
 
 For most people, you'll want to 
 
-cd lush1
-./configure
+cd lush1;
+./configure;
 make
 
 
