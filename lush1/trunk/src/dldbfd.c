@@ -109,7 +109,21 @@
 #endif
 
 void *bfd_alloc(bfd *abfd, bfd_size_type wanted);
-unsigned int bfd_log2 (bfd_vma x);
+//unsigned int bfd_log2 (bfd_vma x);
+
+unsigned int
+bfd_log2 (bfd_vma x)
+{
+  unsigned int result = 0;
+
+  if (x <= 1)
+    return result;
+  --x;
+  do
+    ++result;
+  while ((x >>= 1) != 0);
+  return result;
+}
 
 /* Conversion between bfd_vma and pointers.
  * These casts remove warnings with 64 bit enabled bfd. */
